@@ -650,7 +650,9 @@ vec3 voronoi(vec2 uv, float t) {
 vec3 ribbons(vec2 uv, float t) {
     vec3 col = color4;
     
-    for (float i = 0.0; i < waveCount + 3.0; i++) {
+    // Use constant loop bound for GLSL compatibility (max 10 ribbons)
+    for (float i = 0.0; i < 10.0; i++) {
+        if (i >= waveCount + 3.0) break;
         float offset = (i / (waveCount + 3.0) - 0.5) * 2.0;
         float phase = seed + i * 1.5;
         
