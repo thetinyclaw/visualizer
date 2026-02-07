@@ -3,130 +3,481 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TinyClaw Visualizer - Pulse Cube</title>
+    <title>TinyClaw Visualizer v2 - Trippy Edition</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; color: #fff; font-family: sans-serif; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; background: #000; }
+        canvas { display: block; }
         #overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             display: flex; align-items: center; justify-content: center;
-            background: rgba(0,0,0,0.8); cursor: pointer; transition: opacity 0.5s;
+            background: rgba(0,0,0,0.9); cursor: pointer; z-index: 100;
+            transition: opacity 0.5s;
         }
-        #text { text-align: center; }
-        h1 { margin: 0 0 10px; font-weight: 300; letter-spacing: 2px; }
-        p { color: #888; }
+        #overlay.hidden { opacity: 0; pointer-events: none; }
+        #text { text-align: center; color: #fff; font-family: 'Courier New', monospace; }
+        h1 { font-size: 2.5em; margin-bottom: 10px; letter-spacing: 4px;
+             background: linear-gradient(90deg, #ff00ff, #00ffff, #ff00ff);
+             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+             animation: hue 3s linear infinite; }
+        @keyframes hue { 0%,100%{filter:hue-rotate(0deg);} 50%{filter:hue-rotate(180deg);} }
+        p { color: #666; font-size: 0.9em; }
+        #info { position: fixed; bottom: 10px; left: 10px; color: #333; 
+                font-family: monospace; font-size: 11px; z-index: 50; }
     </style>
 </head>
 <body>
     <div id="overlay">
         <div id="text">
             <h1>VISUALIZER</h1>
-            <p>Click to start & allow microphone</p>
+            <p>[ click to enter the void ]</p>
         </div>
     </div>
-    <script type="module">
-        import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+    <div id="info"></div>
+    <canvas id="canvas"></canvas>
 
-        let scene, camera, renderer, cube, analyser, dataArray;
-        let isRunning = false;
+    <script>
+    const canvas = document.getElementById('canvas');
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+    const info = document.getElementById('info');
 
-        function init() {
-            // Scene
-            scene = new THREE.Scene();
+    let audioCtx, analyser, dataArray, freqArray;
+    let startTime = Date.now();
+    let mode = 0;
+    let modeTime = 0;
+    let modeDuration = 15000; // 15 seconds per mode
+    let transitionDuration = 3000; // 3 second transitions
 
-            // Camera
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 5;
+    // Resize canvas
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        gl.viewport(0, 0, canvas.width, canvas.height);
+    }
+    window.addEventListener('resize', resize);
+    resize();
 
-            // Renderer
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(renderer.domElement);
-
-            // Geometry - The "Pulse Cube"
-            const geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
-            // Wireframe material for that "tech" look
-            const material = new THREE.MeshBasicMaterial({ 
-                color: 0x00ff88, 
-                wireframe: true,
-                transparent: true,
-                opacity: 0.8
-            });
-            cube = new THREE.Mesh(geometry, material);
-            scene.add(cube);
-
-            // Responsive resize
-            window.addEventListener('resize', onWindowResize, false);
-
-            // Start loop
-            animate();
+    // Shader sources
+    const vertexShaderSrc = `
+        attribute vec2 position;
+        void main() {
+            gl_Position = vec4(position, 0.0, 1.0);
         }
+    `;
 
-        async function startAudio() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                const source = audioCtx.createMediaStreamSource(stream);
-                
-                analyser = audioCtx.createAnalyser();
-                analyser.fftSize = 256;
-                source.connect(analyser);
-                
-                dataArray = new Uint8Array(analyser.frequencyBinCount);
-                
-                // Hide overlay
-                const overlay = document.getElementById('overlay');
-                overlay.style.opacity = 0;
-                setTimeout(() => overlay.remove(), 500);
-                
-                isRunning = true;
-            } catch (err) {
-                console.error('Mic access denied:', err);
-                alert('Microphone access is needed for the visualizer to work!');
+    const fragmentShaderSrc = `
+        precision highp float;
+        uniform float time;
+        uniform vec2 resolution;
+        uniform float bass;
+        uniform float mid;
+        uniform float treble;
+        uniform float mode;
+        uniform float transition;
+        
+        #define PI 3.14159265359
+        
+        // Noise functions
+        float hash(vec2 p) {
+            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+        }
+        
+        float noise(vec2 p) {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(
+                mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+                mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x),
+                f.y
+            );
+        }
+        
+        // Fractal Brownian Motion
+        float fbm(vec2 p) {
+            float value = 0.0;
+            float amplitude = 0.5;
+            for (int i = 0; i < 5; i++) {
+                value += amplitude * noise(p);
+                p *= 2.0;
+                amplitude *= 0.5;
             }
+            return value;
         }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+        
+        // Kaleidoscope effect
+        vec2 kaleidoscope(vec2 uv, float segments) {
+            float angle = atan(uv.y, uv.x);
+            float radius = length(uv);
+            angle = mod(angle, PI * 2.0 / segments);
+            angle = abs(angle - PI / segments);
+            return vec2(cos(angle), sin(angle)) * radius;
         }
-
-        function animate() {
-            requestAnimationFrame(animate);
-
-            // Rotation (always active)
-            cube.rotation.x += 0.01;
-            cube.rotation.y += 0.01;
-
-            if (isRunning && analyser) {
-                analyser.getByteFrequencyData(dataArray);
-                
-                // Calculate average volume
-                let sum = 0;
-                for (let i = 0; i < dataArray.length; i++) {
-                    sum += dataArray[i];
-                }
-                const average = sum / dataArray.length;
-                
-                // Map volume to scale (Pulse)
-                // Base scale 1.0, add boost based on volume
-                const scale = 1.0 + (average / 50); 
-                cube.scale.set(scale, scale, scale);
-                
-                // Dynamic color based on bass vs treble?
-                // For now, simple hue shift based on volume
-                const hue = (average / 255) * 0.5 + 0.3; // Greenish to Blueish
-                cube.material.color.setHSL(hue, 1.0, 0.5);
+        
+        // RGB shift / chromatic aberration
+        vec3 rgbShift(vec2 uv, float amount) {
+            vec3 col;
+            col.r = texture2D_fbm(uv + vec2(amount, 0.0));
+            col.g = texture2D_fbm(uv);
+            col.b = texture2D_fbm(uv - vec2(amount, 0.0));
+            return col;
+        }
+        
+        float texture2D_fbm(vec2 uv) {
+            return fbm(uv * 3.0 + time * 0.1);
+        }
+        
+        // Mode 0: Fractal Warp
+        vec3 fractalWarp(vec2 uv) {
+            vec2 p = uv * 3.0;
+            p += fbm(p + time * 0.2) * bass * 2.0;
+            
+            float f = fbm(p + fbm(p + fbm(p)));
+            
+            vec3 col = vec3(0.0);
+            col = mix(vec3(0.1, 0.0, 0.2), vec3(1.0, 0.0, 0.5), f);
+            col = mix(col, vec3(0.0, 1.0, 1.0), f * f);
+            col += vec3(0.5, 0.2, 0.8) * (1.0 - f) * bass;
+            
+            return col;
+        }
+        
+        // Mode 1: Kaleidoscope Tunnel
+        vec3 kaleidoscopeTunnel(vec2 uv) {
+            float segments = 6.0 + bass * 4.0;
+            vec2 kUv = kaleidoscope(uv, segments);
+            
+            float t = time * 0.5;
+            float tunnel = 1.0 / (length(kUv) + 0.1);
+            tunnel += sin(atan(kUv.y, kUv.x) * 8.0 + t * 2.0) * 0.2;
+            
+            vec3 col = vec3(0.0);
+            col.r = sin(tunnel * 2.0 + t) * 0.5 + 0.5;
+            col.g = sin(tunnel * 2.0 + t + 2.094) * 0.5 + 0.5;
+            col.b = sin(tunnel * 2.0 + t + 4.188) * 0.5 + 0.5;
+            
+            col *= tunnel * 0.5;
+            col = pow(col, vec3(0.8 + treble * 0.5));
+            
+            return col;
+        }
+        
+        // Mode 2: Glitch Grid
+        vec3 glitchGrid(vec2 uv) {
+            vec2 grid = fract(uv * (10.0 + bass * 10.0));
+            float glitchLine = step(0.98, fract(uv.y * 50.0 + time * 5.0));
+            
+            // Horizontal glitch displacement
+            float glitch = step(0.95, hash(vec2(floor(time * 10.0), floor(uv.y * 20.0))));
+            uv.x += glitch * (hash(vec2(time, uv.y)) - 0.5) * 0.3 * treble;
+            
+            vec2 blockUv = floor(uv * 8.0) / 8.0;
+            float block = hash(blockUv + floor(time * 2.0));
+            
+            vec3 col = vec3(0.0);
+            col.r = step(0.5, fract(block * 13.0 + uv.x * 5.0));
+            col.g = step(0.5, fract(block * 17.0 + uv.y * 5.0));
+            col.b = step(0.5, fract(block * 23.0));
+            
+            col = mix(col, vec3(1.0), glitchLine);
+            col *= 0.8 + bass * 0.4;
+            
+            // Scan lines
+            col *= 0.9 + 0.1 * sin(uv.y * resolution.y * 0.5);
+            
+            return col;
+        }
+        
+        // Mode 3: Liquid Metal
+        vec3 liquidMetal(vec2 uv) {
+            vec2 p = uv * 2.0;
+            float t = time * 0.3;
+            
+            for (int i = 0; i < 5; i++) {
+                p = abs(p) / dot(p, p) - vec2(0.9 + bass * 0.3);
+                p *= mat2(cos(t), sin(t), -sin(t), cos(t));
             }
-
-            renderer.render(scene, camera);
+            
+            float f = length(p);
+            
+            vec3 col = vec3(0.0);
+            col.r = sin(f * 3.0) * 0.5 + 0.5;
+            col.g = sin(f * 3.0 + 2.0) * 0.5 + 0.5;
+            col.b = sin(f * 3.0 + 4.0) * 0.5 + 0.5;
+            
+            col = pow(col, vec3(1.5));
+            col *= 1.0 + mid * 0.5;
+            
+            return col;
         }
+        
+        // Mode 4: Data Mosh
+        vec3 dataMosh(vec2 uv) {
+            float t = time * 0.5;
+            
+            // Block corruption
+            vec2 block = floor(uv * (4.0 + bass * 8.0));
+            float corrupt = step(0.7, hash(block + floor(t * 3.0)));
+            
+            vec2 offset = vec2(0.0);
+            offset.x = corrupt * (hash(block) - 0.5) * 0.5;
+            offset.y = corrupt * (hash(block + 1.0) - 0.5) * 0.2;
+            
+            uv += offset * treble;
+            
+            // Color bands
+            float band = floor(uv.y * 20.0 + t * 5.0);
+            vec3 col = vec3(
+                hash(vec2(band, 1.0)),
+                hash(vec2(band, 2.0)),
+                hash(vec2(band, 3.0))
+            );
+            
+            // Pixel sort effect
+            float sortLine = step(0.8, sin(uv.y * 30.0 + t * 10.0));
+            col = mix(col, col.gbr, sortLine);
+            
+            // RGB split
+            float shift = treble * 0.02;
+            vec3 shifted;
+            shifted.r = hash(floor((uv + vec2(shift, 0.0)) * 50.0));
+            shifted.g = hash(floor(uv * 50.0));
+            shifted.b = hash(floor((uv - vec2(shift, 0.0)) * 50.0));
+            
+            col = mix(col, shifted, 0.3 + bass * 0.3);
+            
+            return col;
+        }
+        
+        // Mode 5: Neon Geometry  
+        vec3 neonGeometry(vec2 uv) {
+            float t = time * 0.5;
+            vec2 p = uv * 5.0;
+            
+            // Rotating hexagonal grid
+            float a = t * 0.2;
+            p *= mat2(cos(a), sin(a), -sin(a), cos(a));
+            
+            // Hexagon distance
+            vec2 hp = abs(p);
+            float hex = max(hp.x * 0.866 + hp.y * 0.5, hp.y);
+            hex = fract(hex + t * 0.5);
+            
+            // Glow
+            float glow = 0.02 / abs(hex - 0.5);
+            glow *= 1.0 + bass * 2.0;
+            
+            // Color cycling
+            vec3 col = vec3(0.0);
+            col.r = glow * (0.5 + 0.5 * sin(t));
+            col.g = glow * (0.5 + 0.5 * sin(t + 2.094));
+            col.b = glow * (0.5 + 0.5 * sin(t + 4.188));
+            
+            // Add secondary pattern
+            float lines = abs(sin(p.x * 10.0 + t * 2.0) * sin(p.y * 10.0 - t));
+            col += vec3(0.1, 0.3, 0.5) * lines * mid;
+            
+            return col;
+        }
+        
+        void main() {
+            vec2 uv = (gl_FragCoord.xy - resolution * 0.5) / min(resolution.x, resolution.y);
+            
+            // Get current and next mode colors
+            int currentMode = int(mod(mode, 6.0));
+            int nextMode = int(mod(mode + 1.0, 6.0));
+            
+            vec3 col1, col2;
+            
+            // Current mode
+            if (currentMode == 0) col1 = fractalWarp(uv);
+            else if (currentMode == 1) col1 = kaleidoscopeTunnel(uv);
+            else if (currentMode == 2) col1 = glitchGrid(uv);
+            else if (currentMode == 3) col1 = liquidMetal(uv);
+            else if (currentMode == 4) col1 = dataMosh(uv);
+            else col1 = neonGeometry(uv);
+            
+            // Next mode
+            if (nextMode == 0) col2 = fractalWarp(uv);
+            else if (nextMode == 1) col2 = kaleidoscopeTunnel(uv);
+            else if (nextMode == 2) col2 = glitchGrid(uv);
+            else if (nextMode == 3) col2 = liquidMetal(uv);
+            else if (nextMode == 4) col2 = dataMosh(uv);
+            else col2 = neonGeometry(uv);
+            
+            // Smooth transition
+            vec3 col = mix(col1, col2, transition);
+            
+            // Global glitch overlay based on treble
+            float glitchIntensity = treble * 0.5;
+            if (hash(vec2(time * 100.0, 0.0)) > 0.97) {
+                col.rgb = col.gbr; // Color glitch
+            }
+            
+            // Chromatic aberration
+            float aberration = 0.003 + treble * 0.01;
+            vec2 dir = uv * aberration;
+            col.r = mix(col.r, col.r * 1.1, length(dir));
+            col.b = mix(col.b, col.b * 0.9, length(dir));
+            
+            // Scanlines
+            col *= 0.95 + 0.05 * sin(gl_FragCoord.y * 2.0);
+            
+            // Vignette
+            float vignette = 1.0 - length(uv) * 0.5;
+            col *= vignette;
+            
+            // Boost overall with bass
+            col *= 0.8 + bass * 0.4;
+            
+            gl_FragColor = vec4(col, 1.0);
+        }
+    `;
 
-        // Init scene immediately
-        init();
+    // Compile shaders
+    function createShader(type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+            return null;
+        }
+        return shader;
+    }
 
-        // Wait for click to start audio (browser policy)
-        document.getElementById('overlay').addEventListener('click', startAudio);
+    const vertexShader = createShader(gl.VERTEX_SHADER, vertexShaderSrc);
+    const fragmentShader = createShader(gl.FRAGMENT_SHADER, fragmentShaderSrc);
+
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.error('Program link error:', gl.getProgramInfoLog(program));
+    }
+
+    gl.useProgram(program);
+
+    // Create fullscreen quad
+    const positions = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+    const positionLoc = gl.getAttribLocation(program, 'position');
+    gl.enableVertexAttribArray(positionLoc);
+    gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
+
+    // Get uniform locations
+    const timeLoc = gl.getUniformLocation(program, 'time');
+    const resolutionLoc = gl.getUniformLocation(program, 'resolution');
+    const bassLoc = gl.getUniformLocation(program, 'bass');
+    const midLoc = gl.getUniformLocation(program, 'mid');
+    const trebleLoc = gl.getUniformLocation(program, 'treble');
+    const modeLoc = gl.getUniformLocation(program, 'mode');
+    const transitionLoc = gl.getUniformLocation(program, 'transition');
+
+    // Audio analysis helpers
+    function getFrequencyRange(start, end) {
+        if (!freqArray) return 0;
+        let sum = 0;
+        const startIdx = Math.floor(start * freqArray.length);
+        const endIdx = Math.floor(end * freqArray.length);
+        for (let i = startIdx; i < endIdx; i++) {
+            sum += freqArray[i];
+        }
+        return sum / (endIdx - startIdx) / 255;
+    }
+
+    // Animation loop
+    let lastBass = 0, lastMid = 0, lastTreble = 0;
+    
+    function render() {
+        const time = (Date.now() - startTime) / 1000;
+        
+        // Update audio data
+        let bass = 0, mid = 0, treble = 0;
+        if (analyser && freqArray) {
+            analyser.getByteFrequencyData(freqArray);
+            bass = getFrequencyRange(0, 0.1);
+            mid = getFrequencyRange(0.1, 0.5);
+            treble = getFrequencyRange(0.5, 1.0);
+            
+            // Smooth the values
+            bass = lastBass * 0.7 + bass * 0.3;
+            mid = lastMid * 0.7 + mid * 0.3;
+            treble = lastTreble * 0.7 + treble * 0.3;
+            lastBass = bass; lastMid = mid; lastTreble = treble;
+        }
+        
+        // Calculate mode and transition
+        const elapsed = Date.now() - modeTime;
+        const cycleTime = modeDuration + transitionDuration;
+        const cyclePos = elapsed % cycleTime;
+        
+        let currentMode = mode;
+        let transition = 0;
+        
+        if (cyclePos > modeDuration) {
+            // In transition
+            transition = (cyclePos - modeDuration) / transitionDuration;
+        }
+        
+        if (elapsed >= cycleTime) {
+            mode = (mode + 1) % 6;
+            modeTime = Date.now();
+        }
+        
+        // Update uniforms
+        gl.uniform1f(timeLoc, time);
+        gl.uniform2f(resolutionLoc, canvas.width, canvas.height);
+        gl.uniform1f(bassLoc, bass);
+        gl.uniform1f(midLoc, mid);
+        gl.uniform1f(trebleLoc, treble);
+        gl.uniform1f(modeLoc, currentMode);
+        gl.uniform1f(transitionLoc, transition);
+        
+        // Draw
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        
+        // Update info
+        const modeNames = ['Fractal Warp', 'Kaleidoscope', 'Glitch Grid', 'Liquid Metal', 'Data Mosh', 'Neon Geometry'];
+        info.textContent = `Mode: ${modeNames[mode]} | Bass: ${bass.toFixed(2)} | Treble: ${treble.toFixed(2)}`;
+        
+        requestAnimationFrame(render);
+    }
+
+    // Start audio
+    async function startAudio() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioCtx.createMediaStreamSource(stream);
+            
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 512;
+            analyser.smoothingTimeConstant = 0.8;
+            source.connect(analyser);
+            
+            freqArray = new Uint8Array(analyser.frequencyBinCount);
+            
+            document.getElementById('overlay').classList.add('hidden');
+            modeTime = Date.now();
+            
+        } catch (err) {
+            console.error('Mic access denied:', err);
+            alert('Microphone access needed for audio reactivity!');
+            // Still start visuals without audio
+            document.getElementById('overlay').classList.add('hidden');
+            modeTime = Date.now();
+        }
+    }
+
+    // Init
+    document.getElementById('overlay').addEventListener('click', startAudio);
+    render();
     </script>
 </body>
 </html>
