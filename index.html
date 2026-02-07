@@ -50,6 +50,20 @@
 const canvas = document.getElementById('canvas');
 const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
 const info = document.getElementById('info');
+const overlay = document.getElementById('overlay');
+
+// WebGL availability check
+if (!gl) {
+    overlay.innerHTML = `
+        <h1 style="color: #ff4444;">WebGL Not Available</h1>
+        <p style="color: #888;">Your browser or device doesn't support WebGL.</p>
+        <p style="color: #666; margin-top: 20px;">Try:</p>
+        <p style="color: #555;">• Using Chrome, Firefox, or Edge</p>
+        <p style="color: #555;">• Enabling hardware acceleration</p>
+        <p style="color: #555;">• Updating your graphics drivers</p>
+    `;
+    throw new Error('WebGL not supported');
+}
 
 // ─────────────────────────────────────────────────────────────────
 // SEED & RANDOM SYSTEM
@@ -767,8 +781,14 @@ function createShader(type, src) {
     gl.shaderSource(s, src);
     gl.compileShader(s);
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-        console.error('Shader error:', gl.getShaderInfoLog(s));
-        return null;
+        const error = gl.getShaderInfoLog(s);
+        console.error('Shader error:', error);
+        overlay.innerHTML = `
+            <h1 style="color: #ff4444;">Shader Error</h1>
+            <p style="color: #888;">Failed to compile ${type === gl.VERTEX_SHADER ? 'vertex' : 'fragment'} shader.</p>
+            <p style="color: #666; font-size: 0.7em; max-width: 80%; word-break: break-all;">${error}</p>
+        `;
+        throw new Error('Shader compilation failed');
     }
     return s;
 }
@@ -779,6 +799,18 @@ const prog = gl.createProgram();
 gl.attachShader(prog, vs);
 gl.attachShader(prog, fs);
 gl.linkProgram(prog);
+
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    const error = gl.getProgramInfoLog(prog);
+    console.error('Program link error:', error);
+    overlay.innerHTML = `
+        <h1 style="color: #ff4444;">Program Link Error</h1>
+        <p style="color: #888;">Failed to link shader program.</p>
+        <p style="color: #666; font-size: 0.7em;">${error}</p>
+    `;
+    throw new Error('Program linking failed');
+}
+
 gl.useProgram(prog);
 
 // Fullscreen quad
@@ -947,7 +979,6 @@ function handleStart(e) {
 // ─────────────────────────────────────────────────────────────────
 // EVENTS
 // ─────────────────────────────────────────────────────────────────
-const overlay = document.getElementById('overlay');
 overlay.addEventListener('click', handleStart);
 overlay.addEventListener('touchend', handleStart);
 document.getElementById('btn-next').addEventListener('click', nextPattern);
