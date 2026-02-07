@@ -3,384 +3,945 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TinyClaw Visualizer v2 - Trippy Edition</title>
+    <title>TinyClaw Visualizer v3 - Generative Engine</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { overflow: hidden; background: #000; }
+        body { overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
         canvas { display: block; }
         #overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            display: flex; align-items: center; justify-content: center;
-            background: rgba(0,0,0,0.9); cursor: pointer; z-index: 100;
-            transition: opacity 0.5s;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.95); cursor: pointer; z-index: 100;
+            transition: opacity 0.8s;
         }
         #overlay.hidden { opacity: 0; pointer-events: none; }
-        #text { text-align: center; color: #fff; font-family: 'Courier New', monospace; }
-        h1 { font-size: 2.5em; margin-bottom: 10px; letter-spacing: 4px;
-             background: linear-gradient(90deg, #ff00ff, #00ffff, #ff00ff);
+        h1 { font-size: 3em; letter-spacing: 8px; margin-bottom: 20px;
+             background: linear-gradient(90deg, #4a9eff, #ff6b35, #4a9eff);
+             background-size: 200% 100%;
              -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-             animation: hue 3s linear infinite; }
-        @keyframes hue { 0%,100%{filter:hue-rotate(0deg);} 50%{filter:hue-rotate(180deg);} }
-        p { color: #666; font-size: 0.9em; }
-        #info { position: fixed; bottom: 10px; left: 10px; color: #333; 
-                font-family: monospace; font-size: 11px; z-index: 50; }
+             animation: flow 4s linear infinite; }
+        @keyframes flow { 0%{background-position:0% 50%} 100%{background-position:200% 50%} }
+        p { color: #444; font-size: 0.85em; }
+        #seed-display { color: #333; font-size: 0.7em; margin-top: 30px; }
+        #info { position: fixed; bottom: 10px; left: 10px; color: #222; font-size: 10px; z-index: 50; }
+        #controls { position: fixed; top: 10px; right: 10px; color: #333; font-size: 11px; z-index: 50; }
+        #controls span { cursor: pointer; margin-left: 10px; opacity: 0.5; transition: opacity 0.2s; }
+        #controls span:hover { opacity: 1; }
     </style>
 </head>
 <body>
     <div id="overlay">
-        <div id="text">
-            <h1>VISUALIZER</h1>
-            <p>[ click to enter the void ]</p>
-        </div>
+        <h1>VISUALIZER</h1>
+        <p>[ click to enter ]</p>
+        <div id="seed-display"></div>
     </div>
     <div id="info"></div>
+    <div id="controls">
+        <span id="btn-next" title="Next pattern">[N]ext</span>
+        <span id="btn-seed" title="New seed">[R]andomize</span>
+    </div>
     <canvas id="canvas"></canvas>
 
-    <script>
-    const canvas = document.getElementById('canvas');
-    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
-    const info = document.getElementById('info');
+<script>
+// ═══════════════════════════════════════════════════════════════
+// TINYCLAW VISUALIZER v3 - Generative Art Engine
+// ═══════════════════════════════════════════════════════════════
 
-    if (!gl) {
-        alert('WebGL not supported!');
+const canvas = document.getElementById('canvas');
+const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+const info = document.getElementById('info');
+
+// ─────────────────────────────────────────────────────────────────
+// SEED & RANDOM SYSTEM
+// ─────────────────────────────────────────────────────────────────
+let SEED = Math.random() * 999999 | 0;
+document.getElementById('seed-display').textContent = `seed: ${SEED}`;
+
+// Mulberry32 PRNG - deterministic from seed
+function mulberry32(a) {
+    return function() {
+        let t = a += 0x6D2B79F5;
+        t = Math.imul(t ^ t >>> 15, t | 1);
+        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
     }
+}
 
-    let audioCtx, analyser, freqArray;
-    let startTime = Date.now();
-    let mode = 0;
-    let modeTime = 0;
-    let modeDuration = 15000;
-    let transitionDuration = 3000;
+let rng = mulberry32(SEED);
 
-    function resize() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-        if (gl) gl.viewport(0, 0, canvas.width, canvas.height);
+function seededRandom() { return rng(); }
+function seededRange(min, max) { return min + rng() * (max - min); }
+function seededInt(min, max) { return Math.floor(seededRange(min, max + 1)); }
+function seededChoice(arr) { return arr[seededInt(0, arr.length - 1)]; }
+
+// ─────────────────────────────────────────────────────────────────
+// COLOR PALETTES (seeded selection)
+// ─────────────────────────────────────────────────────────────────
+const PALETTES = [
+    // Ocean sunset (like reference image)
+    [[0.0, 0.4, 1.0], [1.0, 0.4, 0.2], [1.0, 0.9, 0.8], [0.1, 0.1, 0.3]],
+    // Neon cyber
+    [[1.0, 0.0, 0.8], [0.0, 1.0, 1.0], [1.0, 1.0, 0.0], [0.1, 0.0, 0.2]],
+    // Forest
+    [[0.2, 0.8, 0.3], [0.6, 0.4, 0.2], [0.9, 0.95, 0.8], [0.05, 0.15, 0.1]],
+    // Fire
+    [[1.0, 0.3, 0.0], [1.0, 0.8, 0.0], [1.0, 1.0, 0.9], [0.2, 0.0, 0.0]],
+    // Aurora
+    [[0.3, 1.0, 0.5], [0.5, 0.2, 1.0], [1.0, 0.3, 0.5], [0.02, 0.05, 0.1]],
+    // Monochrome
+    [[0.9, 0.9, 0.95], [0.5, 0.5, 0.55], [0.2, 0.2, 0.25], [0.02, 0.02, 0.03]],
+    // Vaporwave
+    [[1.0, 0.4, 0.7], [0.4, 0.8, 1.0], [1.0, 0.95, 0.6], [0.1, 0.05, 0.2]],
+    // Deep sea
+    [[0.0, 0.8, 0.8], [0.0, 0.3, 0.6], [0.8, 1.0, 1.0], [0.0, 0.05, 0.15]],
+];
+
+let currentPalette;
+
+function selectPalette() {
+    currentPalette = seededChoice(PALETTES);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PATTERN PARAMETERS (seeded)
+// ─────────────────────────────────────────────────────────────────
+let params = {};
+
+function generateParams() {
+    params = {
+        // Flow field
+        flowScale: seededRange(1.5, 4.0),
+        flowSpeed: seededRange(0.1, 0.4),
+        flowOctaves: seededInt(2, 5),
+        flowComplexity: seededRange(0.5, 2.0),
+        
+        // Stipple/dots
+        dotDensity: seededRange(30, 80),
+        dotSize: seededRange(0.003, 0.012),
+        dotWaveAmp: seededRange(0.1, 0.4),
+        dotWaveFreq: seededRange(2, 8),
+        
+        // Organic
+        branchCount: seededInt(3, 8),
+        branchDepth: seededInt(4, 7),
+        growthSpeed: seededRange(0.2, 0.6),
+        
+        // Waves
+        waveCount: seededInt(3, 7),
+        waveCurvature: seededRange(0.5, 2.0),
+        waveThickness: seededRange(0.02, 0.08),
+        
+        // Colors
+        colorShift: seededRange(0, 6.28),
+        colorSpeed: seededRange(0.05, 0.2),
+        
+        // Global
+        rotationSpeed: seededRange(-0.1, 0.1),
+        zoomPulse: seededRange(0.05, 0.2),
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// AUDIO SYSTEM
+// ─────────────────────────────────────────────────────────────────
+let audioCtx, analyser, freqArray;
+let bass = 0, mid = 0, treble = 0;
+let smoothBass = 0, smoothMid = 0, smoothTreble = 0;
+
+function getFreqRange(start, end) {
+    if (!freqArray) return 0;
+    let sum = 0;
+    const s = Math.floor(start * freqArray.length);
+    const e = Math.floor(end * freqArray.length);
+    for (let i = s; i < e; i++) sum += freqArray[i];
+    return sum / (e - s) / 255;
+}
+
+function updateAudio() {
+    if (analyser && freqArray) {
+        analyser.getByteFrequencyData(freqArray);
+        bass = getFreqRange(0, 0.1);
+        mid = getFreqRange(0.1, 0.5);
+        treble = getFreqRange(0.5, 1.0);
     }
-    window.addEventListener('resize', resize);
-    resize();
+    smoothBass = smoothBass * 0.8 + bass * 0.2;
+    smoothMid = smoothMid * 0.8 + mid * 0.2;
+    smoothTreble = smoothTreble * 0.85 + treble * 0.15;
+}
 
-    const vertexShaderSrc = `
-        attribute vec2 position;
-        void main() {
-            gl_Position = vec4(position, 0.0, 1.0);
-        }
-    `;
+// ─────────────────────────────────────────────────────────────────
+// WEBGL SETUP
+// ─────────────────────────────────────────────────────────────────
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+}
+window.addEventListener('resize', resize);
+resize();
 
-    const fragmentShaderSrc = `
-        precision highp float;
-        uniform float time;
-        uniform vec2 resolution;
-        uniform float bass;
-        uniform float mid;
-        uniform float treble;
-        uniform float mode;
-        uniform float transition;
-        
-        #define PI 3.14159265359
-        
-        float hash(vec2 p) {
-            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-        }
-        
-        float noise(vec2 p) {
-            vec2 i = floor(p);
-            vec2 f = fract(p);
-            f = f * f * (3.0 - 2.0 * f);
-            return mix(
-                mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
-                mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x),
-                f.y
-            );
-        }
-        
-        float fbm(vec2 p) {
-            float value = 0.0;
-            float amplitude = 0.5;
-            for (int i = 0; i < 5; i++) {
-                value += amplitude * noise(p);
-                p *= 2.0;
-                amplitude *= 0.5;
-            }
-            return value;
-        }
-        
-        vec2 kaleidoscope(vec2 uv, float segments) {
-            float angle = atan(uv.y, uv.x);
-            float radius = length(uv);
-            angle = mod(angle, PI * 2.0 / segments);
-            angle = abs(angle - PI / segments);
-            return vec2(cos(angle), sin(angle)) * radius;
-        }
-        
-        // Mode 0: Fractal Warp
-        vec3 fractalWarp(vec2 uv, float t) {
-            vec2 p = uv * 3.0;
-            p += fbm(p + t * 0.2) * bass * 2.0;
-            float f = fbm(p + fbm(p + fbm(p)));
-            vec3 col = mix(vec3(0.1, 0.0, 0.2), vec3(1.0, 0.0, 0.5), f);
-            col = mix(col, vec3(0.0, 1.0, 1.0), f * f);
-            col += vec3(0.5, 0.2, 0.8) * (1.0 - f) * bass;
-            return col;
-        }
-        
-        // Mode 1: Kaleidoscope Tunnel
-        vec3 kaleidoscopeTunnel(vec2 uv, float t) {
-            float segments = 6.0 + bass * 4.0;
-            vec2 kUv = kaleidoscope(uv, segments);
-            float tunnel = 1.0 / (length(kUv) + 0.1);
-            tunnel += sin(atan(kUv.y, kUv.x) * 8.0 + t * 2.0) * 0.2;
-            vec3 col;
-            col.r = sin(tunnel * 2.0 + t) * 0.5 + 0.5;
-            col.g = sin(tunnel * 2.0 + t + 2.094) * 0.5 + 0.5;
-            col.b = sin(tunnel * 2.0 + t + 4.188) * 0.5 + 0.5;
-            col *= tunnel * 0.5;
-            col = pow(col, vec3(0.8 + treble * 0.5));
-            return col;
-        }
-        
-        // Mode 2: Glitch Grid
-        vec3 glitchGrid(vec2 uv, float t) {
-            float glitchLine = step(0.98, fract(uv.y * 50.0 + t * 5.0));
-            float glitch = step(0.95, hash(vec2(floor(t * 10.0), floor(uv.y * 20.0))));
-            uv.x += glitch * (hash(vec2(t, uv.y)) - 0.5) * 0.3 * treble;
-            vec2 blockUv = floor(uv * 8.0) / 8.0;
-            float block = hash(blockUv + floor(t * 2.0));
-            vec3 col;
-            col.r = step(0.5, fract(block * 13.0 + uv.x * 5.0));
-            col.g = step(0.5, fract(block * 17.0 + uv.y * 5.0));
-            col.b = step(0.5, fract(block * 23.0));
-            col = mix(col, vec3(1.0), glitchLine);
-            col *= 0.8 + bass * 0.4;
-            col *= 0.9 + 0.1 * sin(uv.y * resolution.y * 0.5);
-            return col;
-        }
-        
-        // Mode 3: Liquid Metal
-        vec3 liquidMetal(vec2 uv, float t) {
-            vec2 p = uv * 2.0;
-            for (int i = 0; i < 5; i++) {
-                p = abs(p) / dot(p, p) - vec2(0.9 + bass * 0.3);
-                float c = cos(t * 0.3);
-                float s = sin(t * 0.3);
-                p = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
-            }
-            float f = length(p);
-            vec3 col;
-            col.r = sin(f * 3.0) * 0.5 + 0.5;
-            col.g = sin(f * 3.0 + 2.0) * 0.5 + 0.5;
-            col.b = sin(f * 3.0 + 4.0) * 0.5 + 0.5;
-            col = pow(col, vec3(1.5));
-            col *= 1.0 + mid * 0.5;
-            return col;
-        }
-        
-        // Mode 4: Data Mosh
-        vec3 dataMosh(vec2 uv, float t) {
-            vec2 block = floor(uv * (4.0 + bass * 8.0));
-            float corrupt = step(0.7, hash(block + floor(t * 3.0)));
-            vec2 offset;
-            offset.x = corrupt * (hash(block) - 0.5) * 0.5;
-            offset.y = corrupt * (hash(block + vec2(1.0, 0.0)) - 0.5) * 0.2;
-            uv += offset * treble;
-            float band = floor(uv.y * 20.0 + t * 5.0);
-            vec3 col = vec3(
-                hash(vec2(band, 1.0)),
-                hash(vec2(band, 2.0)),
-                hash(vec2(band, 3.0))
-            );
-            float sortLine = step(0.8, sin(uv.y * 30.0 + t * 10.0));
-            col = mix(col, col.gbr, sortLine);
-            return col;
-        }
-        
-        // Mode 5: Neon Geometry  
-        vec3 neonGeometry(vec2 uv, float t) {
-            vec2 p = uv * 5.0;
-            float a = t * 0.2;
-            float c = cos(a);
-            float s = sin(a);
-            p = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
-            vec2 hp = abs(p);
-            float hex = max(hp.x * 0.866 + hp.y * 0.5, hp.y);
-            hex = fract(hex + t * 0.5);
-            float glow = 0.02 / abs(hex - 0.5);
-            glow *= 1.0 + bass * 2.0;
-            vec3 col;
-            col.r = glow * (0.5 + 0.5 * sin(t));
-            col.g = glow * (0.5 + 0.5 * sin(t + 2.094));
-            col.b = glow * (0.5 + 0.5 * sin(t + 4.188));
-            float lines = abs(sin(p.x * 10.0 + t * 2.0) * sin(p.y * 10.0 - t));
-            col += vec3(0.1, 0.3, 0.5) * lines * mid;
-            return col;
-        }
-        
-        vec3 getMode(int m, vec2 uv, float t) {
-            if (m == 0) return fractalWarp(uv, t);
-            if (m == 1) return kaleidoscopeTunnel(uv, t);
-            if (m == 2) return glitchGrid(uv, t);
-            if (m == 3) return liquidMetal(uv, t);
-            if (m == 4) return dataMosh(uv, t);
-            return neonGeometry(uv, t);
-        }
-        
-        void main() {
-            vec2 uv = (gl_FragCoord.xy - resolution * 0.5) / min(resolution.x, resolution.y);
-            float t = time;
-            
-            int currentMode = int(mod(mode, 6.0));
-            int nextMode = int(mod(mode + 1.0, 6.0));
-            
-            vec3 col1 = getMode(currentMode, uv, t);
-            vec3 col2 = getMode(nextMode, uv, t);
-            vec3 col = mix(col1, col2, transition);
-            
-            // Random color glitch
-            if (hash(vec2(t * 100.0, 0.0)) > 0.97) {
-                col = col.gbr;
-            }
-            
-            // Chromatic aberration
-            float aberration = 0.003 + treble * 0.01;
-            col.r *= 1.0 + aberration * 10.0 * length(uv);
-            col.b *= 1.0 - aberration * 5.0 * length(uv);
-            
-            // Scanlines
-            col *= 0.95 + 0.05 * sin(gl_FragCoord.y * 2.0);
-            
-            // Vignette
-            col *= 1.0 - length(uv) * 0.5;
-            
-            // Boost with bass
-            col *= 0.8 + bass * 0.4;
-            
-            gl_FragColor = vec4(col, 1.0);
-        }
-    `;
+const vertSrc = `attribute vec2 position; void main(){gl_Position=vec4(position,0,1);}`;
 
-    function createShader(type, source) {
-        const shader = gl.createShader(type);
-        gl.shaderSource(shader, source);
-        gl.compileShader(shader);
-        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-            console.error('Shader error:', gl.getShaderInfoLog(shader));
-            return null;
-        }
-        return shader;
+// ═══════════════════════════════════════════════════════════════
+// MAIN SHADER - All patterns in one uber-shader
+// ═══════════════════════════════════════════════════════════════
+const fragSrc = `
+precision highp float;
+
+uniform float time;
+uniform vec2 resolution;
+uniform float bass;
+uniform float mid;
+uniform float treble;
+uniform float seed;
+uniform int pattern;
+uniform float transition;
+
+// Palette uniforms
+uniform vec3 color1;
+uniform vec3 color2;
+uniform vec3 color3;
+uniform vec3 color4;
+
+// Pattern params
+uniform float flowScale;
+uniform float flowSpeed;
+uniform float dotDensity;
+uniform float dotSize;
+uniform float dotWaveAmp;
+uniform float dotWaveFreq;
+uniform float waveCount;
+uniform float waveCurvature;
+uniform float waveThickness;
+uniform float colorShift;
+uniform float rotationSpeed;
+uniform float zoomPulse;
+
+#define PI 3.14159265359
+#define TAU 6.28318530718
+
+// ─────────────────────────────────────────────────────────────────
+// NOISE FUNCTIONS
+// ─────────────────────────────────────────────────────────────────
+float hash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+float hash3(vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+vec2 hash2(vec2 p) {
+    return vec2(hash(p), hash(p + vec2(127.1, 311.7)));
+}
+
+float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+        mix(hash(i), hash(i + vec2(1, 0)), f.x),
+        mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x),
+        f.y
+    );
+}
+
+float noise3(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+        mix(mix(hash3(i), hash3(i + vec3(1,0,0)), f.x),
+            mix(hash3(i + vec3(0,1,0)), hash3(i + vec3(1,1,0)), f.x), f.y),
+        mix(mix(hash3(i + vec3(0,0,1)), hash3(i + vec3(1,0,1)), f.x),
+            mix(hash3(i + vec3(0,1,1)), hash3(i + vec3(1,1,1)), f.x), f.y),
+        f.z
+    );
+}
+
+// Fractal Brownian Motion
+float fbm(vec2 p, int octaves) {
+    float value = 0.0;
+    float amp = 0.5;
+    float freq = 1.0;
+    for (int i = 0; i < 8; i++) {
+        if (i >= octaves) break;
+        value += amp * noise(p * freq);
+        freq *= 2.0;
+        amp *= 0.5;
     }
+    return value;
+}
 
-    const vertexShader = createShader(gl.VERTEX_SHADER, vertexShaderSrc);
-    const fragmentShader = createShader(gl.FRAGMENT_SHADER, fragmentShaderSrc);
+// Curl noise for flow fields
+vec2 curl(vec2 p, float t) {
+    float eps = 0.01;
+    float n = noise3(vec3(p, t));
+    float a = noise3(vec3(p + vec2(eps, 0), t));
+    float b = noise3(vec3(p + vec2(0, eps), t));
+    return vec2(a - n, -(b - n)) / eps;
+}
 
-    if (!vertexShader || !fragmentShader) {
-        console.error('Shader compilation failed');
-    }
+// ─────────────────────────────────────────────────────────────────
+// DISTANCE FUNCTIONS
+// ─────────────────────────────────────────────────────────────────
+float sdCircle(vec2 p, float r) {
+    return length(p) - r;
+}
 
-    const program = gl.createProgram();
-    gl.attachShader(program, vertexShader);
-    gl.attachShader(program, fragmentShader);
-    gl.linkProgram(program);
+float sdBox(vec2 p, vec2 b) {
+    vec2 d = abs(p) - b;
+    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}
 
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-        console.error('Program link error:', gl.getProgramInfoLog(program));
-    }
-
-    gl.useProgram(program);
-
-    const positions = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
-    const buffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
-
-    const positionLoc = gl.getAttribLocation(program, 'position');
-    gl.enableVertexAttribArray(positionLoc);
-    gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
-
-    const timeLoc = gl.getUniformLocation(program, 'time');
-    const resolutionLoc = gl.getUniformLocation(program, 'resolution');
-    const bassLoc = gl.getUniformLocation(program, 'bass');
-    const midLoc = gl.getUniformLocation(program, 'mid');
-    const trebleLoc = gl.getUniformLocation(program, 'treble');
-    const modeLoc = gl.getUniformLocation(program, 'mode');
-    const transitionLoc = gl.getUniformLocation(program, 'transition');
-
-    function getFrequencyRange(start, end) {
-        if (!freqArray) return 0;
-        let sum = 0;
-        const startIdx = Math.floor(start * freqArray.length);
-        const endIdx = Math.floor(end * freqArray.length);
-        for (let i = startIdx; i < endIdx; i++) {
-            sum += freqArray[i];
-        }
-        return sum / (endIdx - startIdx) / 255;
-    }
-
-    let lastBass = 0, lastMid = 0, lastTreble = 0;
+// ─────────────────────────────────────────────────────────────────
+// PATTERN 0: FLOWING STIPPLE WAVES (like reference image)
+// ─────────────────────────────────────────────────────────────────
+vec3 stippleWaves(vec2 uv, float t) {
+    vec3 col = color4; // Background
     
-    function render() {
-        const time = (Date.now() - startTime) / 1000;
-        
-        let bass = 0, mid = 0, treble = 0;
-        if (analyser && freqArray) {
-            analyser.getByteFrequencyData(freqArray);
-            bass = getFrequencyRange(0, 0.1);
-            mid = getFrequencyRange(0.1, 0.5);
-            treble = getFrequencyRange(0.5, 1.0);
-            bass = lastBass * 0.7 + bass * 0.3;
-            mid = lastMid * 0.7 + mid * 0.3;
-            treble = lastTreble * 0.7 + treble * 0.3;
-            lastBass = bass; lastMid = mid; lastTreble = treble;
-        }
-        
-        const elapsed = Date.now() - modeTime;
-        const cycleTime = modeDuration + transitionDuration;
-        const cyclePos = elapsed % cycleTime;
-        
-        let transition = 0;
-        if (cyclePos > modeDuration) {
-            transition = (cyclePos - modeDuration) / transitionDuration;
-        }
-        
-        if (elapsed >= cycleTime) {
-            mode = (mode + 1) % 6;
-            modeTime = Date.now();
-        }
-        
-        gl.uniform1f(timeLoc, time);
-        gl.uniform2f(resolutionLoc, canvas.width, canvas.height);
-        gl.uniform1f(bassLoc, bass);
-        gl.uniform1f(midLoc, mid);
-        gl.uniform1f(trebleLoc, treble);
-        gl.uniform1f(modeLoc, mode);
-        gl.uniform1f(transitionLoc, transition);
-        
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-        
-        const modeNames = ['Fractal Warp', 'Kaleidoscope', 'Glitch Grid', 'Liquid Metal', 'Data Mosh', 'Neon Geometry'];
-        info.textContent = `Mode: ${modeNames[mode]} | Bass: ${bass.toFixed(2)} | Treble: ${treble.toFixed(2)}`;
-        
-        requestAnimationFrame(render);
+    // Create flowing 3D surface
+    float z = 0.0;
+    for (float i = 1.0; i <= 5.0; i++) {
+        float freq = i * dotWaveFreq * 0.5;
+        float amp = dotWaveAmp / i;
+        z += sin(uv.x * freq + t * flowSpeed * i + seed) * amp;
+        z += cos(uv.y * freq * 0.7 + t * flowSpeed * 0.8 * i) * amp * 0.7;
     }
-
-    async function startAudio() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const source = audioCtx.createMediaStreamSource(stream);
-            analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 512;
-            analyser.smoothingTimeConstant = 0.8;
-            source.connect(analyser);
-            freqArray = new Uint8Array(analyser.frequencyBinCount);
-        } catch (err) {
-            console.warn('Mic access denied, running without audio:', err);
-        }
-        document.getElementById('overlay').classList.add('hidden');
-        modeTime = Date.now();
+    
+    // Bass makes waves breathe
+    z *= 1.0 + bass * 0.5;
+    
+    // Normal for lighting
+    float eps = 0.01;
+    float zx = 0.0, zy = 0.0;
+    for (float i = 1.0; i <= 5.0; i++) {
+        float freq = i * dotWaveFreq * 0.5;
+        float amp = dotWaveAmp / i;
+        zx += cos(uv.x * freq + t * flowSpeed * i + seed) * amp * freq;
+        zy += -sin(uv.y * freq * 0.7 + t * flowSpeed * 0.8 * i) * amp * 0.7 * freq * 0.7;
     }
+    vec3 normal = normalize(vec3(-zx, -zy, 1.0));
+    
+    // Stipple grid with flow distortion
+    vec2 flowOffset = curl(uv * flowScale, t * flowSpeed) * 0.1;
+    vec2 stippleUV = (uv + flowOffset) * dotDensity;
+    vec2 gridId = floor(stippleUV);
+    vec2 gridUV = fract(stippleUV) - 0.5;
+    
+    // Randomize dot position within cell
+    vec2 randOffset = (hash2(gridId + seed) - 0.5) * 0.5;
+    vec2 dotPos = gridUV - randOffset;
+    
+    // Dot size varies with surface angle and audio
+    float dotRadius = dotSize * dotDensity * (0.3 + normal.z * 0.7);
+    dotRadius *= 1.0 + mid * 0.3;
+    
+    float dot = smoothstep(dotRadius, dotRadius * 0.5, length(dotPos));
+    
+    // Color based on surface orientation and position
+    float colorMix = normal.z * 0.5 + 0.5;
+    colorMix += sin(uv.x * 3.0 + t * 0.2 + colorShift) * 0.2;
+    
+    vec3 warmColor = mix(color2, color3, colorMix);
+    vec3 coolColor = mix(color1, color4, 1.0 - colorMix);
+    vec3 dotColor = mix(coolColor, warmColor, colorMix + z * 0.5);
+    
+    // Add glow
+    float glow = exp(-length(dotPos) * 20.0) * 0.3;
+    
+    col = mix(col, dotColor, dot);
+    col += dotColor * glow * (0.5 + treble * 0.5);
+    
+    return col;
+}
 
-    document.getElementById('overlay').addEventListener('click', startAudio);
-    render();
-    </script>
+// ─────────────────────────────────────────────────────────────────
+// PATTERN 1: NEURAL NETWORK / NEURONS
+// ─────────────────────────────────────────────────────────────────
+vec3 neurons(vec2 uv, float t) {
+    vec3 col = color4;
+    
+    // Create multiple neuron centers
+    float neuronGlow = 0.0;
+    vec3 neuronColor = vec3(0.0);
+    
+    for (float i = 0.0; i < 12.0; i++) {
+        // Neuron position (slowly drifting)
+        vec2 pos = vec2(
+            sin(seed + i * 1.7 + t * 0.1) * 0.6,
+            cos(seed + i * 2.3 + t * 0.13) * 0.6
+        );
+        
+        float dist = length(uv - pos);
+        
+        // Cell body
+        float body = smoothstep(0.08, 0.02, dist);
+        body *= 1.0 + bass * 0.5;
+        
+        // Dendrites (branching lines)
+        float angle = atan(uv.y - pos.y, uv.x - pos.x);
+        float branches = 5.0 + mod(i, 4.0);
+        float dendrite = abs(sin(angle * branches + i + t * 0.5));
+        dendrite = smoothstep(0.9, 1.0, dendrite);
+        dendrite *= smoothstep(0.5, 0.08, dist);
+        dendrite *= smoothstep(0.02, 0.08, dist);
+        
+        // Axon (long projection)
+        float axonAngle = seed + i * 0.5;
+        vec2 axonDir = vec2(cos(axonAngle), sin(axonAngle));
+        float axonDist = dot(uv - pos, axonDir);
+        float axonPerp = length((uv - pos) - axonDir * axonDist);
+        float axon = smoothstep(0.015, 0.005, axonPerp);
+        axon *= smoothstep(0.0, 0.1, axonDist);
+        axon *= smoothstep(0.8, 0.3, axonDist);
+        
+        // Pulse along axon
+        float pulse = sin(axonDist * 20.0 - t * 5.0 - i) * 0.5 + 0.5;
+        pulse *= smoothstep(0.0, 0.1, axonDist);
+        
+        float neuron = body + dendrite * 0.5 + axon * (0.5 + pulse * 0.5 * treble);
+        
+        vec3 nColor = mix(color1, color2, mod(i * 0.3, 1.0));
+        neuronColor += nColor * neuron;
+        neuronGlow += neuron;
+    }
+    
+    // Synaptic connections (random sparks)
+    float spark = 0.0;
+    for (float i = 0.0; i < 20.0; i++) {
+        vec2 sparkPos = vec2(
+            noise(vec2(i, t * 2.0 + seed)) * 2.0 - 1.0,
+            noise(vec2(i + 50.0, t * 2.0 + seed)) * 2.0 - 1.0
+        );
+        float s = smoothstep(0.03, 0.0, length(uv - sparkPos));
+        s *= step(0.97, noise(vec2(i * 10.0, floor(t * 10.0))));
+        spark += s;
+    }
+    
+    col = mix(col, neuronColor, min(neuronGlow, 1.0));
+    col += color3 * spark * (1.0 + treble * 2.0);
+    
+    return col;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PATTERN 2: ORGANIC FLOW FIELD
+// ─────────────────────────────────────────────────────────────────
+vec3 flowField(vec2 uv, float t) {
+    vec3 col = color4;
+    
+    // Particle trace simulation
+    float flow = 0.0;
+    vec3 flowColor = vec3(0.0);
+    
+    for (float i = 0.0; i < 50.0; i++) {
+        // Start position
+        vec2 pos = vec2(
+            hash(vec2(i, seed)) * 2.0 - 1.0,
+            hash(vec2(i + 100.0, seed)) * 2.0 - 1.0
+        );
+        
+        // Trace path
+        vec2 vel;
+        for (float j = 0.0; j < 30.0; j++) {
+            vel = curl(pos * flowScale, t * flowSpeed + seed * 0.01);
+            pos += vel * 0.02;
+            
+            float dist = length(uv - pos);
+            float line = smoothstep(0.02, 0.005, dist);
+            line *= smoothstep(30.0, 0.0, j); // Fade along path
+            
+            flow += line * 0.1;
+            flowColor += mix(color1, color2, j / 30.0) * line * 0.1;
+        }
+    }
+    
+    // Audio reactive intensity
+    flow *= 1.0 + bass * 0.5;
+    flowColor *= 1.0 + mid * 0.3;
+    
+    col = mix(col, flowColor, min(flow, 1.0));
+    
+    // Add subtle noise texture
+    float tex = fbm(uv * 10.0 + t * 0.1, 4) * 0.1;
+    col += color3 * tex * treble;
+    
+    return col;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PATTERN 3: BRANCHING TREES / LIGHTNING
+// ─────────────────────────────────────────────────────────────────
+vec3 branches(vec2 uv, float t) {
+    vec3 col = color4;
+    
+    float branchGlow = 0.0;
+    vec3 branchColor = vec3(0.0);
+    
+    // Multiple tree origins
+    for (float tree = 0.0; tree < 4.0; tree++) {
+        vec2 origin = vec2(
+            sin(seed + tree * 2.5) * 0.5,
+            -0.8 + tree * 0.1
+        );
+        
+        // Recursive-ish branching
+        float treeGlow = 0.0;
+        
+        for (float b = 0.0; b < 64.0; b++) {
+            // Branch parameters from index
+            float depth = floor(log2(b + 2.0));
+            float branchId = b - pow(2.0, depth) + 1.0;
+            
+            // Branch angle
+            float baseAngle = PI * 0.5 + sin(seed + tree) * 0.3;
+            float spread = 0.8 / (depth + 1.0);
+            float angle = baseAngle + (branchId / pow(2.0, depth) - 0.5) * spread * PI;
+            angle += sin(t * 0.5 + b + tree) * 0.1 * bass;
+            
+            // Branch line
+            vec2 dir = vec2(cos(angle), sin(angle));
+            float len = 0.3 / (depth + 1.0);
+            
+            // Find parent endpoint (simplified)
+            vec2 branchStart = origin + dir * depth * 0.15;
+            vec2 branchEnd = branchStart + dir * len;
+            
+            // Distance to line segment
+            vec2 pa = uv - branchStart;
+            vec2 ba = branchEnd - branchStart;
+            float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+            float dist = length(pa - ba * h);
+            
+            float thickness = 0.015 / (depth + 1.0);
+            float branch = smoothstep(thickness, thickness * 0.3, dist);
+            
+            treeGlow += branch * 0.5 / (depth + 1.0);
+        }
+        
+        branchGlow += treeGlow;
+        branchColor += mix(color1, color2, tree / 4.0) * treeGlow;
+    }
+    
+    // Growth pulse
+    branchGlow *= 0.8 + bass * 0.4;
+    
+    col = mix(col, branchColor, min(branchGlow, 1.0));
+    
+    // Leaf particles
+    for (float i = 0.0; i < 30.0; i++) {
+        vec2 leafPos = vec2(
+            sin(i * 1.7 + t * 0.3 + seed) * 0.8,
+            cos(i * 2.3 + t * 0.2) * 0.8
+        );
+        leafPos.y -= mod(t * 0.1 + i * 0.1, 2.0) - 1.0;
+        
+        float leaf = smoothstep(0.02, 0.01, length(uv - leafPos));
+        col += color3 * leaf * 0.5;
+    }
+    
+    return col;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PATTERN 4: REACTION-DIFFUSION (ORGANIC BLOBS)
+// ─────────────────────────────────────────────────────────────────
+vec3 reaction(vec2 uv, float t) {
+    // Simplified reaction-diffusion approximation
+    float scale = 5.0 + bass * 3.0;
+    vec2 p = uv * scale;
+    
+    float pattern = 0.0;
+    for (float i = 1.0; i <= 4.0; i++) {
+        float freq = i * 2.0;
+        pattern += sin(p.x * freq + t * 0.2 * i + seed) * 
+                   sin(p.y * freq * 1.3 + t * 0.15 * i) / i;
+        
+        // Add curl distortion
+        vec2 c = curl(p * 0.3, t * 0.1 + seed * 0.1);
+        p += c * 0.2 / i;
+    }
+    
+    pattern = pattern * 0.5 + 0.5;
+    
+    // Create cell-like structures
+    float cells = smoothstep(0.45, 0.55, pattern);
+    float edges = smoothstep(0.02, 0.0, abs(pattern - 0.5));
+    
+    vec3 col = mix(color4, color1, cells);
+    col = mix(col, color2, edges * (1.0 + treble));
+    col += color3 * edges * mid * 0.5;
+    
+    return col;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PATTERN 5: VORONOI CELLS
+// ─────────────────────────────────────────────────────────────────
+vec3 voronoi(vec2 uv, float t) {
+    vec2 p = uv * (8.0 + bass * 4.0);
+    
+    vec2 n = floor(p);
+    vec2 f = fract(p);
+    
+    float minDist = 10.0;
+    float secondDist = 10.0;
+    vec2 minPoint;
+    
+    for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+            vec2 neighbor = vec2(float(i), float(j));
+            vec2 point = hash2(n + neighbor + seed);
+            
+            // Animate points
+            point = 0.5 + 0.5 * sin(t * 0.5 + 6.28 * point);
+            
+            vec2 diff = neighbor + point - f;
+            float dist = length(diff);
+            
+            if (dist < minDist) {
+                secondDist = minDist;
+                minDist = dist;
+                minPoint = point;
+            } else if (dist < secondDist) {
+                secondDist = dist;
+            }
+        }
+    }
+    
+    float edge = secondDist - minDist;
+    float edgeLine = smoothstep(0.0, 0.05, edge);
+    
+    vec3 cellColor = mix(color1, color2, minPoint.x);
+    cellColor = mix(cellColor, color3, minPoint.y * 0.5);
+    
+    vec3 col = cellColor * edgeLine;
+    col += color3 * (1.0 - edgeLine) * (1.0 + mid);
+    
+    // Glow at cell centers
+    float centerGlow = smoothstep(0.3, 0.0, minDist);
+    col += color3 * centerGlow * treble * 0.5;
+    
+    return col;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PATTERN 6: WAVEFORM RIBBONS
+// ─────────────────────────────────────────────────────────────────
+vec3 ribbons(vec2 uv, float t) {
+    vec3 col = color4;
+    
+    for (float i = 0.0; i < waveCount + 3.0; i++) {
+        float offset = (i / (waveCount + 3.0) - 0.5) * 2.0;
+        float phase = seed + i * 1.5;
+        
+        // Wave function
+        float wave = offset;
+        wave += sin(uv.x * dotWaveFreq + t * flowSpeed + phase) * dotWaveAmp;
+        wave += sin(uv.x * dotWaveFreq * 2.3 + t * flowSpeed * 1.5 + phase) * dotWaveAmp * 0.5;
+        wave *= 1.0 + bass * 0.3;
+        
+        // Distance to wave
+        float dist = abs(uv.y - wave);
+        float ribbon = smoothstep(waveThickness, waveThickness * 0.3, dist);
+        
+        // Color gradient along ribbon
+        vec3 ribbonColor = mix(color1, color2, (uv.x + 1.0) * 0.5);
+        ribbonColor = mix(ribbonColor, color3, i / (waveCount + 3.0));
+        
+        // Glow
+        float glow = exp(-dist * 15.0) * 0.3;
+        
+        col = mix(col, ribbonColor, ribbon * 0.7);
+        col += ribbonColor * glow * (0.5 + treble * 0.5);
+    }
+    
+    return col;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PATTERN 7: PARTICLE GALAXY
+// ─────────────────────────────────────────────────────────────────
+vec3 galaxy(vec2 uv, float t) {
+    vec3 col = color4;
+    
+    // Spiral arms
+    float angle = atan(uv.y, uv.x);
+    float radius = length(uv);
+    
+    float spiral = sin(angle * 3.0 - radius * 10.0 + t * 0.5 + seed);
+    spiral = smoothstep(0.0, 1.0, spiral);
+    spiral *= smoothstep(1.5, 0.2, radius);
+    
+    col += mix(color1, color2, spiral) * spiral * 0.3;
+    
+    // Star particles
+    for (float i = 0.0; i < 100.0; i++) {
+        float starAngle = hash(vec2(i, seed)) * TAU;
+        float starRadius = pow(hash(vec2(i + 50.0, seed)), 0.5) * 1.2;
+        
+        // Orbit
+        starAngle += t * (0.1 + 0.2 / (starRadius + 0.1));
+        
+        vec2 starPos = vec2(cos(starAngle), sin(starAngle)) * starRadius;
+        
+        float dist = length(uv - starPos);
+        float star = smoothstep(0.015, 0.005, dist);
+        
+        // Twinkle
+        float twinkle = sin(t * 5.0 + i * 10.0) * 0.3 + 0.7;
+        twinkle += treble * 0.3;
+        
+        vec3 starColor = mix(color3, color2, hash(vec2(i * 3.0, seed)));
+        col += starColor * star * twinkle;
+    }
+    
+    // Central glow
+    float core = exp(-radius * 5.0);
+    col += color3 * core * (0.5 + bass * 0.5);
+    
+    return col;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// MAIN
+// ─────────────────────────────────────────────────────────────────
+void main() {
+    vec2 uv = (gl_FragCoord.xy - resolution * 0.5) / min(resolution.x, resolution.y);
+    
+    // Global rotation
+    float a = time * rotationSpeed;
+    uv = mat2(cos(a), -sin(a), sin(a), cos(a)) * uv;
+    
+    // Zoom pulse with bass
+    uv *= 1.0 + sin(time * 0.5) * zoomPulse * bass;
+    
+    vec3 col1, col2;
+    int p1 = pattern;
+    int p2 = int(mod(float(pattern + 1), 8.0));
+    
+    // Get current pattern
+    if (p1 == 0) col1 = stippleWaves(uv, time);
+    else if (p1 == 1) col1 = neurons(uv, time);
+    else if (p1 == 2) col1 = flowField(uv, time);
+    else if (p1 == 3) col1 = branches(uv, time);
+    else if (p1 == 4) col1 = reaction(uv, time);
+    else if (p1 == 5) col1 = voronoi(uv, time);
+    else if (p1 == 6) col1 = ribbons(uv, time);
+    else col1 = galaxy(uv, time);
+    
+    // Get next pattern for transition
+    if (p2 == 0) col2 = stippleWaves(uv, time);
+    else if (p2 == 1) col2 = neurons(uv, time);
+    else if (p2 == 2) col2 = flowField(uv, time);
+    else if (p2 == 3) col2 = branches(uv, time);
+    else if (p2 == 4) col2 = reaction(uv, time);
+    else if (p2 == 5) col2 = voronoi(uv, time);
+    else if (p2 == 6) col2 = ribbons(uv, time);
+    else col2 = galaxy(uv, time);
+    
+    vec3 col = mix(col1, col2, transition);
+    
+    // Post-processing
+    // Vignette
+    float vig = 1.0 - length(uv) * 0.4;
+    col *= vig;
+    
+    // Subtle film grain
+    col += (hash(gl_FragCoord.xy + time) - 0.5) * 0.02;
+    
+    gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+// ─────────────────────────────────────────────────────────────────
+// COMPILE & LINK SHADER
+// ─────────────────────────────────────────────────────────────────
+function createShader(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        console.error('Shader error:', gl.getShaderInfoLog(s));
+        return null;
+    }
+    return s;
+}
+
+const vs = createShader(gl.VERTEX_SHADER, vertSrc);
+const fs = createShader(gl.FRAGMENT_SHADER, fragSrc);
+const prog = gl.createProgram();
+gl.attachShader(prog, vs);
+gl.attachShader(prog, fs);
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+// Fullscreen quad
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+const pos = gl.getAttribLocation(prog, 'position');
+gl.enableVertexAttribArray(pos);
+gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+
+// Uniforms
+const uni = {
+    time: gl.getUniformLocation(prog, 'time'),
+    resolution: gl.getUniformLocation(prog, 'resolution'),
+    bass: gl.getUniformLocation(prog, 'bass'),
+    mid: gl.getUniformLocation(prog, 'mid'),
+    treble: gl.getUniformLocation(prog, 'treble'),
+    seed: gl.getUniformLocation(prog, 'seed'),
+    pattern: gl.getUniformLocation(prog, 'pattern'),
+    transition: gl.getUniformLocation(prog, 'transition'),
+    color1: gl.getUniformLocation(prog, 'color1'),
+    color2: gl.getUniformLocation(prog, 'color2'),
+    color3: gl.getUniformLocation(prog, 'color3'),
+    color4: gl.getUniformLocation(prog, 'color4'),
+    flowScale: gl.getUniformLocation(prog, 'flowScale'),
+    flowSpeed: gl.getUniformLocation(prog, 'flowSpeed'),
+    dotDensity: gl.getUniformLocation(prog, 'dotDensity'),
+    dotSize: gl.getUniformLocation(prog, 'dotSize'),
+    dotWaveAmp: gl.getUniformLocation(prog, 'dotWaveAmp'),
+    dotWaveFreq: gl.getUniformLocation(prog, 'dotWaveFreq'),
+    waveCount: gl.getUniformLocation(prog, 'waveCount'),
+    waveCurvature: gl.getUniformLocation(prog, 'waveCurvature'),
+    waveThickness: gl.getUniformLocation(prog, 'waveThickness'),
+    colorShift: gl.getUniformLocation(prog, 'colorShift'),
+    rotationSpeed: gl.getUniformLocation(prog, 'rotationSpeed'),
+    zoomPulse: gl.getUniformLocation(prog, 'zoomPulse'),
+};
+
+// ─────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────
+let pattern = 0;
+let patternTime = 0;
+let patternDuration = 20000;
+let transitionDuration = 3000;
+let startTime = Date.now();
+const PATTERN_COUNT = 8;
+const PATTERN_NAMES = [
+    'Stipple Waves', 'Neurons', 'Flow Field', 'Branches',
+    'Reaction', 'Voronoi', 'Ribbons', 'Galaxy'
+];
+
+// ─────────────────────────────────────────────────────────────────
+// INITIALIZE
+// ─────────────────────────────────────────────────────────────────
+function init() {
+    rng = mulberry32(SEED);
+    selectPalette();
+    generateParams();
+    pattern = seededInt(0, PATTERN_COUNT - 1);
+    patternTime = Date.now();
+}
+
+function newSeed() {
+    SEED = Math.random() * 999999 | 0;
+    document.getElementById('seed-display').textContent = `seed: ${SEED}`;
+    init();
+}
+
+function nextPattern() {
+    pattern = (pattern + 1) % PATTERN_COUNT;
+    patternTime = Date.now();
+}
+
+// ─────────────────────────────────────────────────────────────────
+// RENDER LOOP
+// ─────────────────────────────────────────────────────────────────
+function render() {
+    updateAudio();
+    
+    const time = (Date.now() - startTime) / 1000;
+    const elapsed = Date.now() - patternTime;
+    
+    let transition = 0;
+    if (elapsed > patternDuration) {
+        transition = Math.min((elapsed - patternDuration) / transitionDuration, 1.0);
+    }
+    if (elapsed > patternDuration + transitionDuration) {
+        pattern = (pattern + 1) % PATTERN_COUNT;
+        patternTime = Date.now();
+        transition = 0;
+    }
+    
+    // Set uniforms
+    gl.uniform1f(uni.time, time);
+    gl.uniform2f(uni.resolution, canvas.width, canvas.height);
+    gl.uniform1f(uni.bass, smoothBass);
+    gl.uniform1f(uni.mid, smoothMid);
+    gl.uniform1f(uni.treble, smoothTreble);
+    gl.uniform1f(uni.seed, SEED);
+    gl.uniform1i(uni.pattern, pattern);
+    gl.uniform1f(uni.transition, transition);
+    
+    gl.uniform3fv(uni.color1, currentPalette[0]);
+    gl.uniform3fv(uni.color2, currentPalette[1]);
+    gl.uniform3fv(uni.color3, currentPalette[2]);
+    gl.uniform3fv(uni.color4, currentPalette[3]);
+    
+    gl.uniform1f(uni.flowScale, params.flowScale);
+    gl.uniform1f(uni.flowSpeed, params.flowSpeed);
+    gl.uniform1f(uni.dotDensity, params.dotDensity);
+    gl.uniform1f(uni.dotSize, params.dotSize);
+    gl.uniform1f(uni.dotWaveAmp, params.dotWaveAmp);
+    gl.uniform1f(uni.dotWaveFreq, params.dotWaveFreq);
+    gl.uniform1f(uni.waveCount, params.waveCount);
+    gl.uniform1f(uni.waveCurvature, params.waveCurvature);
+    gl.uniform1f(uni.waveThickness, params.waveThickness);
+    gl.uniform1f(uni.colorShift, params.colorShift);
+    gl.uniform1f(uni.rotationSpeed, params.rotationSpeed);
+    gl.uniform1f(uni.zoomPulse, params.zoomPulse);
+    
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    
+    info.textContent = `${PATTERN_NAMES[pattern]} | seed:${SEED} | bass:${smoothBass.toFixed(2)}`;
+    
+    requestAnimationFrame(render);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// AUDIO INIT
+// ─────────────────────────────────────────────────────────────────
+async function startAudio() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const src = audioCtx.createMediaStreamSource(stream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = 0.85;
+        src.connect(analyser);
+        freqArray = new Uint8Array(analyser.frequencyBinCount);
+    } catch (e) {
+        console.warn('No mic access:', e);
+    }
+    document.getElementById('overlay').classList.add('hidden');
+    patternTime = Date.now();
+}
+
+// ─────────────────────────────────────────────────────────────────
+// EVENTS
+// ─────────────────────────────────────────────────────────────────
+document.getElementById('overlay').addEventListener('click', startAudio);
+document.getElementById('btn-next').addEventListener('click', nextPattern);
+document.getElementById('btn-seed').addEventListener('click', newSeed);
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'n' || e.key === 'N') nextPattern();
+    if (e.key === 'r' || e.key === 'R') newSeed();
+});
+
+// GO
+init();
+render();
+</script>
 </body>
 </html>
