@@ -911,26 +911,45 @@ function render() {
 // AUDIO INIT
 // ─────────────────────────────────────────────────────────────────
 async function startAudio() {
+    // Hide overlay immediately on interaction
+    document.getElementById('overlay').classList.add('hidden');
+    patternTime = Date.now();
+    
+    // iOS Safari requires AudioContext creation inside user gesture
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // iOS Safari: must resume AudioContext after user interaction
+        if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+        }
+        
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
         const src = audioCtx.createMediaStreamSource(stream);
         analyser = audioCtx.createAnalyser();
         analyser.fftSize = 512;
         analyser.smoothingTimeConstant = 0.85;
         src.connect(analyser);
         freqArray = new Uint8Array(analyser.frequencyBinCount);
+        console.log('Audio initialized successfully');
     } catch (e) {
         console.warn('No mic access:', e);
+        // Still works without audio - just no reactivity
     }
-    document.getElementById('overlay').classList.add('hidden');
-    patternTime = Date.now();
+}
+
+// Wrapper to handle both click and touch
+function handleStart(e) {
+    e.preventDefault();
+    startAudio();
 }
 
 // ─────────────────────────────────────────────────────────────────
 // EVENTS
 // ─────────────────────────────────────────────────────────────────
-document.getElementById('overlay').addEventListener('click', startAudio);
+const overlay = document.getElementById('overlay');
+overlay.addEventListener('click', handleStart);
+overlay.addEventListener('touchend', handleStart);
 document.getElementById('btn-next').addEventListener('click', nextPattern);
 document.getElementById('btn-seed').addEventListener('click', newSeed);
 
