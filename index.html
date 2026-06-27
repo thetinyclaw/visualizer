@@ -161,6 +161,7 @@ function generateParams() {
 let audioCtx, analyser, freqArray;
 let bass = 0, mid = 0, treble = 0;
 let smoothBass = 0, smoothMid = 0, smoothTreble = 0;
+let audioMode = 'idle';
 
 function getFreqRange(start, end) {
     if (!freqArray) return 0;
@@ -177,6 +178,14 @@ function updateAudio() {
         bass = getFreqRange(0, 0.1);
         mid = getFreqRange(0.1, 0.5);
         treble = getFreqRange(0.5, 1.0);
+    } else if (audioMode === 'demo') {
+        const t = (Date.now() - startTime) / 1000;
+        bass = 0.45 + 0.35 * Math.sin(t * 1.7) + 0.12 * Math.sin(t * 5.1);
+        mid = 0.38 + 0.28 * Math.sin(t * 2.3 + 1.7);
+        treble = 0.32 + 0.24 * Math.sin(t * 6.9 + 0.4);
+        bass = Math.max(0, Math.min(1, bass));
+        mid = Math.max(0, Math.min(1, mid));
+        treble = Math.max(0, Math.min(1, treble));
     }
     smoothBass = smoothBass * 0.8 + bass * 0.2;
     smoothMid = smoothMid * 0.8 + mid * 0.2;
@@ -936,7 +945,7 @@ function render() {
     
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     
-    info.textContent = `${PATTERN_NAMES[pattern]} | seed:${SEED} | bass:${smoothBass.toFixed(2)}`;
+    info.textContent = `${PATTERN_NAMES[pattern]} | seed:${SEED} | ${audioMode} | bass:${smoothBass.toFixed(2)}`;
     
     requestAnimationFrame(render);
 }
@@ -965,10 +974,13 @@ async function startAudio() {
         analyser.smoothingTimeConstant = 0.85;
         src.connect(analyser);
         freqArray = new Uint8Array(analyser.frequencyBinCount);
+        audioMode = 'mic';
         console.log('Audio initialized successfully');
     } catch (e) {
         console.warn('No mic access:', e);
-        // Still works without audio - just no reactivity
+        audioMode = 'demo';
+        freqArray = null;
+        // Still works without audio using synthetic demo pulses.
     }
 }
 
