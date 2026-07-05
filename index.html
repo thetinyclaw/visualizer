@@ -716,6 +716,48 @@ vec3 galaxy(vec2 uv, float t) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// PATTERN 8: RGB SUBPIXEL BLOCKS
+// ─────────────────────────────────────────────────────────────────
+float rectMask(vec2 p, vec2 halfSize) {
+    vec2 d = abs(p) - halfSize;
+    float outside = length(max(d, 0.0));
+    float inside = min(max(d.x, d.y), 0.0);
+    return smoothstep(0.015, 0.0, outside + inside);
+}
+
+vec3 rgbSubpixels(vec2 uv, float t) {
+    vec3 col = color4 * 0.25;
+    vec2 grid = uv * vec2(4.5, 3.0);
+    vec2 cell = floor(grid);
+    vec2 local = fract(grid) - 0.5;
+    float id = hash(cell + seed);
+    float jitter = (id - 0.5) * 0.08;
+    local += vec2(
+        sin(t * 0.35 + id * TAU) * jitter,
+        cos(t * 0.28 + id * TAU) * jitter
+    );
+    
+    float entity = rectMask(local, vec2(0.43, 0.30));
+    vec2 sub = vec2((local.x + 0.43) / 0.86, local.y);
+    float gap = 0.018;
+    float r = rectMask(vec2(sub.x - 0.17, sub.y), vec2(0.13 - gap, 0.25));
+    float g = rectMask(vec2(sub.x - 0.50, sub.y), vec2(0.13 - gap, 0.25));
+    float b = rectMask(vec2(sub.x - 0.83, sub.y), vec2(0.13 - gap, 0.25));
+    
+    float pulse = 0.55 + 0.45 * sin(t * (0.8 + id) + id * 12.0);
+    pulse *= 0.55 + bass * 0.65 + mid * 0.25;
+    vec3 rgb = vec3(r, g, b) * pulse * entity;
+    
+    float scan = 0.85 + 0.15 * sin((uv.y + t * 0.08) * 120.0);
+    float bezel = rectMask(local, vec2(0.47, 0.34)) - entity;
+    col += rgb * scan;
+    col += vec3(0.02, 0.025, 0.035) * bezel;
+    col += (vec3(r, g, b) * 0.25) * smoothstep(0.5, 1.0, treble);
+    
+    return col;
+}
+
+// ─────────────────────────────────────────────────────────────────
 vec3 patternColor(int p, vec2 uv, float t) {
     if (p == 0) return stippleWaves(uv, t);
     if (p == 1) return neurons(uv, t);
@@ -724,7 +766,8 @@ vec3 patternColor(int p, vec2 uv, float t) {
     if (p == 4) return reaction(uv, t);
     if (p == 5) return voronoi(uv, t);
     if (p == 6) return ribbons(uv, t);
-    return galaxy(uv, t);
+    if (p == 7) return galaxy(uv, t);
+    return rgbSubpixels(uv, t);
 }
 
 // MAIN
@@ -741,7 +784,7 @@ void main() {
     
     vec3 col = patternColor(pattern, uv, time);
     if (transition > 0.0) {
-        int nextPattern = int(mod(float(pattern + 1), 8.0));
+        int nextPattern = int(mod(float(pattern + 1), 9.0));
         col = mix(col, patternColor(nextPattern, uv, time), transition);
     }
     
@@ -841,10 +884,10 @@ let patternDuration = 20000;
 let transitionDuration = 3000;
 let startTime = performance.now();
 let lastInfoUpdate = 0;
-const PATTERN_COUNT = 8;
+const PATTERN_COUNT = 9;
 const PATTERN_NAMES = [
     'Stipple Waves', 'Neurons', 'Flow Field', 'Branches',
-    'Reaction', 'Voronoi', 'Ribbons', 'Galaxy'
+    'Reaction', 'Voronoi', 'Ribbons', 'Galaxy', 'RGB Subpixels'
 ];
 
 function applyStaticUniforms() {

@@ -15,6 +15,7 @@ To generate an immersive audio-reactive visual experience in the browser, suitab
 - `index.html`
 - Raw WebGL rendering
 - GLSL shader patterns
+- RGB subpixel rectangle design concept
 - Web Audio API microphone input
 - Synthetic demo fallback
 

@@ -24,7 +24,7 @@ Click the overlay to start. If browser microphone access works, the shader react
 ## Current status
 
 - Static WebGL/GLSL app
-- Eight generated patterns: Stipple Waves, Neurons, Flow Field, Branches, Reaction, Voronoi, Ribbons, Galaxy
+- Nine generated patterns: Stipple Waves, Neurons, Flow Field, Branches, Reaction, Voronoi, Ribbons, Galaxy, RGB Subpixels
 - Cross-browser shader error reporting
 - Mic mode with Web Audio API
 - Demo fallback mode when mic access is unavailable

@@ -19,7 +19,7 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - [x] Implement audio analysis (FFT)
 - [x] Fix WebGL/shader error handling
 - [x] Fix GLSL Intel/Windows loop compatibility
-- [x] Add eight generated shader patterns
+- [x] Add nine generated shader patterns, including RGB subpixel rectangle blocks
 - [x] Refresh render-loop performance and layout (Ponytail pass, 2026-07-05)
 
 ## Recent Refresh (2026-07-05)
@@ -30,6 +30,9 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Moved static WebGL uniform updates out of the hot render loop.
 - Skips next-pattern shader work until transitions actually need it.
 - Removed dead generated params and unused GLSL helpers.
+
+## Design Concepts
+- **RGB Subpixels:** zoomed-in TV-pixel entities made from adjacent red, green, and blue rectangles, with scanline shimmer and audio-reactive brightness.
 
 ## Usage
 User visits URL -> starts visualizer -> allows mic if desired. If mic is missing or denied, visuals still animate in demo mode.
