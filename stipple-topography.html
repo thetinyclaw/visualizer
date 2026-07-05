@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Topographic Stipple Waves</title>
+  <style>
+    *{box-sizing:border-box;margin:0} body{overflow:hidden;background:#061011;font-family:Courier New,monospace;color:#bfe} canvas{display:block} #overlay{position:fixed;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.86);cursor:pointer;z-index:2;text-align:center} #overlay.hidden{opacity:0;pointer-events:none;transition:.6s} h1{letter-spacing:.18em;font-size:clamp(2rem,7vw,5rem)} p,#info{color:#75a;font-size:12px} #info{position:fixed;left:12px;bottom:10px;z-index:1}
+  </style>
+</head>
+<body>
+  <div id="overlay" role="button" tabindex="0" aria-label="Start topographic stipple waves"><div><h1>TOPO STIPPLE</h1><p>click / enter · contour dots over liquid terrain</p></div></div>
+  <div id="info"></div><canvas id="canvas"></canvas>
+  <script>window.STIPPLE_CONFIG={title:'Topographic Stipple Waves',variant:0,colors:['#2df8c8','#ff9d42','#f5f7d7','#061011']};</script>
+  <script src="stipple-family.js"></script>
+</body>
+</html>

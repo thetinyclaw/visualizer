@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ink Dune Stipple</title>
+  <style>
+    *{box-sizing:border-box;margin:0} body{overflow:hidden;background:#120d08;font-family:Courier New,monospace;color:#f4d7a1} canvas{display:block} #overlay{position:fixed;inset:0;display:grid;place-items:center;background:rgba(14,8,3,.92);cursor:pointer;z-index:2;text-align:center} #overlay.hidden{opacity:0;pointer-events:none;transition:.6s} h1{letter-spacing:.18em;font-size:clamp(2rem,7vw,5rem);color:#f0c16c} p,#info{color:#b88952;font-size:12px} #info{position:fixed;left:12px;bottom:10px;z-index:1}
+  </style>
+</head>
+<body>
+  <div id="overlay" role="button" tabindex="0" aria-label="Start ink dune stipple"><div><h1>INK DUNES</h1><p>click / enter · desert contours, paper grain, dark ink dots</p></div></div>
+  <div id="info"></div><canvas id="canvas"></canvas>
+  <script>window.STIPPLE_CONFIG={title:'Ink Dune Stipple',variant:2,colors:['#22170f','#d89a52','#ffe1a6','#120d08']};</script>
+  <script src="stipple-family.js"></script>
+</body>
+</html>
