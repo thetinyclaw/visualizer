@@ -1,31 +1,35 @@
 # Project: Music Visualizer
 
 ## Brief
-Procedurally generated geometric/organic screen saver.
-Reactive to audio input via Microphone.
-Web-based (Three.js/WebGL) for "Milkdrop/trippy/fractal" aesthetic.
+Procedurally generated geometric/organic ambient visualizer.
+Reactive to microphone input when available, with a synthetic demo pulse fallback when mic access is unavailable.
+Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 
 ## Tech Stack
 - **Core:** HTML5, JavaScript
-- **Graphics:** Three.js (WebGL) + GLSL Shaders
-- **Audio:** Web Audio API (`navigator.mediaDevices.getUserMedia`)
-- **Deployment:** Static HTML file (hosted on OpenClaw or local)
+- **Graphics:** Raw WebGL + GLSL shaders
+- **Audio:** Web Audio API (`navigator.mediaDevices.getUserMedia`) with demo fallback
+- **Deployment:** Static HTML file (hosted on OpenClaw, GitHub Pages, or local HTTP)
 
 ## Status
-- [x] Define platform: Web (Cast to TV)
-- [x] Define audio source: Microphone (Browser access)
-- [x] Define vibe: Milkdrop/Fractal
-- [x] Scaffold basic `index.html` with Three.js setup
-- [x] Implement audio analysis (FFT) (Basic pulse implemented)
-- [x] Fix WebGL/shader error handling (2026-02-07)
-- [x] Fix GLSL Intel/Windows compatibility (2026-02-07)
-- [ ] Create initial fractal shader
+- [x] Define platform: Web (cast/browser/TV)
+- [x] Define audio source: microphone + demo fallback
+- [x] Define vibe: Milkdrop/fractal/generative ambient
+- [x] Implement raw WebGL shader pipeline
+- [x] Implement audio analysis (FFT)
+- [x] Fix WebGL/shader error handling
+- [x] Fix GLSL Intel/Windows loop compatibility
+- [x] Add eight generated shader patterns
+- [x] Refresh render-loop performance and layout (Ponytail pass, 2026-07-05)
 
-## Recent Fixes (2026-02-07)
-- Added WebGL context availability check with user-friendly error
-- Added shader compilation error display
-- Fixed "Loop index cannot be compared with non-constant expression" for Intel GPUs
-- Changed dynamic loop bounds to constants with early break
+## Recent Refresh (2026-07-05)
+- Capped high-DPI render buffer to reduce fill-rate cost on Retina/TV displays.
+- Switched animation timing to `performance.now()`.
+- Throttled HUD DOM updates.
+- Guarded audio startup against duplicate pointer/touch events.
+- Moved static WebGL uniform updates out of the hot render loop.
+- Skips next-pattern shader work until transitions actually need it.
+- Removed dead generated params and unused GLSL helpers.
 
 ## Usage
-User visits URL -> Allows Mic -> Visuals react to room sound.
+User visits URL -> starts visualizer -> allows mic if desired. If mic is missing or denied, visuals still animate in demo mode.

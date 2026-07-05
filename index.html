@@ -30,9 +30,9 @@
     </style>
 </head>
 <body>
-    <div id="overlay">
+    <div id="overlay" role="button" tabindex="0" aria-label="Start visualizer">
         <h1>VISUALIZER</h1>
-        <p>[ click to enter ]</p>
+        <p>[ click / enter to start ]</p>
         <div id="seed-display"></div>
     </div>
     <div id="info"></div>
@@ -126,28 +126,18 @@ function generateParams() {
         // Flow field
         flowScale: seededRange(1.5, 4.0),
         flowSpeed: seededRange(0.1, 0.4),
-        flowOctaves: seededInt(2, 5),
-        flowComplexity: seededRange(0.5, 2.0),
-        
         // Stipple/dots
         dotDensity: seededRange(30, 80),
         dotSize: seededRange(0.003, 0.012),
         dotWaveAmp: seededRange(0.1, 0.4),
         dotWaveFreq: seededRange(2, 8),
         
-        // Organic
-        branchCount: seededInt(3, 8),
-        branchDepth: seededInt(4, 7),
-        growthSpeed: seededRange(0.2, 0.6),
-        
         // Waves
         waveCount: seededInt(3, 7),
-        waveCurvature: seededRange(0.5, 2.0),
         waveThickness: seededRange(0.02, 0.08),
         
         // Colors
         colorShift: seededRange(0, 6.28),
-        colorSpeed: seededRange(0.05, 0.2),
         
         // Global
         rotationSpeed: seededRange(-0.1, 0.1),
@@ -158,7 +148,7 @@ function generateParams() {
 // ─────────────────────────────────────────────────────────────────
 // AUDIO SYSTEM
 // ─────────────────────────────────────────────────────────────────
-let audioCtx, analyser, freqArray;
+let audioCtx, analyser, freqArray, audioStartPromise;
 let bass = 0, mid = 0, treble = 0;
 let smoothBass = 0, smoothMid = 0, smoothTreble = 0;
 let audioMode = 'idle';
@@ -179,7 +169,7 @@ function updateAudio() {
         mid = getFreqRange(0.1, 0.5);
         treble = getFreqRange(0.5, 1.0);
     } else if (audioMode === 'demo') {
-        const t = (Date.now() - startTime) / 1000;
+        const t = (performance.now() - startTime) / 1000;
         bass = 0.45 + 0.35 * Math.sin(t * 1.7) + 0.12 * Math.sin(t * 5.1);
         mid = 0.38 + 0.28 * Math.sin(t * 2.3 + 1.7);
         treble = 0.32 + 0.24 * Math.sin(t * 6.9 + 0.4);
@@ -196,8 +186,13 @@ function updateAudio() {
 // WEBGL SETUP
 // ─────────────────────────────────────────────────────────────────
 function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2); // ponytail: 2x cap keeps Retina sharp without 4x TV fill-rate pain.
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
     gl.viewport(0, 0, canvas.width, canvas.height);
 }
 window.addEventListener('resize', resize);
@@ -234,7 +229,6 @@ uniform float dotSize;
 uniform float dotWaveAmp;
 uniform float dotWaveFreq;
 uniform float waveCount;
-uniform float waveCurvature;
 uniform float waveThickness;
 uniform float colorShift;
 uniform float rotationSpeed;
@@ -307,18 +301,6 @@ vec2 curl(vec2 p, float t) {
     float a = noise3(vec3(p + vec2(eps, 0), t));
     float b = noise3(vec3(p + vec2(0, eps), t));
     return vec2(a - n, -(b - n)) / eps;
-}
-
-// ─────────────────────────────────────────────────────────────────
-// DISTANCE FUNCTIONS
-// ─────────────────────────────────────────────────────────────────
-float sdCircle(vec2 p, float r) {
-    return length(p) - r;
-}
-
-float sdBox(vec2 p, vec2 b) {
-    vec2 d = abs(p) - b;
-    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -734,6 +716,17 @@ vec3 galaxy(vec2 uv, float t) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+vec3 patternColor(int p, vec2 uv, float t) {
+    if (p == 0) return stippleWaves(uv, t);
+    if (p == 1) return neurons(uv, t);
+    if (p == 2) return flowField(uv, t);
+    if (p == 3) return branches(uv, t);
+    if (p == 4) return reaction(uv, t);
+    if (p == 5) return voronoi(uv, t);
+    if (p == 6) return ribbons(uv, t);
+    return galaxy(uv, t);
+}
+
 // MAIN
 // ─────────────────────────────────────────────────────────────────
 void main() {
@@ -746,31 +739,11 @@ void main() {
     // Zoom pulse with bass
     uv *= 1.0 + sin(time * 0.5) * zoomPulse * bass;
     
-    vec3 col1, col2;
-    int p1 = pattern;
-    int p2 = int(mod(float(pattern + 1), 8.0));
-    
-    // Get current pattern
-    if (p1 == 0) col1 = stippleWaves(uv, time);
-    else if (p1 == 1) col1 = neurons(uv, time);
-    else if (p1 == 2) col1 = flowField(uv, time);
-    else if (p1 == 3) col1 = branches(uv, time);
-    else if (p1 == 4) col1 = reaction(uv, time);
-    else if (p1 == 5) col1 = voronoi(uv, time);
-    else if (p1 == 6) col1 = ribbons(uv, time);
-    else col1 = galaxy(uv, time);
-    
-    // Get next pattern for transition
-    if (p2 == 0) col2 = stippleWaves(uv, time);
-    else if (p2 == 1) col2 = neurons(uv, time);
-    else if (p2 == 2) col2 = flowField(uv, time);
-    else if (p2 == 3) col2 = branches(uv, time);
-    else if (p2 == 4) col2 = reaction(uv, time);
-    else if (p2 == 5) col2 = voronoi(uv, time);
-    else if (p2 == 6) col2 = ribbons(uv, time);
-    else col2 = galaxy(uv, time);
-    
-    vec3 col = mix(col1, col2, transition);
+    vec3 col = patternColor(pattern, uv, time);
+    if (transition > 0.0) {
+        int nextPattern = int(mod(float(pattern + 1), 8.0));
+        col = mix(col, patternColor(nextPattern, uv, time), transition);
+    }
     
     // Post-processing
     // Vignette
@@ -853,7 +826,6 @@ const uni = {
     dotWaveAmp: gl.getUniformLocation(prog, 'dotWaveAmp'),
     dotWaveFreq: gl.getUniformLocation(prog, 'dotWaveFreq'),
     waveCount: gl.getUniformLocation(prog, 'waveCount'),
-    waveCurvature: gl.getUniformLocation(prog, 'waveCurvature'),
     waveThickness: gl.getUniformLocation(prog, 'waveThickness'),
     colorShift: gl.getUniformLocation(prog, 'colorShift'),
     rotationSpeed: gl.getUniformLocation(prog, 'rotationSpeed'),
@@ -867,12 +839,32 @@ let pattern = 0;
 let patternTime = 0;
 let patternDuration = 20000;
 let transitionDuration = 3000;
-let startTime = Date.now();
+let startTime = performance.now();
+let lastInfoUpdate = 0;
 const PATTERN_COUNT = 8;
 const PATTERN_NAMES = [
     'Stipple Waves', 'Neurons', 'Flow Field', 'Branches',
     'Reaction', 'Voronoi', 'Ribbons', 'Galaxy'
 ];
+
+function applyStaticUniforms() {
+    gl.uniform1f(uni.seed, SEED);
+    gl.uniform3fv(uni.color1, currentPalette[0]);
+    gl.uniform3fv(uni.color2, currentPalette[1]);
+    gl.uniform3fv(uni.color3, currentPalette[2]);
+    gl.uniform3fv(uni.color4, currentPalette[3]);
+    gl.uniform1f(uni.flowScale, params.flowScale);
+    gl.uniform1f(uni.flowSpeed, params.flowSpeed);
+    gl.uniform1f(uni.dotDensity, params.dotDensity);
+    gl.uniform1f(uni.dotSize, params.dotSize);
+    gl.uniform1f(uni.dotWaveAmp, params.dotWaveAmp);
+    gl.uniform1f(uni.dotWaveFreq, params.dotWaveFreq);
+    gl.uniform1f(uni.waveCount, params.waveCount);
+    gl.uniform1f(uni.waveThickness, params.waveThickness);
+    gl.uniform1f(uni.colorShift, params.colorShift);
+    gl.uniform1f(uni.rotationSpeed, params.rotationSpeed);
+    gl.uniform1f(uni.zoomPulse, params.zoomPulse);
+}
 
 // ─────────────────────────────────────────────────────────────────
 // INITIALIZE
@@ -882,7 +874,8 @@ function init() {
     selectPalette();
     generateParams();
     pattern = seededInt(0, PATTERN_COUNT - 1);
-    patternTime = Date.now();
+    patternTime = performance.now();
+    applyStaticUniforms();
 }
 
 function newSeed() {
@@ -893,17 +886,18 @@ function newSeed() {
 
 function nextPattern() {
     pattern = (pattern + 1) % PATTERN_COUNT;
-    patternTime = Date.now();
+    patternTime = performance.now();
 }
 
 // ─────────────────────────────────────────────────────────────────
 // RENDER LOOP
 // ─────────────────────────────────────────────────────────────────
 function render() {
+    const now = performance.now();
     updateAudio();
     
-    const time = (Date.now() - startTime) / 1000;
-    const elapsed = Date.now() - patternTime;
+    const time = (now - startTime) / 1000;
+    const elapsed = now - patternTime;
     
     let transition = 0;
     if (elapsed > patternDuration) {
@@ -911,7 +905,7 @@ function render() {
     }
     if (elapsed > patternDuration + transitionDuration) {
         pattern = (pattern + 1) % PATTERN_COUNT;
-        patternTime = Date.now();
+        patternTime = now;
         transition = 0;
     }
     
@@ -921,31 +915,15 @@ function render() {
     gl.uniform1f(uni.bass, smoothBass);
     gl.uniform1f(uni.mid, smoothMid);
     gl.uniform1f(uni.treble, smoothTreble);
-    gl.uniform1f(uni.seed, SEED);
     gl.uniform1i(uni.pattern, pattern);
     gl.uniform1f(uni.transition, transition);
     
-    gl.uniform3fv(uni.color1, currentPalette[0]);
-    gl.uniform3fv(uni.color2, currentPalette[1]);
-    gl.uniform3fv(uni.color3, currentPalette[2]);
-    gl.uniform3fv(uni.color4, currentPalette[3]);
-    
-    gl.uniform1f(uni.flowScale, params.flowScale);
-    gl.uniform1f(uni.flowSpeed, params.flowSpeed);
-    gl.uniform1f(uni.dotDensity, params.dotDensity);
-    gl.uniform1f(uni.dotSize, params.dotSize);
-    gl.uniform1f(uni.dotWaveAmp, params.dotWaveAmp);
-    gl.uniform1f(uni.dotWaveFreq, params.dotWaveFreq);
-    gl.uniform1f(uni.waveCount, params.waveCount);
-    gl.uniform1f(uni.waveCurvature, params.waveCurvature);
-    gl.uniform1f(uni.waveThickness, params.waveThickness);
-    gl.uniform1f(uni.colorShift, params.colorShift);
-    gl.uniform1f(uni.rotationSpeed, params.rotationSpeed);
-    gl.uniform1f(uni.zoomPulse, params.zoomPulse);
-    
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     
-    info.textContent = `${PATTERN_NAMES[pattern]} | seed:${SEED} | ${audioMode} | bass:${smoothBass.toFixed(2)}`;
+    if (now - lastInfoUpdate > 250) {
+        info.textContent = `${PATTERN_NAMES[pattern]} | seed:${SEED} | ${audioMode} | bass:${smoothBass.toFixed(2)}`;
+        lastInfoUpdate = now;
+    }
     
     requestAnimationFrame(render);
 }
@@ -954,9 +932,15 @@ function render() {
 // AUDIO INIT
 // ─────────────────────────────────────────────────────────────────
 async function startAudio() {
+    if (audioStartPromise) return audioStartPromise;
+    audioStartPromise = startAudioOnce();
+    return audioStartPromise;
+}
+
+async function startAudioOnce() {
     // Hide overlay immediately on interaction
     document.getElementById('overlay').classList.add('hidden');
-    patternTime = Date.now();
+    patternTime = performance.now();
     
     // iOS Safari requires AudioContext creation inside user gesture
     try {
@@ -984,17 +968,20 @@ async function startAudio() {
     }
 }
 
-// Wrapper to handle both click and touch
 function handleStart(e) {
     e.preventDefault();
     startAudio();
 }
 
+function handleOverlayKey(e) {
+    if (e.key === 'Enter' || e.key === ' ') handleStart(e);
+}
+
 // ─────────────────────────────────────────────────────────────────
 // EVENTS
 // ─────────────────────────────────────────────────────────────────
-overlay.addEventListener('click', handleStart);
-overlay.addEventListener('touchend', handleStart);
+overlay.addEventListener('pointerup', handleStart);
+overlay.addEventListener('keydown', handleOverlayKey);
 document.getElementById('btn-next').addEventListener('click', nextPattern);
 document.getElementById('btn-seed').addEventListener('click', newSeed);
 
