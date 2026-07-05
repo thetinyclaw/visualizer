@@ -19,6 +19,8 @@ Click the overlay to start. If browser microphone access works, the shader react
 ## Controls
 
 - `N` or `[N]ext`: next pattern
+- `←` / `→`: previous / next pattern
+- Swipe right / left: previous / next pattern on touch devices
 - `R` or `[R]andomize`: new seed / palette / generated parameters
 
 ## Current status

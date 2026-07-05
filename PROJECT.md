@@ -35,4 +35,4 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - **RGB Subpixels:** zoomed-in TV-pixel entities made from adjacent red, green, and blue rectangles, with scanline shimmer and audio-reactive brightness.
 
 ## Usage
-User visits URL -> starts visualizer -> allows mic if desired. If mic is missing or denied, visuals still animate in demo mode.
+User visits URL -> starts visualizer -> allows mic if desired. If mic is missing or denied, visuals still animate in demo mode. Use arrow keys or horizontal swipes to move between patterns.
