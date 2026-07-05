@@ -27,6 +27,7 @@ Click the overlay to start. If browser microphone access works, the shader react
 
 - Static WebGL/GLSL app
 - Nine generated patterns: Stipple Waves, Neurons, Flow Field, Branches, Reaction, Voronoi, Ribbons, Galaxy, RGB Subpixels
+- RGB Subpixels includes experimental panel effects: glitter, reflections, chromatic halos, phosphor smear, moire shimmer, and aging pixel cells
 - Cross-browser shader error reporting
 - Mic mode with Web Audio API
 - Demo fallback mode when mic access is unavailable
