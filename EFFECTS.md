@@ -12,11 +12,12 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Material:** luminous point-cloud cloth
 
 ### Neurons
-- **Composition:** dispersed cell bodies with dendrites, axons, and sparks
-- **Primitive:** radial branches, line distances, particles
-- **Motion:** drifting nodes and traveling axon pulses
-- **Audio:** bass expands bodies; treble energizes pulses
+- **Composition:** dense cellular somas joined by two field-wide families of luminous axons
+- **Primitive:** cell-local hashed bodies, polar dendrite fans, and analytic warped contours
+- **Motion:** crawling dendrites, crossing axon currents, and traveling synaptic pulses
+- **Audio:** bass joins somas and widens axons; mids alter dendrite topology and paths; treble reveals cell-local synapses
 - **Material:** bioluminescent nervous tissue
+- **Cost:** one local soma and bounded analytic fields replace 12 neuron plus 20 spark distance tests per pixel
 
 ### Flow Field
 - **Composition:** two crossing families of continuous luminous rivers with fine capillaries

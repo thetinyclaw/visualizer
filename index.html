@@ -373,68 +373,49 @@ vec3 stippleWaves(vec2 uv, float t) {
 // PATTERN 1: NEURAL NETWORK / NEURONS
 // ─────────────────────────────────────────────────────────────────
 vec3 neurons(vec2 uv, float t) {
-    vec3 col = color4;
-    
-    // Create multiple neuron centers
-    float neuronGlow = 0.0;
-    vec3 neuronColor = vec3(0.0);
-    
-    for (float i = 0.0; i < 12.0; i++) {
-        // Neuron position (slowly drifting)
-        vec2 pos = vec2(
-            sin(seed + i * 1.7 + t * 0.1) * 0.6,
-            cos(seed + i * 2.3 + t * 0.13) * 0.6
-        );
-        
-        float dist = length(uv - pos);
-        
-        // Cell body
-        float body = smoothstep(0.08, 0.02, dist);
-        body *= 1.0 + bass * 0.5;
-        
-        // Dendrites (branching lines)
-        float angle = atan(uv.y - pos.y, uv.x - pos.x);
-        float branches = 5.0 + mod(i, 4.0);
-        float dendrite = abs(sin(angle * branches + i + t * 0.5));
-        dendrite = smoothstep(0.9, 1.0, dendrite);
-        dendrite *= smoothstep(0.5, 0.08, dist);
-        dendrite *= smoothstep(0.02, 0.08, dist);
-        
-        // Axon (long projection)
-        float axonAngle = seed + i * 0.5;
-        vec2 axonDir = vec2(cos(axonAngle), sin(axonAngle));
-        float axonDist = dot(uv - pos, axonDir);
-        float axonPerp = length((uv - pos) - axonDir * axonDist);
-        float axon = smoothstep(0.015, 0.005, axonPerp);
-        axon *= smoothstep(0.0, 0.1, axonDist);
-        axon *= smoothstep(0.8, 0.3, axonDist);
-        
-        // Pulse along axon
-        float pulse = sin(axonDist * 20.0 - t * 5.0 - i) * 0.5 + 0.5;
-        pulse *= smoothstep(0.0, 0.1, axonDist);
-        
-        float neuron = body + dendrite * 0.5 + axon * (0.5 + pulse * 0.5 * treble);
-        
-        vec3 nColor = mix(color1, color2, mod(i * 0.3, 1.0));
-        neuronColor += nColor * neuron;
-        neuronGlow += neuron;
-    }
-    
-    // Synaptic connections (random sparks)
-    float spark = 0.0;
-    for (float i = 0.0; i < 20.0; i++) {
-        vec2 sparkPos = vec2(
-            noise(vec2(i, t * 2.0 + seed)) * 2.0 - 1.0,
-            noise(vec2(i + 50.0, t * 2.0 + seed)) * 2.0 - 1.0
-        );
-        float s = smoothstep(0.03, 0.0, length(uv - sparkPos));
-        s *= step(0.97, noise(vec2(i * 10.0, floor(t * 10.0))));
-        spark += s;
-    }
-    
-    col = mix(col, neuronColor, min(neuronGlow, 1.0));
-    col += color3 * spark * (1.0 + treble * 2.0);
-    
+    // One cell-local soma plus analytic axon lattices replace 12 neuron and
+    // 20 spark distance tests per pixel. The result stays dense at native DPR.
+    vec2 tissueUv = uv * (5.2 + bass * 0.9);
+    vec2 cell = floor(tissueUv);
+    vec2 local = fract(tissueUv) - 0.5;
+    vec2 jitter = (hash2(cell + seed) - 0.5) * 0.54;
+    vec2 somaP = local - jitter;
+    float somaDist2 = dot(somaP, somaP);
+
+    // Bass grows and joins cell bodies; mids change dendrite topology.
+    float somaRadius2 = 0.012 + bass * 0.010;
+    float somaGlow = smoothstep(0.105, somaRadius2, somaDist2);
+    float somaCore = smoothstep(somaRadius2, somaRadius2 * 0.18, somaDist2);
+    float angle = atan(somaP.y, somaP.x);
+    float radius = sqrt(somaDist2);
+    float branchCount = 5.0 + floor(hash(cell + seed * 0.73) * 3.0);
+    float dendriteSignal = 0.5 + 0.5 * cos(angle * (branchCount + mid * 1.4) +
+        radius * (24.0 + mid * 10.0) - t * 0.55 + hash(cell) * TAU);
+    float dendrites = pow(dendriteSignal, 18.0);
+    dendrites *= smoothstep(0.47, 0.08, radius) * smoothstep(0.045, 0.12, radius);
+
+    // Crossing warped contours read as axons spanning many cells. Audio moves
+    // their paths and pulse trains instead of merely changing luminance.
+    float warp = noise(uv * 2.7 + vec2(t * 0.045, -t * 0.038) + seed * 0.009) - 0.5;
+    float neuralLattice = uv.y * 17.0 + sin(uv.x * 5.5 - t * 0.42) * (1.5 + mid * 2.0) + warp * 5.0;
+    float axonA = pow(0.5 + 0.5 * sin(neuralLattice), 34.0 - bass * 10.0);
+    float crossPhase = dot(uv, vec2(0.78, -0.63)) * 24.0 + warp * 7.0 + t * 0.31;
+    float axonB = pow(0.5 + 0.5 * sin(crossPhase), 46.0 - bass * 12.0);
+    float pulse = pow(0.5 + 0.5 * sin(neuralLattice * 0.72 - t * (4.0 + mid * 2.0)), 14.0);
+
+    // A cell-hashed synapse flashes without a screen-wide particle loop.
+    float synapseChance = step(0.90 - treble * 0.06, hash(cell + seed * 1.91));
+    float synapse = smoothstep(0.042, 0.0015, somaDist2) * synapseChance;
+    synapse *= pow(0.5 + 0.5 * sin(t * 7.0 + hash(cell) * TAU), 8.0);
+
+    vec3 nerveColor = mix(color1, color2, hash(cell + 13.0));
+    vec3 col = color4 * (0.20 + 0.08 * noise(uv * 3.0 - t * 0.018));
+    col += nerveColor * somaGlow * (0.20 + bass * 0.12);
+    col += mix(nerveColor, color3, 0.42) * somaCore * (0.78 + bass * 0.52);
+    col += nerveColor * dendrites * (0.45 + mid * 0.48);
+    col += color2 * (axonA + axonB * 0.68) * (0.22 + mid * 0.26);
+    col += color3 * axonA * pulse * (0.28 + treble * 0.82);
+    col += mix(color3, vec3(1.0), 0.35) * synapse * (0.65 + treble);
     return col;
 }
 

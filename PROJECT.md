@@ -48,6 +48,11 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Bass now opens the nucleus, mids alter arm topology, and treble exposes stellar microstructure.
 - Same-browser `1280×633`, seed `491009`, 120-frame sample: `16.29 → 19.78 FPS`; p95 improved from `146.2 → 142.3 ms` at effective DPR `1.0`.
 
+## Neurons rewrite (2026-07-17)
+- Replaced 12 full-screen neuron tests plus 20 animated spark tests per fragment with one cell-local soma and analytic warped axon fields.
+- Bass now joins neural bodies, mids alter dendrite topology and axon paths, and treble reveals local synaptic flashes.
+- Mirrored same-browser `1280×633`, seed `491009`, 120-frame median: `14.47 → 17.83 FPS` at effective DPR `1.0`; post-benchmark image analysis found roughly twice the bright-pixel coverage and stronger edge density.
+
 ## Design Concepts
 - **RGB Subpixels:** zoomed-in TV-pixel entities made from adjacent red, green, and blue rectangles, with scanlines, glitter, chromatic edge glow, prism/reflection streaks, phosphor smear, imperfect glass warping, and aging/dead-pixel behavior.
 - **Stipple Family Pages:** standalone raw-WebGL pages exploring the original stipple-wave language as topographic contour dots, glass/reef caustics, and ink-dune paper grain.

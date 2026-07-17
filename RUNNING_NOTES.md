@@ -12,6 +12,7 @@
 - 2026-07-17: Rewrote Branches as a five-step inverse-folded grove, removing 256 segment and 30 leaf tests per pixel. A 120-frame same-browser check moved `15.91 → 16.51 FPS` and p95 `135.3 → 125.5 ms` at DPR `1.0`.
 - 2026-07-17: Rewrote Galaxy with analytic spiral lanes and one cell-local star test instead of 100 point-distance tests. A 120-frame same-browser check moved `16.29 → 19.78 FPS` and p95 `146.2 → 142.3 ms` at DPR `1.0`.
 - 2026-07-17: Replaced the sequential full-suite benchmark verdict with mirrored forward/reverse rounds and per-pattern medians; reports preserve ordered raw runs for auditing.
+- 2026-07-17: Rewrote Neurons around a cell-local soma and analytic axon contours, removing 32 full-screen distance tests per pixel. Mirrored 120-frame median moved `14.47 → 17.83 FPS` at DPR `1.0`; screenshot metrics showed denser bright coverage and sharper edges.
 
 ## Open questions
 - Which visual families hold 60 FPS on the slowest target TV/mobile GPU? Add measured per-pattern timing before making adaptive quality decisions.
