@@ -22,6 +22,18 @@ Click the overlay to start. If browser microphone access works, the shader react
 - `←` / `→`: previous / next pattern
 - Swipe right / left: previous / next pattern on touch devices
 - `R` or `[R]andomize`: new seed / palette / generated parameters
+- `T` or `[TV] Mode`: open AirPlay guidance and enter a clean television display mode
+
+## AirPlay from iPhone Safari
+
+1. Start the visualizer and tap `[TV] Mode`.
+2. Open iPhone Control Center and tap **Screen Mirroring**.
+3. Choose the Apple TV or AirPlay-compatible television.
+4. Rotate the phone sideways and tap **Enter TV Mode**.
+
+TV Mode requests fullscreen and landscape orientation where Safari supports them, hides visualizer chrome, and requests a screen wake lock when available. Tap the visualizer to reveal the controls for four seconds; tap `[TV] Exit` to leave. The direct `?tv=1` route opens the AirPlay guidance automatically.
+
+Safari does not expose an AirPlay picker for a WebGL canvas, so the television is selected through iOS Control Center rather than from the webpage itself.
 
 For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Example: `index.html?pattern=8&seed=491009` opens and locks a repeatable **Cosmic Mycelium** scene without auto-transitioning.
 

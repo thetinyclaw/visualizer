@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
     <title>TinyClaw Visualizer v3 - Generative Engine</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -24,9 +27,33 @@
         p { color: #444; font-size: 0.85em; }
         #seed-display { color: #333; font-size: 0.7em; margin-top: 30px; }
         #info { position: fixed; bottom: 10px; left: 10px; color: #222; font-size: 10px; z-index: 50; }
-        #controls { position: fixed; top: 10px; right: 10px; color: #333; font-size: 11px; z-index: 50; }
+        #controls { position: fixed; top: max(10px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); color: #555; font-size: 11px; z-index: 50; transition: opacity 0.25s; }
         #controls span { cursor: pointer; margin-left: 10px; opacity: 0.5; transition: opacity 0.2s; }
         #controls span:hover { opacity: 1; }
+        #cast-panel {
+            position: fixed; inset: 0; z-index: 110; display: none;
+            align-items: center; justify-content: center; padding: 24px;
+            background: rgba(0, 0, 0, 0.82); backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+        }
+        #cast-panel.open { display: flex; }
+        .cast-card {
+            width: min(440px, 100%); padding: 26px; border: 1px solid rgba(74, 158, 255, 0.35);
+            border-radius: 18px; background: rgba(6, 10, 20, 0.95); color: #dbeaff;
+            box-shadow: 0 22px 80px rgba(0, 0, 0, 0.65);
+        }
+        .cast-card h2 { margin-bottom: 14px; color: #7eb7ff; letter-spacing: 0.08em; }
+        .cast-card ol { margin: 0 0 18px 20px; color: #b8c7dc; line-height: 1.6; }
+        .cast-card p { color: #71829a; line-height: 1.45; margin-bottom: 18px; }
+        .cast-actions { display: flex; gap: 10px; }
+        .cast-actions button {
+            flex: 1; border: 1px solid #315b8f; border-radius: 10px; padding: 12px;
+            color: #dbeaff; background: #10243d; font: inherit; cursor: pointer;
+        }
+        .cast-actions button.secondary { background: transparent; color: #71829a; border-color: #253348; }
+        body.tv-mode #info, body.tv-mode #controls { opacity: 0; pointer-events: none; }
+        body.tv-mode.controls-visible #controls { opacity: 1; pointer-events: auto; }
+        body.tv-mode canvas { cursor: none; }
     </style>
 </head>
 <body>
@@ -39,6 +66,22 @@
     <div id="controls">
         <span id="btn-next" title="Next pattern">[N]ext</span>
         <span id="btn-seed" title="New seed">[R]andomize</span>
+        <span id="btn-tv" title="AirPlay / television mode">[TV] Mode</span>
+    </div>
+    <div id="cast-panel" role="dialog" aria-modal="true" aria-labelledby="cast-title">
+        <div class="cast-card">
+            <h2 id="cast-title">AIRPLAY TV MODE</h2>
+            <ol>
+                <li>Open iPhone Control Center.</li>
+                <li>Tap <strong>Screen Mirroring</strong>.</li>
+                <li>Choose your Apple TV or AirPlay television.</li>
+            </ol>
+            <p>Then rotate your phone sideways and enter TV Mode. Safari does not expose the AirPlay picker for a WebGL canvas, so mirroring is selected from Control Center.</p>
+            <div class="cast-actions">
+                <button id="btn-tv-start" type="button">Enter TV Mode</button>
+                <button id="btn-tv-close" class="secondary" type="button">Not now</button>
+            </div>
+        </div>
     </div>
     <canvas id="canvas"></canvas>
 
@@ -51,6 +94,8 @@ const canvas = document.getElementById('canvas');
 const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
 const info = document.getElementById('info');
 const overlay = document.getElementById('overlay');
+const castPanel = document.getElementById('cast-panel');
+const tvButton = document.getElementById('btn-tv');
 
 // WebGL availability check
 if (!gl) {
@@ -1113,6 +1158,67 @@ function previousPattern() {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// AIRPLAY / TV MODE
+// A WebGL canvas cannot invoke iOS's AirPlay picker. TV Mode prepares the
+// page for Control Center screen mirroring and uses optional browser APIs.
+// ─────────────────────────────────────────────────────────────────
+let tvMode = false;
+let wakeLock = null;
+let tvControlsTimer = 0;
+
+async function requestTvWakeLock() {
+    if (!tvMode || !('wakeLock' in navigator) || wakeLock) return;
+    try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } catch (error) {
+        console.info('TV Mode wake lock unavailable:', error);
+    }
+}
+
+async function requestTvFullscreen() {
+    const root = document.documentElement;
+    const request = root.requestFullscreen || root.webkitRequestFullscreen;
+    if (!request) return;
+    try { await request.call(root); }
+    catch (error) { console.info('TV Mode fullscreen unavailable:', error); }
+}
+
+function revealTvControls() {
+    if (!tvMode) return;
+    document.body.classList.add('controls-visible');
+    clearTimeout(tvControlsTimer);
+    tvControlsTimer = setTimeout(() => document.body.classList.remove('controls-visible'), 4000);
+}
+
+async function setTvMode(enabled) {
+    tvMode = enabled;
+    castPanel.classList.remove('open');
+    document.body.classList.toggle('tv-mode', enabled);
+    document.body.classList.toggle('controls-visible', enabled);
+    tvButton.textContent = enabled ? '[TV] Exit' : '[TV] Mode';
+
+    if (enabled) {
+        await requestTvFullscreen();
+        requestTvWakeLock();
+        try { await screen.orientation?.lock?.('landscape'); }
+        catch (error) { console.info('TV Mode orientation lock unavailable:', error); }
+        revealTvControls();
+    } else {
+        clearTimeout(tvControlsTimer);
+        if (wakeLock) await wakeLock.release();
+        wakeLock = null;
+        if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen();
+    }
+    resize();
+}
+
+function toggleTvPanel() {
+    if (tvMode) setTvMode(false);
+    else castPanel.classList.add('open');
+}
+
+// ─────────────────────────────────────────────────────────────────
 // RENDER LOOP
 // ─────────────────────────────────────────────────────────────────
 function render() {
@@ -1213,6 +1319,10 @@ function handleSwipeEnd(e) {
     if (!document.getElementById('overlay').classList.contains('hidden')) return;
     const dx = e.clientX - swipeStartX;
     const dy = e.clientY - swipeStartY;
+    if (Math.abs(dx) < 12 && Math.abs(dy) < 12) {
+        revealTvControls();
+        return;
+    }
     if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
     dx < 0 ? nextPattern() : previousPattern();
 }
@@ -1224,18 +1334,30 @@ overlay.addEventListener('pointerup', handleStart);
 overlay.addEventListener('keydown', handleOverlayKey);
 document.getElementById('btn-next').addEventListener('click', nextPattern);
 document.getElementById('btn-seed').addEventListener('click', newSeed);
+tvButton.addEventListener('click', toggleTvPanel);
+document.getElementById('btn-tv-start').addEventListener('click', () => {
+    startAudio();
+    setTvMode(true);
+});
+document.getElementById('btn-tv-close').addEventListener('click', () => castPanel.classList.remove('open'));
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') requestTvWakeLock();
+});
 
 document.addEventListener('keydown', (e) => {
     if (e.key === 'n' || e.key === 'N') nextPattern();
     if (e.key === 'ArrowRight') nextPattern();
     if (e.key === 'ArrowLeft') previousPattern();
     if (e.key === 'r' || e.key === 'R') newSeed();
+    if (e.key === 't' || e.key === 'T') toggleTvPanel();
+    if (e.key === 'Escape') castPanel.classList.remove('open');
 });
 document.addEventListener('pointerdown', handleSwipeStart);
 document.addEventListener('pointerup', handleSwipeEnd);
 
 // GO
 init();
+if (QUERY.get('tv') === '1' && !BENCHMARK_MODE) castPanel.classList.add('open');
 if (BENCHMARK_MODE) {
     audioMode = 'demo';
     overlay.classList.add('hidden');
