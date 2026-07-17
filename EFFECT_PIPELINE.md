@@ -77,7 +77,7 @@ Open:
 benchmark.html?autorun=1&seed=491009&frames=120
 ```
 
-The dashboard discovers `PATTERN_COUNT` from the child result and benchmarks every pattern sequentially at full viewport. It shows the same-environment median, 90% floor, native-density status, and per-pattern results. The complete report is exported as:
+The dashboard discovers `PATTERN_COUNT` from the child result, benchmarks every pattern forward and then in reverse at full viewport, and uses each pattern's two-run median to neutralize warm-up and ordering bias. It shows the same-environment median, 90% floor, native-density status, and per-pattern results. Raw ordered runs remain in `rawResults`; the complete report is exported as:
 
 ```js
 window.__VISUALIZER_SUITE__

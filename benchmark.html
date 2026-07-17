@@ -30,7 +30,7 @@
 <div id="status" hidden></div>
 <main>
   <h1>Visualizer Performance Gate</h1>
-  <p>Sequential same-seed, full-viewport benchmark. Every child renders at an effective DPR of at least 1.0; the suite refuses to label reduced-density output as passing.</p>
+  <p>Mirrored forward/reverse, same-seed, full-viewport benchmark. Per-pattern medians neutralize warm-up and ordering bias; the suite refuses to label reduced-density output as passing.</p>
   <button id="run">Run full suite</button>
   <button id="download" hidden>Download JSON</button>
   <div id="summary" class="summary"></div>
@@ -46,7 +46,8 @@ const resultsNode = document.getElementById('results');
 const summaryNode = document.getElementById('summary');
 const downloadButton = document.getElementById('download');
 let suite = [];
-let currentPattern = 0;
+let runQueue = [];
+let completedRuns = 0;
 let patternCount = null;
 let runner = null;
 let running = false;
@@ -57,15 +58,28 @@ function median(values) {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-function launch(pattern) {
+function launch(run) {
   if (runner) runner.remove();
   status.hidden = false;
-  status.textContent = `Benchmarking pattern ${pattern}${patternCount ? ` / ${patternCount - 1}` : ''} · ${frames} frames · seed ${seed}`;
+  const total = patternCount ? patternCount * 2 : '?';
+  status.textContent = `Benchmarking ${run.round} pattern ${run.pattern} · run ${completedRuns + 1}/${total} · ${frames} frames · seed ${seed}`;
   runner = document.createElement('iframe');
   runner.id = 'runner';
-  runner.title = `Visualizer benchmark pattern ${pattern}`;
-  runner.src = `index.html?benchmark=1&pattern=${pattern}&seed=${seed}&frames=${frames}`;
+  runner.title = `Visualizer benchmark ${run.round} pattern ${run.pattern}`;
+  runner.src = `index.html?benchmark=1&pattern=${run.pattern}&seed=${seed}&frames=${frames}`;
   document.body.appendChild(runner);
+}
+
+function aggregateRuns(runs) {
+  return Array.from({ length: patternCount }, (_, pattern) => {
+    const samples = runs.filter(item => item.pattern === pattern);
+    const aggregate = { ...samples[0] };
+    for (const key of ['averageFps', 'averageFrameMs', 'p95FrameMs', 'worstFrameMs']) {
+      aggregate[key] = median(samples.map(item => item[key]));
+    }
+    aggregate.sampleRuns = samples.length;
+    return aggregate;
+  });
 }
 
 function finish() {
@@ -73,33 +87,37 @@ function finish() {
   if (runner) runner.remove();
   runner = null;
   status.hidden = true;
-  const medianFps = median(suite.map(item => item.averageFps));
+  const results = aggregateRuns(suite);
+  const medianFps = median(results.map(item => item.averageFps));
   const fpsFloor = medianFps * 0.9;
-  const nativeCount = suite.filter(item => item.effectiveDprX >= 0.999 && item.effectiveDprY >= 0.999).length;
-  const gateCount = suite.filter(item => item.averageFps >= fpsFloor && item.effectiveDprX >= 0.999 && item.effectiveDprY >= 0.999).length;
+  const nativeCount = results.filter(item => item.effectiveDprX >= 0.999 && item.effectiveDprY >= 0.999).length;
+  const gateCount = results.filter(item => item.averageFps >= fpsFloor && item.effectiveDprX >= 0.999 && item.effectiveDprY >= 0.999).length;
   const report = {
     generatedAt: new Date().toISOString(),
     seed,
     frames,
+    method: 'mirrored-forward-reverse-per-pattern-medians',
+    runsPerPattern: 2,
     medianFps,
     fpsFloor,
     nativeDensityPatterns: nativeCount,
     gatePassingPatterns: gateCount,
     renderer: suite[0]?.renderer || 'unknown',
     userAgent: suite[0]?.userAgent || navigator.userAgent,
-    results: suite,
+    results,
+    rawResults: suite,
   };
   window.__VISUALIZER_SUITE__ = report;
 
   summaryNode.innerHTML = `
     <div class="metric">Median FPS<strong>${medianFps.toFixed(2)}</strong></div>
     <div class="metric">90% FPS floor<strong>${fpsFloor.toFixed(2)}</strong></div>
-    <div class="metric">Native density<strong>${nativeCount}/${suite.length}</strong></div>
-    <div class="metric">Median gate<strong>${gateCount}/${suite.length}</strong></div>`;
+    <div class="metric">Native density<strong>${nativeCount}/${results.length}</strong></div>
+    <div class="metric">Median gate<strong>${gateCount}/${results.length}</strong></div>`;
 
   resultsNode.innerHTML = `<table>
     <thead><tr><th>Pattern</th><th>Avg FPS</th><th>Avg ms</th><th>p95 ms</th><th>Worst ms</th><th>Backing / CSS</th><th>DPR</th><th>Gate</th></tr></thead>
-    <tbody>${suite.map(item => {
+    <tbody>${results.map(item => {
       const native = item.effectiveDprX >= 0.999 && item.effectiveDprY >= 0.999;
       const pass = native && item.averageFps >= fpsFloor;
       return `<tr><td>${item.pattern}. ${item.patternName}</td><td>${item.averageFps.toFixed(2)}</td><td>${item.averageFrameMs.toFixed(2)}</td><td>${item.p95FrameMs.toFixed(2)}</td><td>${item.worstFrameMs.toFixed(2)}</td><td>${item.canvasWidth}×${item.canvasHeight} / ${item.cssWidth}×${item.cssHeight}</td><td>${item.effectiveDprX.toFixed(2)}</td><td class="${pass ? 'pass' : 'fail'}">${pass ? 'PASS' : native ? 'FPS' : 'DENSITY'}</td></tr>`;
@@ -120,23 +138,28 @@ function finish() {
 function runSuite() {
   if (running) return;
   suite = [];
-  currentPattern = 0;
+  runQueue = [{ pattern: 0, round: 'forward' }];
+  completedRuns = 0;
   patternCount = null;
   resultsNode.innerHTML = '';
   summaryNode.innerHTML = '';
   downloadButton.hidden = true;
   running = true;
-  launch(currentPattern);
+  launch(runQueue[0]);
 }
 
 window.addEventListener('message', event => {
   if (!running || event.origin !== location.origin || event.source !== runner?.contentWindow) return;
   if (event.data?.type !== 'visualizer-benchmark') return;
-  const result = event.data.result;
-  suite.push(result);
-  patternCount = result.patternCount;
-  currentPattern += 1;
-  if (currentPattern < patternCount) launch(currentPattern);
+  const completed = runQueue.shift();
+  suite.push({ ...event.data.result, suiteRound: completed.round, suiteOrderIndex: completedRuns });
+  completedRuns += 1;
+  if (patternCount === null) {
+    patternCount = event.data.result.patternCount;
+    for (let pattern = 1; pattern < patternCount; pattern += 1) runQueue.push({ pattern, round: 'forward' });
+    for (let pattern = patternCount - 1; pattern >= 0; pattern -= 1) runQueue.push({ pattern, round: 'reverse' });
+  }
+  if (runQueue.length) launch(runQueue[0]);
   else finish();
 });
 

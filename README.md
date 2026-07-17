@@ -48,7 +48,7 @@ For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Exampl
 python3 scripts/verify_visualizer.py
 ```
 
-For a full-density sequential performance run, open:
+For a full-density mirrored forward/reverse performance run, open:
 
 ```text
 benchmark.html?autorun=1&seed=491009&frames=120
