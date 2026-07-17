@@ -483,73 +483,61 @@ vec3 flowField(vec2 uv, float t) {
 // PATTERN 3: BRANCHING TREES / LIGHTNING
 // ─────────────────────────────────────────────────────────────────
 vec3 branches(vec2 uv, float t) {
-    vec3 col = color4;
-    
+    // Inverse-folded coordinates describe an entire binary tree in seven steps.
+    // The former shader tested 256 explicit segments and 30 leaves per pixel.
+    vec2 p = uv;
+    float groveId = floor((p.x + 1.2) / 0.58);
+    p.x = mod(p.x + 1.2, 0.58) - 0.29;
+    p.y += 0.82 + sin(groveId * 2.17 + seed) * 0.06;
+
     float branchGlow = 0.0;
-    vec3 branchColor = vec3(0.0);
-    
-    // Multiple tree origins
-    for (float tree = 0.0; tree < 4.0; tree++) {
-        vec2 origin = vec2(
-            sin(seed + tree * 2.5) * 0.5,
-            -0.8 + tree * 0.1
-        );
-        
-        // Recursive-ish branching
-        float treeGlow = 0.0;
-        
-        for (float b = 0.0; b < 64.0; b++) {
-            // Branch parameters from index
-            float depth = floor(log2(b + 2.0));
-            float branchId = b - pow(2.0, depth) + 1.0;
-            
-            // Branch angle
-            float baseAngle = PI * 0.5 + sin(seed + tree) * 0.3;
-            float spread = 0.8 / (depth + 1.0);
-            float angle = baseAngle + (branchId / pow(2.0, depth) - 0.5) * spread * PI;
-            angle += sin(t * 0.5 + b + tree) * 0.1 * bass;
-            
-            // Branch line
-            vec2 dir = vec2(cos(angle), sin(angle));
-            float len = 0.3 / (depth + 1.0);
-            
-            // Find parent endpoint (simplified)
-            vec2 branchStart = origin + dir * depth * 0.15;
-            vec2 branchEnd = branchStart + dir * len;
-            
-            // Distance to line segment
-            vec2 pa = uv - branchStart;
-            vec2 ba = branchEnd - branchStart;
-            float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
-            float dist = length(pa - ba * h);
-            
-            float thickness = 0.015 / (depth + 1.0);
-            float branch = smoothstep(thickness, thickness * 0.3, dist);
-            
-            treeGlow += branch * 0.5 / (depth + 1.0);
-        }
-        
-        branchGlow += treeGlow;
-        branchColor += mix(color1, color2, tree / 4.0) * treeGlow;
+    float branchCore = 0.0;
+    float segmentLength = 0.31;
+    float thickness = 0.020;
+    float forkAngle = 0.48 + bass * 0.17 + sin(t * 0.17 + seed * 0.013) * mid * 0.075;
+    float ca = cos(forkAngle), sa = sin(forkAngle);
+    float sway = sin(t * 0.38 + groveId * 1.7) * mid * 0.012;
+
+    for (float level = 0.0; level < 5.0; level++) {
+        // Mids move the skeleton rather than merely changing its luminance.
+        p.x += sway * (1.0 - level * 0.09) * (mod(level, 2.0) * 2.0 - 1.0);
+        float along = clamp(p.y, 0.0, segmentLength);
+        vec2 toSegment = p - vec2(0.0, along);
+        float dist2 = dot(toSegment, toSegment);
+        float thickness2 = thickness * thickness;
+        float levelFade = 1.0 - level / 6.0;
+        branchGlow += smoothstep(thickness2 * 20.0, thickness2, dist2) * levelFade;
+        branchCore += smoothstep(thickness2, thickness2 * 0.0784, dist2) * levelFade;
+
+        // Translate to the fork, fold left/right space together, then rotate.
+        // Every iteration doubles the represented branches without doubling ALU.
+        p.y -= segmentLength;
+        p.x = abs(p.x);
+        p = mat2(ca, -sa, sa, ca) * p;
+        segmentLength *= 0.72;
+        thickness *= 0.73;
     }
-    
-    // Growth pulse
-    branchGlow *= 0.8 + bass * 0.4;
-    
-    col = mix(col, branchColor, min(branchGlow, 1.0));
-    
-    // Leaf particles
-    for (float i = 0.0; i < 30.0; i++) {
-        vec2 leafPos = vec2(
-            sin(i * 1.7 + t * 0.3 + seed) * 0.8,
-            cos(i * 2.3 + t * 0.2) * 0.8
-        );
-        leafPos.y -= mod(t * 0.1 + i * 0.1, 2.0) - 1.0;
-        
-        float leaf = smoothstep(0.02, 0.01, length(uv - leafPos));
-        col += color3 * leaf * 0.5;
-    }
-    
+
+    // A fine interference lattice suggests twigs beyond the explicit recursion.
+    float canopy = 1.0 - smoothstep(0.18, 0.92, length(vec2(uv.x * 0.72, uv.y - 0.12)));
+    float branchLattice = smoothstep(0.92, 0.995, 0.5 + 0.5 * sin(uv.x * 73.0 +
+        sin(uv.y * 19.0 - t * 0.35) * 5.0 + seed)) * canopy * (0.28 + treble * 0.72);
+
+    // Cell-hashed drifting seeds replace the old 30-distance particle loop.
+    vec2 leafUv = uv * vec2(22.0, 18.0) + vec2(t * 0.22, -t * 0.38);
+    vec2 leafCell = floor(leafUv);
+    vec2 leafLocal = fract(leafUv) - 0.5;
+    vec2 leafJitter = hash2(leafCell + seed) - 0.5;
+    float leafMask = step(0.87 - treble * 0.05, hash(leafCell + seed * 0.7));
+    vec2 toLeaf = leafLocal - leafJitter * 0.55;
+    float leaves = smoothstep(0.0225, 0.002, dot(toLeaf, toLeaf)) * leafMask * canopy;
+
+    vec3 col = color4 * 0.32;
+    vec3 wood = mix(color1, color2, clamp(uv.y * 0.55 + 0.55, 0.0, 1.0));
+    col += wood * branchGlow * (0.18 + bass * 0.10);
+    col += mix(wood, color3, 0.38) * branchCore * (0.92 + bass * 0.38);
+    col += mix(color2, color3, uv.y * 0.35 + 0.5) * branchLattice * (0.42 + treble * 0.48);
+    col += color3 * leaves * (0.38 + treble * 0.72);
     return col;
 }
 

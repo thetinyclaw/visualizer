@@ -39,6 +39,8 @@ require("float flowPhaseA" in html, "analytic Flow Field implementation missing"
 require("float backgroundFlow = noise" in html, "Flow Field returned to multi-octave background work")
 require("float reactionWarpA" in html, "analytic Reaction membrane missing")
 require("reactionCurl" not in html, "Reaction returned to expensive 3D curl work")
+require("for (float b = 0.0; b < 64.0; b++)" not in html, "legacy 256-segment Branches loop returned")
+require("float branchLattice" in html, "analytic Branches lattice missing")
 require("outside = length(max(d, 0.0))" not in html, "RGB rectangles returned to per-mask square roots")
 require("window.__VISUALIZER_BENCHMARK__ = result" in html, "benchmark telemetry export missing")
 require("effectiveDprX: canvas.width / window.innerWidth" in html, "benchmark native-density telemetry missing")

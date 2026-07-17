@@ -31,6 +31,7 @@ For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Exampl
 - Ten generated patterns: Stipple Waves, Neurons, Flow Field, Branches, Reaction, Voronoi, Ribbons, Galaxy, Cosmic Mycelium, RGB Subpixels
 - Cosmic Mycelium combines a bass-opened gravitational aperture, living log-polar filaments, nested revelation rings, and treble-revealed stellar spores
 - Flow Field uses fast analytic domain-warped rivers and capillaries instead of the former 1,500-step-per-pixel particle integration
+- Branches uses inverse-folded binary trees and cell-hashed drifting seeds instead of 286 per-pixel distance tests
 - RGB Subpixels includes experimental panel effects: glitter, reflections, chromatic halos, phosphor smear, moire shimmer, and aging pixel cells
 - Stipple family pages:
   - `stipple-topography.html` — contour-map stipple waves

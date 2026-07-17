@@ -38,6 +38,11 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Same-browser benchmark at `1280×633`, seed `491009`: `4.94 FPS → 14.38 FPS`.
 - Audio now changes geometry: bass controls filament width, mids bend topology, and treble exposes microstructure.
 
+## Branches rewrite (2026-07-17)
+- Replaced 256 explicit branch-segment tests plus 30 leaf tests per fragment with five inverse-fold iterations and a cell-hashed seed layer.
+- The grove now has coherent binary silhouettes, a luminous twig canopy, and structural bass/mid/treble response.
+- Same-browser `1280×633`, seed `491009`, 120-frame sample: `15.91 → 16.51 FPS`; p95 frame time improved from `135.3 → 125.5 ms` at effective DPR `1.0`.
+
 ## Design Concepts
 - **RGB Subpixels:** zoomed-in TV-pixel entities made from adjacent red, green, and blue rectangles, with scanlines, glitter, chromatic edge glow, prism/reflection streaks, phosphor smear, imperfect glass warping, and aging/dead-pixel behavior.
 - **Stipple Family Pages:** standalone raw-WebGL pages exploring the original stipple-wave language as topographic contour dots, glass/reef caustics, and ink-dune paper grain.
