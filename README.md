@@ -23,10 +23,13 @@ Click the overlay to start. If browser microphone access works, the shader react
 - Swipe right / left: previous / next pattern on touch devices
 - `R` or `[R]andomize`: new seed / palette / generated parameters
 
+For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Example: `index.html?pattern=8&seed=491009` opens and locks a repeatable **Cosmic Mycelium** scene without auto-transitioning.
+
 ## Current status
 
 - Static WebGL/GLSL app
-- Nine generated patterns: Stipple Waves, Neurons, Flow Field, Branches, Reaction, Voronoi, Ribbons, Galaxy, RGB Subpixels
+- Ten generated patterns: Stipple Waves, Neurons, Flow Field, Branches, Reaction, Voronoi, Ribbons, Galaxy, Cosmic Mycelium, RGB Subpixels
+- Cosmic Mycelium combines a bass-opened gravitational aperture, living log-polar filaments, nested revelation rings, and treble-revealed stellar spores
 - RGB Subpixels includes experimental panel effects: glitter, reflections, chromatic halos, phosphor smear, moire shimmer, and aging pixel cells
 - Stipple family pages:
   - `stipple-topography.html` — contour-map stipple waves
@@ -35,6 +38,13 @@ Click the overlay to start. If browser microphone access works, the shader react
 - Cross-browser shader error reporting
 - Mic mode with Web Audio API
 - Demo fallback mode when mic access is unavailable
+- Autonomous creative contract and anti-repetition ledger in `CREATIVE_ENGINE.md` and `EFFECTS.md`
+
+## Verify
+
+```bash
+python3 scripts/verify_visualizer.py
+```
 
 ## Deployment
 

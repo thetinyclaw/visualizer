@@ -68,7 +68,10 @@ if (!gl) {
 // ─────────────────────────────────────────────────────────────────
 // SEED & RANDOM SYSTEM
 // ─────────────────────────────────────────────────────────────────
-let SEED = Math.random() * 999999 | 0;
+const QUERY = new URLSearchParams(location.search);
+const requestedSeed = Number.parseInt(QUERY.get('seed'), 10);
+const PATTERN_LOCKED = QUERY.has('pattern');
+let SEED = Number.isInteger(requestedSeed) ? requestedSeed : Math.random() * 999999 | 0;
 document.getElementById('seed-display').textContent = `seed: ${SEED}`;
 
 // Mulberry32 PRNG - deterministic from seed
@@ -716,7 +719,84 @@ vec3 galaxy(vec2 uv, float t) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// PATTERN 8: RGB SUBPIXEL BLOCKS
+// PATTERN 8: COSMIC MYCELIUM REVELATION
+// ─────────────────────────────────────────────────────────────────
+vec3 cosmicMycelium(vec2 uv, float t) {
+    float baseRadius = length(uv);
+    float breath = 0.5 + 0.5 * sin(t * 0.72);
+
+    // A low-cost living domain warp: mids bend the tissue rather than merely brightening it.
+    float warpA = fbm(uv * 2.6 + vec2(t * 0.055, -t * 0.041) + seed * 0.013, 4);
+    float warpB = fbm(uv.yx * 3.1 + vec2(-t * 0.037, t * 0.049) - seed * 0.009, 3);
+    vec2 tissueOffset = vec2(warpA - 0.5, warpB - 0.5) * (0.10 + mid * 0.16);
+    vec2 p = uv + tissueOffset * smoothstep(1.25, 0.12, baseRadius);
+    float radius = length(p);
+    float angle = atan(p.y, p.x);
+
+    // Bass opens a gravitational aperture; its rim lenses the surrounding field.
+    float apertureRadius = 0.115 + bass * 0.085 + breath * 0.012;
+    float aperture = smoothstep(apertureRadius + 0.035, apertureRadius - 0.012, radius);
+    float horizonGlow = exp(-abs(radius - apertureRadius) * (42.0 - bass * 8.0));
+    float horizonCore = exp(-abs(radius - apertureRadius) * 105.0);
+    float lens = 0.018 / (abs(radius - apertureRadius) + 0.045);
+
+    // Nested revelation rings slip out of phase as if deeper worlds are aligning.
+    float ringPhase = radius * (34.0 + bass * 8.0) - t * 1.25 + warpA * 7.0;
+    float ringSignal = 0.5 + 0.5 * sin(ringPhase);
+    float ringGlow = pow(ringSignal, 8.0);
+    float rings = pow(ringSignal, 24.0);
+    rings *= smoothstep(apertureRadius, apertureRadius + 0.11, radius);
+    rings *= smoothstep(1.25, 0.22, radius);
+    ringGlow *= smoothstep(apertureRadius, apertureRadius + 0.11, radius);
+    ringGlow *= smoothstep(1.25, 0.22, radius);
+
+    // Angular/log-polar filaments crawl toward the aperture like cosmic fungal hyphae.
+    float spiral = angle * 11.0 + log(radius + 0.055) * 17.0;
+    spiral += (warpA - warpB) * (9.0 + mid * 10.0) - t * (0.58 + mid * 0.35);
+    float primarySignal = 0.5 + 0.5 * sin(spiral);
+    float primaryGlow = pow(primarySignal, 16.0);
+    float primaryVeins = pow(primarySignal, 52.0);
+    float branchPhase = angle * 23.0 - log(radius + 0.075) * 10.0 + warpB * 15.0 + t * 0.31;
+    float branchSignal = 0.5 + 0.5 * sin(branchPhase);
+    float branchGlow = pow(branchSignal, 24.0);
+    float branchVeins = pow(branchSignal, 68.0);
+    float veinEnvelope = smoothstep(1.30, 0.09, radius) * (1.0 - aperture * 0.92);
+    float veins = (primaryVeins + branchVeins * 0.55) * veinEnvelope;
+    float veinGlow = (primaryGlow + branchGlow * 0.45) * veinEnvelope;
+
+    // Sparse spores/stars live on an analytic grid; treble reveals microstructure.
+    vec2 sporeGrid = p * 48.0 + tissueOffset * 20.0;
+    vec2 sporeCell = floor(sporeGrid);
+    vec2 sporeLocal = fract(sporeGrid) - 0.5;
+    vec2 sporeJitter = hash2(sporeCell + seed) - 0.5;
+    float sporeChance = step(0.955 - treble * 0.025, hash(sporeCell + seed * 1.7));
+    float spores = smoothstep(0.12, 0.018, length(sporeLocal - sporeJitter * 0.55));
+    spores *= sporeChance * (0.22 + treble * 1.25) * smoothstep(1.2, 0.18, radius);
+
+    float nebula = fbm(p * 4.2 + tissueOffset * 3.0 - t * 0.018, 3);
+    vec3 voidColor = color4 * (0.12 + nebula * 0.15);
+    vec3 tissueColor = mix(color1, color2, clamp(warpA + radius * 0.18, 0.0, 1.0));
+    vec3 revelationColor = mix(color2, color3, 0.45 + 0.45 * sin(angle * 2.0 + t * 0.2));
+
+    vec3 col = voidColor;
+    col += tissueColor * veinGlow * (0.12 + mid * 0.20);
+    col += mix(tissueColor, color3, 0.28) * veins * (0.58 + mid * 0.68);
+    col += revelationColor * ringGlow * (0.10 + bass * 0.16);
+    col += revelationColor * rings * (0.28 + bass * 0.42);
+    col += color3 * horizonGlow * (0.38 + bass * 0.42);
+    col += mix(color3, vec3(1.0), 0.35) * horizonCore * (0.72 + bass * 0.82);
+    col += mix(color3, vec3(1.0), treble) * spores;
+    col += tissueColor * lens * veins * 0.06;
+
+    // The center remains an abyss, but a tiny seed of light makes it feel revelatory.
+    col = mix(col, color4 * 0.025, aperture * 0.96);
+    float singularity = exp(-radius * (80.0 - bass * 18.0));
+    col += color3 * singularity * (0.45 + treble * 0.75);
+    return col;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PATTERN 9: RGB SUBPIXEL BLOCKS
 // ─────────────────────────────────────────────────────────────────
 float rectMask(vec2 p, vec2 halfSize) {
     vec2 d = abs(p) - halfSize;
@@ -822,6 +902,7 @@ vec3 patternColor(int p, vec2 uv, float t) {
     if (p == 5) return voronoi(uv, t);
     if (p == 6) return ribbons(uv, t);
     if (p == 7) return galaxy(uv, t);
+    if (p == 8) return cosmicMycelium(uv, t);
     return rgbSubpixels(uv, t);
 }
 
@@ -831,7 +912,7 @@ void main() {
     vec2 uv = (gl_FragCoord.xy - resolution * 0.5) / min(resolution.x, resolution.y);
     
     // Global rotation; RGB panels stay axis-aligned so subpixels read like zoomed TV geometry.
-    if (pattern != 8) {
+    if (pattern != 9) {
         float a = time * rotationSpeed;
         uv = mat2(cos(a), -sin(a), sin(a), cos(a)) * uv;
     }
@@ -841,7 +922,7 @@ void main() {
     
     vec3 col = patternColor(pattern, uv, time);
     if (transition > 0.0) {
-        int nextPattern = int(mod(float(pattern + 1), 9.0));
+        int nextPattern = int(mod(float(pattern + 1), 10.0));
         col = mix(col, patternColor(nextPattern, uv, time), transition);
     }
     
@@ -941,10 +1022,10 @@ let patternDuration = 20000;
 let transitionDuration = 3000;
 let startTime = performance.now();
 let lastInfoUpdate = 0;
-const PATTERN_COUNT = 9;
+const PATTERN_COUNT = 10;
 const PATTERN_NAMES = [
     'Stipple Waves', 'Neurons', 'Flow Field', 'Branches',
-    'Reaction', 'Voronoi', 'Ribbons', 'Galaxy', 'RGB Subpixels'
+    'Reaction', 'Voronoi', 'Ribbons', 'Galaxy', 'Cosmic Mycelium', 'RGB Subpixels'
 ];
 
 function applyStaticUniforms() {
@@ -973,7 +1054,10 @@ function init() {
     rng = mulberry32(SEED);
     selectPalette();
     generateParams();
-    pattern = seededInt(0, PATTERN_COUNT - 1);
+    const requestedPattern = Number.parseInt(QUERY.get('pattern'), 10);
+    pattern = Number.isInteger(requestedPattern)
+        ? Math.max(0, Math.min(PATTERN_COUNT - 1, requestedPattern))
+        : seededInt(0, PATTERN_COUNT - 1);
     patternTime = performance.now();
     applyStaticUniforms();
 }
@@ -1005,10 +1089,10 @@ function render() {
     const elapsed = now - patternTime;
     
     let transition = 0;
-    if (elapsed > patternDuration) {
+    if (!PATTERN_LOCKED && elapsed > patternDuration) {
         transition = Math.min((elapsed - patternDuration) / transitionDuration, 1.0);
     }
-    if (elapsed > patternDuration + transitionDuration) {
+    if (!PATTERN_LOCKED && elapsed > patternDuration + transitionDuration) {
         pattern = (pattern + 1) % PATTERN_COUNT;
         patternTime = now;
         transition = 0;
