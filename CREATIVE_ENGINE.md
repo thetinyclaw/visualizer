@@ -47,24 +47,28 @@ Implement only the highest-scoring candidate. If no candidate scores at least 7/
 ## Sharpness and performance doctrine
 
 - Prefer analytic edges (`fwidth` when available, resolution-aware smoothstep otherwise) over brute-force DPR.
-- Cap DPR and avoid unconditional expensive loops.
+- Preserve at least one backing pixel per CSS pixel. Never hide bad shader performance with sub-native render density.
+- Cap DPR only above native CSS density and avoid unconditional expensive loops.
 - Keep selected-pattern cost isolated; transitions may temporarily evaluate two patterns.
 - Use constant GLSL loop bounds for cross-GPU compatibility.
 - Reuse noise/hash primitives before adding new ones.
 - Add complexity only when it creates visible structure.
+- Treat blur, sparse disconnected marks, large accidental dead zones, muddy contrast, and stutter as rejection conditions.
+- A new effect must pass the comparative FPS and density gates in `EFFECT_PIPELINE.md` before acceptance.
 
 ## Acceptance loop
 
-1. Read `PROJECT.md`, `CREATIVE_ENGINE.md`, `EFFECTS.md`, recent git history, and the current shader.
+1. Read `PROJECT.md`, `CREATIVE_ENGINE.md`, `EFFECTS.md`, `EFFECT_PIPELINE.md`, recent git history, and the current shader.
 2. Ensure the working tree is clean. Never reset or discard unknown work.
 3. Generate and score three candidates; record only the winner.
 4. Implement one bounded effect or one measurable performance/sharpness improvement.
 5. Run `python3 scripts/verify_visualizer.py`.
-6. Serve on `0.0.0.0:8789`, browser-smoke the exact target effect, inspect console, and capture a screenshot.
-7. Compare the screenshot to the candidate fingerprint. Reject bland, broken, illegible, or redundant work.
-8. Update `EFFECTS.md`, `PROJECT.md`, and `README.md` when applicable.
-9. Commit locally with a focused message. Do not push or merge unless explicitly authorized.
-10. Report the artifact, visual concept, verification, and next underexplored direction.
+6. Run the deterministic benchmark workflow from `EFFECT_PIPELINE.md` at full native CSS density.
+7. Serve on `0.0.0.0:8789`, browser-smoke the exact target effect, inspect console, and capture a full-viewport screenshot.
+8. Compare metrics and screenshot to the gates/fingerprint. Reject bland, broken, sparse, blurry, illegible, redundant, or underperforming work.
+9. Update `EFFECTS.md`, `EFFECT_PIPELINE.md`, `PROJECT.md`, and `README.md` when applicable.
+10. Commit locally with a focused message. Do not push or merge unless explicitly authorized.
+11. Report the artifact, visual concept, benchmark evidence, verification, and next underexplored direction.
 
 ## Safe fallback work
 

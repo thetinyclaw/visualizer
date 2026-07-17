@@ -71,6 +71,7 @@ if (!gl) {
 const QUERY = new URLSearchParams(location.search);
 const requestedSeed = Number.parseInt(QUERY.get('seed'), 10);
 const PATTERN_LOCKED = QUERY.has('pattern');
+const BENCHMARK_MODE = QUERY.has('benchmark');
 let SEED = Number.isInteger(requestedSeed) ? requestedSeed : Math.random() * 999999 | 0;
 document.getElementById('seed-display').textContent = `seed: ${SEED}`;
 
@@ -467,7 +468,8 @@ vec3 flowField(vec2 uv, float t) {
     vec3 riverA = mix(color1, color2, clamp(warpA + p.x * 0.18, 0.0, 1.0));
     vec3 riverB = mix(color2, color3, clamp(warpB - p.y * 0.16, 0.0, 1.0));
     float envelope = 1.0 - smoothstep(0.45, 1.35, length(uv));
-    vec3 col = color4 * (0.18 + 0.12 * fbm(uv * 3.2 - t * 0.015, 3));
+    float backgroundFlow = noise(uv * 3.2 - t * 0.015);
+    vec3 col = color4 * (0.18 + 0.12 * backgroundFlow);
     col += riverA * glowA * 0.16 * envelope;
     col += riverB * glowB * 0.13 * envelope;
     col += mix(riverA, color3, 0.32) * coreA * (0.72 + mid * 0.55) * envelope;
@@ -555,30 +557,33 @@ vec3 branches(vec2 uv, float t) {
 // PATTERN 4: REACTION-DIFFUSION (ORGANIC BLOBS)
 // ─────────────────────────────────────────────────────────────────
 vec3 reaction(vec2 uv, float t) {
-    // Simplified reaction-diffusion approximation
+    // Loop-free reaction membrane: compact 2D domain warps replace repeated
+    // 3D curl sampling while preserving dense biological topology.
     float scale = 5.0 + bass * 3.0;
-    vec2 p = uv * scale;
-    
-    float pattern = 0.0;
-    for (float i = 1.0; i <= 4.0; i++) {
-        float freq = i * 2.0;
-        pattern += sin(p.x * freq + t * 0.2 * i + seed) * 
-                   sin(p.y * freq * 1.3 + t * 0.15 * i) / i;
-        
-        // Add curl distortion
-        vec2 c = curl(p * 0.3, t * 0.1 + seed * 0.1);
-        p += c * 0.2 / i;
-    }
-    
-    pattern = pattern * 0.5 + 0.5;
-    
-    // Create cell-like structures
-    float cells = smoothstep(0.45, 0.55, pattern);
-    float edges = smoothstep(0.02, 0.0, abs(pattern - 0.5));
-    
+    float reactionWarpA = noise(uv * 2.15 + vec2(t * 0.034, -t * 0.027) + seed * 0.007);
+    float reactionWarpB = noise(uv.yx * 2.55 + vec2(-t * 0.029, t * 0.041) - seed * 0.005);
+    vec2 p = uv * scale + vec2(reactionWarpA - 0.5, reactionWarpB - 0.5) * (1.15 + mid * 1.35);
+
+    float fieldA = sin(p.x * 2.0 + sin(p.y * 1.28 + t * 0.22) * 1.45);
+    float fieldB = sin(p.y * 2.55 + sin(p.x * 1.12 - t * 0.17) * 1.30);
+    float fine = sin(p.x * 4.15 - p.y * 1.35 + t * 0.31) *
+                 sin(p.y * 3.75 + p.x * 1.05 - t * 0.24);
+    float pattern = clamp(0.5 + fieldA * fieldB * 0.42 + fine * 0.11, 0.0, 1.0);
+
+    float threshold = 0.5 + (reactionWarpA - 0.5) * 0.10;
+    float membraneWidth = 0.025 + mid * 0.035;
+    float cells = smoothstep(threshold - 0.018, threshold + 0.018, pattern);
+    float edges = 1.0 - smoothstep(0.0, membraneWidth, abs(pattern - threshold));
+
+    vec2 poreGrid = floor((p + vec2(reactionWarpB, reactionWarpA)) * 2.4);
+    float pores = step(0.92 - treble * 0.035, hash(poreGrid + seed));
+    float poreSignal = 0.5 + 0.5 * sin((pattern + reactionWarpB) * 48.0 - t);
+    pores *= smoothstep(0.94, 1.0, poreSignal);
+
     vec3 col = mix(color4, color1, cells);
     col = mix(col, color2, edges * (1.0 + treble));
-    col += color3 * edges * mid * 0.5;
+    col += color3 * edges * (0.22 + mid * 0.55);
+    col += color3 * pores * (0.12 + treble * 0.48);
     
     return col;
 }
@@ -795,9 +800,7 @@ vec3 cosmicMycelium(vec2 uv, float t) {
 // ─────────────────────────────────────────────────────────────────
 float rectMask(vec2 p, vec2 halfSize) {
     vec2 d = abs(p) - halfSize;
-    float outside = length(max(d, 0.0));
-    float inside = min(max(d.x, d.y), 0.0);
-    return smoothstep(0.015, 0.0, outside + inside);
+    return smoothstep(0.015, 0.0, max(d.x, d.y));
 }
 
 vec3 rgbSubpixels(vec2 uv, float t) {
@@ -1022,6 +1025,66 @@ const PATTERN_NAMES = [
     'Stipple Waves', 'Neurons', 'Flow Field', 'Branches',
     'Reaction', 'Voronoi', 'Ribbons', 'Galaxy', 'Cosmic Mycelium', 'RGB Subpixels'
 ];
+const BENCHMARK_WARMUP_FRAMES = 30;
+const requestedBenchmarkFrames = Number.parseInt(QUERY.get('frames'), 10);
+const BENCHMARK_SAMPLE_FRAMES = Number.isInteger(requestedBenchmarkFrames)
+    ? Math.max(30, Math.min(600, requestedBenchmarkFrames))
+    : 120;
+let benchmarkLastFrame = 0;
+let benchmarkWarmupFrames = 0;
+let benchmarkSamples = [];
+let benchmarkReported = false;
+
+function recordBenchmarkFrame(now) {
+    if (!BENCHMARK_MODE || benchmarkReported) return;
+    if (benchmarkLastFrame === 0) {
+        benchmarkLastFrame = now;
+        return;
+    }
+
+    const delta = now - benchmarkLastFrame;
+    benchmarkLastFrame = now;
+    if (benchmarkWarmupFrames < BENCHMARK_WARMUP_FRAMES) {
+        benchmarkWarmupFrames += 1;
+        return;
+    }
+
+    benchmarkSamples.push(delta);
+    if (benchmarkSamples.length < BENCHMARK_SAMPLE_FRAMES) return;
+
+    const sorted = [...benchmarkSamples].sort((a, b) => a - b);
+    const averageFrameMs = benchmarkSamples.reduce((sum, value) => sum + value, 0) / benchmarkSamples.length;
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    const renderer = debugInfo
+        ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
+        : gl.getParameter(gl.RENDERER);
+    const result = {
+        pattern,
+        patternName: PATTERN_NAMES[pattern],
+        patternCount: PATTERN_COUNT,
+        seed: SEED,
+        sampleFrames: BENCHMARK_SAMPLE_FRAMES,
+        averageFps: 1000 / averageFrameMs,
+        averageFrameMs,
+        p95FrameMs: sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))],
+        worstFrameMs: sorted[sorted.length - 1],
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        cssWidth: window.innerWidth,
+        cssHeight: window.innerHeight,
+        effectiveDprX: canvas.width / window.innerWidth,
+        effectiveDprY: canvas.height / window.innerHeight,
+        renderer,
+        userAgent: navigator.userAgent,
+    };
+
+    benchmarkReported = true;
+    window.__VISUALIZER_BENCHMARK__ = result;
+    console.log('VISUALIZER_BENCHMARK', JSON.stringify(result));
+    if (window.parent !== window) {
+        window.parent.postMessage({ type: 'visualizer-benchmark', result }, location.origin);
+    }
+}
 
 function applyStaticUniforms() {
     gl.uniform1f(uni.seed, SEED);
@@ -1103,6 +1166,7 @@ function render() {
     gl.uniform1f(uni.transition, transition);
     
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    recordBenchmarkFrame(now);
     
     if (now - lastInfoUpdate > 250) {
         info.textContent = `${PATTERN_NAMES[pattern]} | seed:${SEED} | ${audioMode} | bass:${smoothBass.toFixed(2)}`;
@@ -1196,6 +1260,11 @@ document.addEventListener('pointerup', handleSwipeEnd);
 
 // GO
 init();
+if (BENCHMARK_MODE) {
+    audioMode = 'demo';
+    overlay.classList.add('hidden');
+    patternTime = performance.now();
+}
 render();
 </script>
 </body>

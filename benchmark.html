@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TinyClaw Visualizer Benchmark</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; color: #d9f7ff; background: #05070c; font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #runner { position: fixed; inset: 0; width: 100vw; height: 100vh; border: 0; z-index: 1; background: #000; }
+  #status { position: fixed; top: 12px; left: 12px; z-index: 3; padding: 8px 11px; color: #dffcff; background: rgba(2, 8, 14, 0.78); border: 1px solid rgba(90, 230, 255, 0.35); border-radius: 8px; backdrop-filter: blur(8px); }
+  main { max-width: 1120px; margin: 0 auto; padding: 36px 22px 80px; }
+  h1 { margin: 0 0 8px; font-size: 28px; }
+  p { color: #8fa9b4; }
+  button { padding: 9px 13px; color: #041016; background: #75ecff; border: 0; border-radius: 7px; font: inherit; font-weight: 700; cursor: pointer; }
+  button + button { margin-left: 8px; }
+  .summary { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
+  .metric { min-width: 150px; padding: 12px; background: #0a111b; border: 1px solid #1c3342; border-radius: 9px; }
+  .metric strong { display: block; font-size: 20px; color: #fff; }
+  table { width: 100%; border-collapse: collapse; overflow: hidden; background: #080e16; border-radius: 9px; }
+  th, td { padding: 9px 10px; text-align: right; border-bottom: 1px solid #152532; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: #7bdff2; }
+  .pass { color: #70f0a5; }
+  .fail { color: #ff758b; font-weight: 700; }
+  code { color: #9be7f4; }
+</style>
+</head>
+<body>
+<div id="status" hidden></div>
+<main>
+  <h1>Visualizer Performance Gate</h1>
+  <p>Sequential same-seed, full-viewport benchmark. Every child renders at an effective DPR of at least 1.0; the suite refuses to label reduced-density output as passing.</p>
+  <button id="run">Run full suite</button>
+  <button id="download" hidden>Download JSON</button>
+  <div id="summary" class="summary"></div>
+  <div id="results"></div>
+</main>
+<script>
+const params = new URLSearchParams(location.search);
+const seed = Number.parseInt(params.get('seed'), 10) || 491009;
+// Suite verdicts require at least 120 samples; shorter probes are too startup-sensitive.
+const frames = Math.max(120, Math.min(600, Number.parseInt(params.get('frames'), 10) || 120));
+const status = document.getElementById('status');
+const resultsNode = document.getElementById('results');
+const summaryNode = document.getElementById('summary');
+const downloadButton = document.getElementById('download');
+let suite = [];
+let currentPattern = 0;
+let patternCount = null;
+let runner = null;
+let running = false;
+
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function launch(pattern) {
+  if (runner) runner.remove();
+  status.hidden = false;
+  status.textContent = `Benchmarking pattern ${pattern}${patternCount ? ` / ${patternCount - 1}` : ''} · ${frames} frames · seed ${seed}`;
+  runner = document.createElement('iframe');
+  runner.id = 'runner';
+  runner.title = `Visualizer benchmark pattern ${pattern}`;
+  runner.src = `index.html?benchmark=1&pattern=${pattern}&seed=${seed}&frames=${frames}`;
+  document.body.appendChild(runner);
+}
+
+function finish() {
+  running = false;
+  if (runner) runner.remove();
+  runner = null;
+  status.hidden = true;
+  const medianFps = median(suite.map(item => item.averageFps));
+  const fpsFloor = medianFps * 0.9;
+  const nativeCount = suite.filter(item => item.effectiveDprX >= 0.999 && item.effectiveDprY >= 0.999).length;
+  const gateCount = suite.filter(item => item.averageFps >= fpsFloor && item.effectiveDprX >= 0.999 && item.effectiveDprY >= 0.999).length;
+  const report = {
+    generatedAt: new Date().toISOString(),
+    seed,
+    frames,
+    medianFps,
+    fpsFloor,
+    nativeDensityPatterns: nativeCount,
+    gatePassingPatterns: gateCount,
+    renderer: suite[0]?.renderer || 'unknown',
+    userAgent: suite[0]?.userAgent || navigator.userAgent,
+    results: suite,
+  };
+  window.__VISUALIZER_SUITE__ = report;
+
+  summaryNode.innerHTML = `
+    <div class="metric">Median FPS<strong>${medianFps.toFixed(2)}</strong></div>
+    <div class="metric">90% FPS floor<strong>${fpsFloor.toFixed(2)}</strong></div>
+    <div class="metric">Native density<strong>${nativeCount}/${suite.length}</strong></div>
+    <div class="metric">Median gate<strong>${gateCount}/${suite.length}</strong></div>`;
+
+  resultsNode.innerHTML = `<table>
+    <thead><tr><th>Pattern</th><th>Avg FPS</th><th>Avg ms</th><th>p95 ms</th><th>Worst ms</th><th>Backing / CSS</th><th>DPR</th><th>Gate</th></tr></thead>
+    <tbody>${suite.map(item => {
+      const native = item.effectiveDprX >= 0.999 && item.effectiveDprY >= 0.999;
+      const pass = native && item.averageFps >= fpsFloor;
+      return `<tr><td>${item.pattern}. ${item.patternName}</td><td>${item.averageFps.toFixed(2)}</td><td>${item.averageFrameMs.toFixed(2)}</td><td>${item.p95FrameMs.toFixed(2)}</td><td>${item.worstFrameMs.toFixed(2)}</td><td>${item.canvasWidth}×${item.canvasHeight} / ${item.cssWidth}×${item.cssHeight}</td><td>${item.effectiveDprX.toFixed(2)}</td><td class="${pass ? 'pass' : 'fail'}">${pass ? 'PASS' : native ? 'FPS' : 'DENSITY'}</td></tr>`;
+    }).join('')}</tbody>
+  </table><p>Renderer: <code>${report.renderer}</code></p>`;
+
+  downloadButton.hidden = false;
+  downloadButton.onclick = () => {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
+    link.download = `visualizer-benchmark-${seed}.json`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+  console.log('VISUALIZER_SUITE', JSON.stringify(report));
+}
+
+function runSuite() {
+  if (running) return;
+  suite = [];
+  currentPattern = 0;
+  patternCount = null;
+  resultsNode.innerHTML = '';
+  summaryNode.innerHTML = '';
+  downloadButton.hidden = true;
+  running = true;
+  launch(currentPattern);
+}
+
+window.addEventListener('message', event => {
+  if (!running || event.origin !== location.origin || event.source !== runner?.contentWindow) return;
+  if (event.data?.type !== 'visualizer-benchmark') return;
+  const result = event.data.result;
+  suite.push(result);
+  patternCount = result.patternCount;
+  currentPattern += 1;
+  if (currentPattern < patternCount) launch(currentPattern);
+  else finish();
+});
+
+document.getElementById('run').addEventListener('click', runSuite);
+if (params.get('autorun') === '1') runSuite();
+</script>
+</body>
+</html>

@@ -46,6 +46,8 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 ## Continuous evolution
 - `CREATIVE_ENGINE.md` defines the concept grammar, three-candidate tournament, novelty gate, performance doctrine, and acceptance loop.
 - `EFFECTS.md` fingerprints accepted visual families so recurring runs can reject superficial duplicates.
+- `EFFECT_PIPELINE.md` defines the open-ended generation state machine and hard native-density/FPS gates.
+- `benchmark.html` runs every registered pattern sequentially at full viewport and exports auditable JSON telemetry.
 - `scripts/verify_visualizer.py` checks registration, transition, documentation, and performance invariants before browser QA.
 
 ## Usage

@@ -47,6 +47,14 @@ For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Exampl
 python3 scripts/verify_visualizer.py
 ```
 
+For a full-density sequential performance run, open:
+
+```text
+benchmark.html?autorun=1&seed=491009&frames=120
+```
+
+`EFFECT_PIPELINE.md` defines the native-density, comparative frame-rate, visual-grade, and accept/reject gates used by autonomous runs.
+
 ## Deployment
 
 Any static host works: GitHub Pages, local Mac mini HTTP service, nginx, Caddy, or a TV/cast browser pointed at the file over HTTP.
