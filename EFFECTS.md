@@ -56,11 +56,12 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Material:** luminous fabric
 
 ### Galaxy
-- **Composition:** centered spiral disk with orbiting stars
-- **Primitive:** polar spiral plus explicit point particles
-- **Motion:** differential orbital rotation
-- **Audio:** bass energizes core; treble twinkles stars
-- **Material:** stellar dust
+- **Composition:** centered three-arm disk with a dense nucleus, dust lanes, and field-wide stars
+- **Primitive:** analytic polar spiral plus cell-local hashed stars
+- **Motion:** differential arm rotation and a slowly orbiting stellar lattice
+- **Audio:** bass opens the nucleus, mids change spiral topology, and treble increases dust microstructure
+- **Material:** luminous stellar dust suspended in a velvet void
+- **Cost:** one local star test per fragment replaces 100 full-screen star-distance tests
 
 ### RGB Subpixels
 - **Composition:** axis-aligned panel grid of RGB entities

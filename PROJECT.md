@@ -43,6 +43,11 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - The grove now has coherent binary silhouettes, a luminous twig canopy, and structural bass/mid/treble response.
 - Same-browser `1280×633`, seed `491009`, 120-frame sample: `15.91 → 16.51 FPS`; p95 frame time improved from `135.3 → 125.5 ms` at effective DPR `1.0`.
 
+## Galaxy rewrite (2026-07-17)
+- Replaced 100 per-fragment orbiting-star distance tests with one cell-local hashed star field and analytic polar dust lanes.
+- Bass now opens the nucleus, mids alter arm topology, and treble exposes stellar microstructure.
+- Same-browser `1280×633`, seed `491009`, 120-frame sample: `16.29 → 19.78 FPS`; p95 improved from `146.2 → 142.3 ms` at effective DPR `1.0`.
+
 ## Design Concepts
 - **RGB Subpixels:** zoomed-in TV-pixel entities made from adjacent red, green, and blue rectangles, with scanlines, glitter, chromatic edge glow, prism/reflection streaks, phosphor smear, imperfect glass warping, and aging/dead-pixel behavior.
 - **Stipple Family Pages:** standalone raw-WebGL pages exploring the original stipple-wave language as topographic contour dots, glass/reef caustics, and ink-dune paper grain.
