@@ -12,6 +12,7 @@ creative = (ROOT / "CREATIVE_ENGINE.md").read_text()
 ledger = (ROOT / "EFFECTS.md").read_text()
 pipeline = (ROOT / "EFFECT_PIPELINE.md").read_text()
 benchmark = (ROOT / "benchmark.html").read_text()
+agents = (ROOT / "AGENTS.md").read_text()
 
 errors = []
 
@@ -48,6 +49,9 @@ require("window.__VISUALIZER_SUITE__" in benchmark, "benchmark suite export miss
 require("result.patternCount" in benchmark, "benchmark dashboard does not discover pattern count")
 require("item.effectiveDprX >= 0.999" in benchmark, "benchmark dashboard lacks density gate")
 require("Math.max(120" in benchmark, "benchmark dashboard allows verdicts from undersized samples")
+require("A dirty tree is a recovery task" in agents, "dirty-workspace recovery protocol missing")
+require("At 105 seconds" in agents, "cron edit cutoff missing")
+require("prove `git status --short` is empty" in agents, "clean-tree end invariant missing")
 require("Creative Evolution Engine" in creative, "creative contract missing")
 require("Cosmic Mycelium Revelation" in ledger, "effect ledger lacks first autonomous fingerprint")
 require("Cosmic Mycelium" in project, "PROJECT.md lacks first autonomous effect")
