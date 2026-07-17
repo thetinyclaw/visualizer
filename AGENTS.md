@@ -2,18 +2,18 @@
 
 These rules apply to every scheduled or autonomous run in this repository.
 
-## Three-minute run budget
+## Ten-minute run budget
 
-Hermes cron runs have a hard interruption ceiling. A run must use this clock:
+This visualizer cron uses a strict ten-minute wall-clock work transaction. Hermes separately has a 600-second inactivity timer, so the agent must enforce this total budget itself:
 
-- **0–30 seconds:** inspect/recover repository state and choose one bounded task.
-- **30–105 seconds:** make one small coherent change only.
-- **At 105 seconds:** stop starting edits.
-- **105–140 seconds:** run focused verification.
-- **140–165 seconds:** commit verified work or checkpoint interrupted work.
-- **Before exit:** prove `git status --short` is empty.
+- **0–60 seconds:** inspect/recover repository state and choose one bounded task.
+- **60–480 seconds:** make one coherent change.
+- **At 8 minutes (480 seconds):** stop starting edits.
+- **480–540 seconds:** run focused verification.
+- **540–590 seconds:** commit verified work or checkpoint interrupted work.
+- **By 600 seconds:** prove `git status --short` is empty and respond.
 
-Long benchmark suites are separate acceptance work. Do not start a full multi-pattern suite inside a cron run unless enough time remains to finish and commit. Prefer one deterministic changed-pattern benchmark per run; use later runs for mirrored/full-suite acceptance.
+Long benchmark suites are separate acceptance work. Do not start a full multi-pattern suite inside a cron run unless it can finish before the eight-minute edit cutoff and still leave two minutes to commit. Prefer one deterministic changed-pattern benchmark per run; use later runs for mirrored/full-suite acceptance.
 
 ## Dirty-workspace recovery
 
