@@ -32,6 +32,12 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Skips next-pattern shader work until transitions actually need it.
 - Removed dead generated params and unused GLSL helpers.
 
+## Flow Field rewrite (2026-07-17)
+- Replaced the old `50 × 30` per-fragment curl integration (~1,500 path steps per pixel) with analytic domain-warped stream contours.
+- Produces continuous crossing rivers and treble capillaries instead of sparse disconnected dashes.
+- Same-browser benchmark at `1280×633`, seed `491009`: `4.94 FPS → 14.38 FPS`.
+- Audio now changes geometry: bass controls filament width, mids bend topology, and treble exposes microstructure.
+
 ## Design Concepts
 - **RGB Subpixels:** zoomed-in TV-pixel entities made from adjacent red, green, and blue rectangles, with scanlines, glitter, chromatic edge glow, prism/reflection streaks, phosphor smear, imperfect glass warping, and aging/dead-pixel behavior.
 - **Stipple Family Pages:** standalone raw-WebGL pages exploring the original stipple-wave language as topographic contour dots, glass/reef caustics, and ink-dune paper grain.

@@ -31,6 +31,8 @@ require("return cosmicMycelium(uv, t);" in html, "Cosmic Mycelium dispatcher rou
 require("?pattern=" in readme, "README lacks deterministic pattern-selection documentation")
 require("QUERY.get('seed')" in html, "deterministic seed-selection route missing")
 require("!PATTERN_LOCKED && elapsed > patternDuration" in html, "deterministic pattern route does not lock transitions")
+require("for (float i = 0.0; i < 50.0; i++)" not in html, "legacy 1500-step Flow Field loop returned")
+require("float flowPhaseA" in html, "analytic Flow Field implementation missing")
 require("Creative Evolution Engine" in creative, "creative contract missing")
 require("Cosmic Mycelium Revelation" in ledger, "effect ledger lacks first autonomous fingerprint")
 require("Cosmic Mycelium" in project, "PROJECT.md lacks first autonomous effect")

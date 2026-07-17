@@ -19,11 +19,12 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Material:** bioluminescent nervous tissue
 
 ### Flow Field
-- **Composition:** many traced streamlines
-- **Primitive:** repeated curl-noise particle tracing
-- **Motion:** advected particle paths
-- **Audio:** bass/mids amplify traces; treble reveals texture
-- **Material:** luminous filaments
+- **Composition:** two crossing families of continuous luminous rivers with fine capillaries
+- **Primitive:** analytic sine contours over a compact curl/domain-warp field
+- **Motion:** phase-propagating streams and topology deformation
+- **Audio:** bass changes filament width, mids bend the field, treble reveals capillaries
+- **Material:** luminous plasma/mycelial currents
+- **Cost:** bounded noise samples with no per-fragment particle-integration loops
 
 ### Branches
 - **Composition:** upward tree/lightning structures with falling leaves
