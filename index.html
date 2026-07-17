@@ -1028,7 +1028,7 @@ const PATTERN_NAMES = [
 const BENCHMARK_WARMUP_FRAMES = 30;
 const requestedBenchmarkFrames = Number.parseInt(QUERY.get('frames'), 10);
 const BENCHMARK_SAMPLE_FRAMES = Number.isInteger(requestedBenchmarkFrames)
-    ? Math.max(30, Math.min(600, requestedBenchmarkFrames))
+    ? Math.max(120, Math.min(600, requestedBenchmarkFrames))
     : 120;
 let benchmarkLastFrame = 0;
 let benchmarkWarmupFrames = 0;

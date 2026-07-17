@@ -43,6 +43,8 @@ require("outside = length(max(d, 0.0))" not in html, "RGB rectangles returned to
 require("window.__VISUALIZER_BENCHMARK__ = result" in html, "benchmark telemetry export missing")
 require("effectiveDprX: canvas.width / window.innerWidth" in html, "benchmark native-density telemetry missing")
 require("BENCHMARK_SAMPLE_FRAMES" in html, "benchmark frame sampler missing")
+require("Math.max(120, Math.min(600, requestedBenchmarkFrames))" in html,
+        "single-pattern benchmark allows undersized acceptance samples")
 require("Effective DPR must remain at least `1.0`" in pipeline, "native-density acceptance gate missing")
 require("at least 90% of the same-environment median" in pipeline, "comparative FPS gate missing")
 require("window.__VISUALIZER_SUITE__" in benchmark, "benchmark suite export missing")
