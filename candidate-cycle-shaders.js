@@ -90,7 +90,7 @@ float cycleArchRib(vec2 p, float span, float lift, float band) {
     return cycleInvSmooth(0.0, 0.022 + band * 0.024, arch) * smoothstep(0.05, 0.95, abs(p.x)) * cycleInvSmooth(0.12, 1.82, length(p));
 }
 vec3 cyclePrismaticRupture(vec2 uv, float t) {
-    vec2 p = uv * 2.0; p.x *= resolution.x / resolution.y;
+    vec2 p = uv * 2.0;
     float localBass = cycleFftIndex(1.0), lowMid = cycleFftIndex(4.0), high = cycleFftIndex(13.0);
     float orbit = t * 0.18 + seed * 0.00013;
     vec3 color = vec3(0.0); float occlusion = 1.0;
@@ -149,7 +149,7 @@ float cycleFastSpores(float angle,float radius,float t) {
     return (cycleInvSmooth(0.0,.055+b*.048,d)*step(.42,owner)+cycleInvSmooth(0.0,.020+b*.015,abs(fract((g.x+g.y)*9.7+owner*4.1)-.5))*.25)*smoothstep(.42,.82,radius)*cycleInvSmooth(1.0,1.55,radius);
 }
 vec3 cycleChromaticIris(vec2 uv,float t) {
-    vec2 p=uv*2.0; p.x*=resolution.x/resolution.y; p=cycleRot(-.31+sin(seed*.001)*.13)*p; p.x*=.86;
+    vec2 p=uv*2.0; p=cycleRot(-.31+sin(seed*.001)*.13)*p; p.x*=.86;
     float radius=length(p), angle=atan(p.y,p.x), localBass=cycleFftIndex(1.0);
     float mids=(cycleFftIndex(5.0)+cycleFftIndex(7.0)+cycleFftIndex(9.0))*.3333;
     float highs=(cycleFftIndex(12.0)+cycleFftIndex(14.0)+cycleFftIndex(15.0))*.3333;
@@ -172,7 +172,7 @@ vec3 cycleChromaticIris(vec2 uv,float t) {
 }
 
 vec3 cycleRecursiveDiamond(vec2 uv,float t) {
-    uv.x*=resolution.x/resolution.y; float angle=PI*.25+sin(t*.07+seed)*.012; vec2 p=cycleRot(angle)*uv;
+    float angle=PI*.25+sin(t*.07+seed)*.012; vec2 p=cycleRot(angle)*uv;
     p*=.86+bass*.10+.018*sin(t*.17); float line=0.0,glow=0.0,node=0.0,micro=0.0; vec2 q=p;
     for(int layer=0;layer<5;layer++) {
         float lf=float(layer),band=fftBand(fract(.071*lf+seed*.00013)); vec2 a=abs(q); float radius=.32+lf*.155+band*.018,diamond=abs(a.x+a.y-radius),railWidth=.0065+lf*.0009+band*.004;
@@ -190,7 +190,7 @@ vec3 cycleRecursiveDiamond(vec2 uv,float t) {
 }
 
 vec3 cycleNeonVoxel(vec2 uv,float t) {
-    uv.x*=resolution.x/resolution.y; vec2 camera=uv+vec2(sin(t*.12+seed)*.06,cos(t*.10)*.04); vec3 col=vec3(0); float occ=0.0;
+    vec2 camera=uv+vec2(sin(t*.12+seed)*.06,cos(t*.10)*.04); vec3 col=vec3(0); float occ=0.0;
     for(int slice=0;slice<3;slice++) {
         float sf=float(slice),z=(sf+1.0)/3.0; vec2 p=camera*(1.0+z*.34)+vec2((z-.5)*.28+sin(t*.16+sf)*.055,(z-.5)*-.20);
         vec2 gridUv=vec2(p.x*(5.2+z*3.1)+sin(p.y*2.4+t*.12)*.20,p.y*(4.0+z*2.2)+cos(p.x*1.7-t*.11)*.16),cell=floor(gridUv),f=fract(gridUv)-.5;
@@ -208,7 +208,7 @@ vec3 cycleNeonVoxel(vec2 uv,float t) {
 
 float cycleStreak(vec2 uv,float slope,float offset,float width) { return cycleInvSmooth(width,width*3.2,abs(uv.y-uv.x*slope-offset)); }
 vec3 cycleScarletVelocity(vec2 uv,float t) {
-    uv.x*=resolution.x/resolution.y; vec2 p=uv; p.y+=.040*sin(p.x*2.1+t*.12); vec3 col=vec3(.003,0,.002);
+    vec2 p=uv; p.y+=.040*sin(p.x*2.1+t*.12); vec3 col=vec3(.003,0,.002);
     col+=vec3(.060,0,.008)*cycleInvSmooth(.12,1.35,length(p*vec2(.88,1.34)))+vec3(.55,.01,.018)*cycleInvSmooth(.008,.030,abs(p.y+.255))*(.28+bass*.25);
     for(int i=0;i<12;i++) { float fi=float(i),key=fract(fi*.097+seed*.00021),b=fftBand(key),flow=fract(t*(.055+fi*.004+b*.050)+key),off=-.70+fi*.125+.075*sin(t*.18+fi*1.7)+(flow-.5)*.18,sl=mix(.065,.310,hash(vec2(fi,seed))),width=.0032+hash(vec2(seed,fi))*.0032+b*.0048,depth=mix(.42,1.0,fract(key*7.1)); vec2 rp=p*vec2(1.0+depth*.16,1.0)+vec2(depth*.19-.09,sin(t*.11+fi)*.016); rp.y+=.075*sin(rp.x*1.72+t*.10+fi*.31)*cycleInvSmooth(.18,1.05,abs(rp.x)); float gate=smoothstep(-.68,.42,rp.y)*cycleInvSmooth(.10,1.08,abs(rp.x)); vec3 sc=mix(vec3(.98,.020,.012),vec3(1,.13,.030),hash(vec2(fi,3))); col+=sc*cycleStreak(rp,sl,off,width)*gate*(.42+b*.76)*depth+vec3(.48,.006,.020)*cycleStreak(rp,sl,off,width*4.2)*gate*(.024+b*.040); }
     for(int j=0;j<5;j++) { float fj=float(j),b=fftBand(fract(.37+fj*.141+seed*.00017)); vec2 ap=p; ap.y+=.10*sin(ap.x*(1.15+fj*.23)+t*.08+fj); col+=vec3(.82,.012,.018)*cycleStreak(ap,.16+fj*.035,-.38+fj*.12,.0045+b*.004)*smoothstep(-.62,.30,ap.y)*cycleInvSmooth(.12,.95,abs(ap.x))*(.20+b*.38); }

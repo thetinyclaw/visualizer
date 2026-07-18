@@ -61,6 +61,8 @@ for index, function_name in enumerate(cycle_functions, start=13):
             f"{function_name} main-cycle dispatcher route missing")
 require("cycleFftIndex" in cycle_shaders and "fftBand(" in cycle_shaders,
         "candidate-cycle shaders are not connected to the shared FFT bus")
+require("resolution.x / resolution.y" not in cycle_shaders,
+        "candidate-cycle shaders double-apply aspect correction to main-cycle UVs")
 require("uniform " not in cycle_shaders and "void main" not in cycle_shaders,
         "candidate-cycle module duplicates main shader uniforms or entry point")
 require("vec3 spectralHiveShell(vec2 uv, float t)" in html and

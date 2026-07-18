@@ -26,6 +26,7 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - [x] Add standalone Filament Vortex candidate route with 16-band FFT topology controls (2026-07-18)
 - [x] Build six reference-informed standalone candidates through isolated parallel worktrees, with native-density benchmarks and FFT-ready runners (2026-07-18)
 - [x] Merge all six reference-informed candidates into automatic main-cycle indices 13–18 while preserving standalone routes (2026-07-18)
+- [x] Correct main-cycle candidate projection by removing duplicate aspect-ratio scaling at the shared UV boundary (2026-07-18)
 
 ## Recent Refresh (2026-07-05)
 - Capped high-DPI render buffer to reduce fill-rate cost on Retina/TV displays.
