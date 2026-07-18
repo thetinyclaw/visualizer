@@ -612,8 +612,8 @@ vec3 voronoi(vec2 uv, float t) {
     vec2 n = floor(p);
     vec2 f = fract(p);
     
-    float minDist = 10.0;
-    float secondDist = 10.0;
+    float minDist2 = 100.0;
+    float secondDist2 = 100.0;
     vec2 minPoint;
     
     for (int j = -1; j <= 1; j++) {
@@ -625,19 +625,22 @@ vec3 voronoi(vec2 uv, float t) {
             point = 0.5 + 0.5 * sin(t * 0.5 + 6.28 * point);
             
             vec2 diff = neighbor + point - f;
-            float dist = length(diff);
+            float dist2 = dot(diff, diff);
             
-            if (dist < minDist) {
-                secondDist = minDist;
-                minDist = dist;
+            if (dist2 < minDist2) {
+                secondDist2 = minDist2;
+                minDist2 = dist2;
                 minPoint = point;
-            } else if (dist < secondDist) {
-                secondDist = dist;
+            } else if (dist2 < secondDist2) {
+                secondDist2 = dist2;
             }
         }
     }
-    
-    float edge = secondDist - minDist;
+
+    // Compare squared distances in the 3x3 search, then recover only the two
+    // distances used for shading: two roots per fragment instead of nine.
+    float minDist = sqrt(minDist2);
+    float edge = sqrt(secondDist2) - minDist;
     float edgeLine = smoothstep(0.0, 0.05, edge);
     
     vec3 cellColor = mix(color1, color2, minPoint.x);

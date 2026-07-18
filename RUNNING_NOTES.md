@@ -13,6 +13,7 @@
 - 2026-07-17: Rewrote Galaxy with analytic spiral lanes and one cell-local star test instead of 100 point-distance tests. A 120-frame same-browser check moved `16.29 → 19.78 FPS` and p95 `146.2 → 142.3 ms` at DPR `1.0`.
 - 2026-07-17: Replaced the sequential full-suite benchmark verdict with mirrored forward/reverse rounds and per-pattern medians; reports preserve ordered raw runs for auditing.
 - 2026-07-17: Rewrote Neurons around a cell-local soma and analytic axon contours, removing 32 full-screen distance tests per pixel. Mirrored 120-frame median moved `14.47 → 17.83 FPS` at DPR `1.0`; screenshot metrics showed denser bright coverage and sharper edges.
+- 2026-07-17: Optimized Voronoi's 3×3 nearest-cell search by comparing squared distances and recovering only the two roots needed for shading, reducing nine square roots per fragment to two without changing cell ordering or native density.
 
 ## Open questions
 - Which visual families hold 60 FPS on the slowest target TV/mobile GPU? Add measured per-pattern timing before making adaptive quality decisions.

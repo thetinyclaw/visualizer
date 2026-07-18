@@ -48,6 +48,7 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Motion:** oscillating cell sites
 - **Audio:** bass changes scale; mids/treble illuminate boundaries and nuclei
 - **Material:** stained glass / living cells
+- **Cost:** squared-distance ordering across the 3×3 neighborhood with only two final square roots for shading
 
 ### Ribbons
 - **Composition:** layered horizontal waveform bands
