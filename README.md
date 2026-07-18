@@ -19,6 +19,11 @@ spectrogram instrument, open `http://127.0.0.1:8789/fft.html`. Microphone mode
 requires a secure context outside localhost; its explicit demo mode remains
 visually distinct from live input.
 
+Tailnet HTTPS routes (required for iPhone Safari microphone access):
+
+- Visualizer: `https://tinyclaws-mini-1.tail331b3.ts.net:8443/index.html`
+- FFT Observatory: `https://tinyclaws-mini-1.tail331b3.ts.net:8443/fft.html`
+
 Click the overlay to start. If browser microphone access works, the shader reacts to the mic. If no mic is available or permission is denied, the app now falls back to a synthetic `demo` pulse so visuals still move.
 
 ## Controls
@@ -50,7 +55,7 @@ For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Exampl
 - Cosmic Mycelium combines a bass-opened gravitational aperture, living log-polar filaments, nested revelation rings, and treble-revealed stellar spores; its domain fields are reused for low-cost nebula shading
 - Flow Field uses fast analytic domain-warped rivers and capillaries instead of the former 1,500-step-per-pixel particle integration
 - Branches uses inverse-folded binary trees and cell-hashed drifting seeds instead of 286 per-pixel distance tests
-- Voronoi assigns every generator a stable bass/mid/treble affinity; weighted distance makes loud-band cells expand dramatically while quiet-band neighbors compress, without changing global grid density
+- Voronoi assigns every generator one of 16 logarithmic FFT bins; weighted distance makes loud-bin cells expand dramatically while quiet-bin neighbors compress, without changing global grid density
 - RGB Subpixels includes experimental panel effects: glitter, reflections, chromatic halos, phosphor smear, moire shimmer, and aging pixel cells
 - Stipple family pages:
   - `stipple-topography.html` — contour-map stipple waves
@@ -59,6 +64,7 @@ For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Exampl
 - Cross-browser shader error reporting
 - Low-ALU interleaved-gradient film grain preserves texture without reusing the heavier structural noise hash on every pixel
 - Mic mode with Web Audio API
+- Shared 16-bin 20 Hz–20 kHz FFT bus: 4096-sample analysis, bandwidth-neutral RMS power, frequency-dependent attack/release envelopes, and four reusable `vec4` shader uniforms
 - Demo fallback mode when mic access is unavailable
 - Standalone `fft.html` observatory with log-frequency interpolation, asymmetric attack/release smoothing, decaying peaks, waveform, spectrogram history, and honest mic/demo/idle states
 - Autonomous creative contract and anti-repetition ledger in `CREATIVE_ENGINE.md` and `EFFECTS.md`

@@ -63,6 +63,20 @@ require("float frequencyCellWeight = mix(2.20, 0.24, bandAmplitude);" in html,
         "Voronoi dramatic frequency-weighted cell sizing missing")
 require("uv * (8.0 + bass * 4.0)" not in html,
         "Voronoi returned to uniform bass-driven grid scaling")
+require("const FFT_BIN_EDGES = new Float32Array" in html and "const fftBins = new Float32Array(16)" in html,
+        "shared 16-bin FFT analysis bus missing")
+require("analyser.fftSize = 4096" in html and "analyser.smoothingTimeConstant = 0" in html,
+        "main analyzer lacks the 4096-sample unsmoothed FFT contract")
+require("const FFT_ATTACK_MS" in html and "const FFT_RELEASE_MS" in html,
+        "frequency-dependent FFT envelopes missing")
+require("uniform vec4 fftBinsA;" in html and "uniform vec4 fftBinsD;" in html,
+        "four-vec4 shader FFT payload missing")
+require("float fftBand(float key)" in html, "shared shader fftBand selector missing")
+require("float bandAmplitude = fftBand(bandKey);" in html,
+        "Voronoi does not consume the 16-bin FFT bus")
+require("gl.uniform4fv(uni.fftBinsA, fftUniformA)" in html and
+        "gl.uniform4fv(uni.fftBinsD, fftUniformD)" in html,
+        "FFT vec4 uniforms are not uploaded per frame")
 ribbons_match = re.search(r"vec3 ribbons\(vec2 uv, float t\) \{(.*?)\n\}", html, re.S)
 ribbons = ribbons_match.group(1) if ribbons_match else ""
 require(ribbons_match is not None, "Ribbons shader function missing")
