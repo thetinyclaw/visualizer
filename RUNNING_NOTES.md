@@ -16,6 +16,7 @@
 - 2026-07-17: Optimized Voronoi's 3×3 nearest-cell search by comparing squared distances and recovering only the two roots needed for shading, reducing nine square roots per fragment to two without changing cell ordering or native density.
 - 2026-07-18: Merged Stipple Waves' duplicate five-harmonic height/normal loops, reusing phase calculations. A 120-frame SwiftShader check moved `14.75 → 16.44 FPS` and p95 `119.7 → 84.2 ms` at DPR `1.0`.
 - 2026-07-18: Optimized Ribbons by hoisting loop-invariant work and replacing per-layer exponential halos with finite cubic falloffs. A 120-frame SwiftShader check moved `15.83 → 16.26 FPS` and p95 `100.6 → 91.1 ms` at DPR `1.0`; screenshot mean color and bright coverage held steady.
+- 2026-07-18: Reused Cosmic Mycelium's living warp fields for nebula shading, removing three redundant noise octaves. A 120-frame SwiftShader check moved `12.37 → 12.75 FPS` and p95 `136.4 → 132.5 ms` at DPR `1.0`; deterministic screenshot metrics retained dense coverage and edge detail.
 
 ## Open questions
 - Which visual families hold 60 FPS on the slowest target TV/mobile GPU? Add measured per-pattern timing before making adaptive quality decisions.

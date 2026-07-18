@@ -62,6 +62,11 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Same-browser SwiftShader `756×469`, seed `491009`, 120-frame sample: `15.83 → 16.26 FPS`; p95 improved from `100.6 → 91.1 ms` at effective DPR `1.0`.
 - Deterministic screenshot metrics retained mean color and bright coverage while the finite halo made the negative space slightly crisper.
 
+## Cosmic Mycelium optimization (2026-07-18)
+- Reused its two existing living domain-warp fields for diffuse nebula shading, removing three redundant noise octaves without changing the aperture, filament, ring, or spore geometry.
+- Same-browser SwiftShader `756×326`, seed `491009`, 120-frame sample: `12.37 → 12.75 FPS`; p95 improved from `136.4 → 132.5 ms` at effective DPR `1.0`.
+- A deterministic full-viewport screenshot retained dense bright coverage and edge definition.
+
 ## Design Concepts
 - **RGB Subpixels:** zoomed-in TV-pixel entities made from adjacent red, green, and blue rectangles, with scanlines, glitter, chromatic edge glow, prism/reflection streaks, phosphor smear, imperfect glass warping, and aging/dead-pixel behavior.
 - **Stipple Family Pages:** standalone raw-WebGL pages exploring the original stipple-wave language as topographic contour dots, glass/reef caustics, and ink-dune paper grain.

@@ -89,4 +89,4 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Motion:** rings dilate while veins crawl inward and the aperture lenses its surroundings
 - **Audio:** bass opens the aperture, mids bend the living filaments, treble reveals spores and stellar microstructure
 - **Material:** bioluminescent tissue suspended in a velvet stellar void
-- **Cost:** bounded octave noise plus analytic polar fields; no large particle loop
+- **Cost:** seven bounded warp octaves feed both geometry and nebula shading; analytic polar fields and a cell-local spore layer avoid redundant noise and particle loops

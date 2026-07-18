@@ -797,7 +797,11 @@ vec3 cosmicMycelium(vec2 uv, float t) {
     float spores = smoothstep(0.12, 0.018, length(sporeLocal - sporeJitter * 0.55));
     spores *= sporeChance * (0.22 + treble * 1.25) * smoothstep(1.2, 0.18, radius);
 
-    float nebula = fbm(p * 4.2 + tissueOffset * 3.0 - t * 0.018, 3);
+    // Reuse the two living domain fields for the diffuse nebula instead of
+    // evaluating three more noise octaves. A radial blend preserves broad,
+    // drifting variation while keeping every filament and aperture unchanged.
+    float nebulaMix = 0.5 + 0.5 * sin(angle * 3.0 + radius * 5.0 - t * 0.09);
+    float nebula = mix(warpA, warpB, nebulaMix);
     vec3 voidColor = color4 * (0.12 + nebula * 0.15);
     vec3 tissueColor = mix(color1, color2, clamp(warpA + radius * 0.18, 0.0, 1.0));
     vec3 revelationColor = mix(color2, color3, 0.45 + 0.45 * sin(angle * 2.0 + t * 0.2));

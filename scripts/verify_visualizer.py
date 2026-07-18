@@ -41,6 +41,10 @@ require("float waveX = uv.x * freq + t * flowSpeed * i + seed;" in html,
 require(html.count("for (float i = 1.0; i <= 5.0; i++)") == 1,
         "Stipple Waves harmonic work is split across duplicate loops")
 require("float backgroundFlow = noise" in html, "Flow Field returned to multi-octave background work")
+require("float nebula = mix(warpA, warpB" in html,
+        "Cosmic Mycelium does not reuse its domain warp for nebula shading")
+require("float nebula = fbm(" not in html,
+        "Cosmic Mycelium returned to redundant multi-octave nebula noise")
 require("for (float i = 0.0; i < 12.0; i++)" not in html, "legacy 12-neuron distance loop returned")
 require("for (float i = 0.0; i < 20.0; i++)" not in html, "legacy 20-spark distance loop returned")
 require("float neuralLattice" in html, "analytic Neurons lattice missing")
