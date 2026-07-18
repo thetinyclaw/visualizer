@@ -296,6 +296,12 @@ float hash(vec2 p) {
     return fract((p3.x + p3.y) * p3.z);
 }
 
+// Interleaved-gradient hash for the subtle post-process grain. Unlike the
+// structural hash above, this runs on every final pixel and needs no vec3 dot.
+float grainHash(vec2 p) {
+    return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}
+
 float hash3(vec3 p) {
     p = fract(p * 0.1031);
     p += dot(p, p.yzx + 33.33);
@@ -958,7 +964,7 @@ void main() {
     col *= vig;
     
     // Subtle film grain
-    col += (hash(gl_FragCoord.xy + time) - 0.5) * 0.02;
+    col += (grainHash(gl_FragCoord.xy + time) - 0.5) * 0.02;
     
     gl_FragColor = vec4(col, 1.0);
 }

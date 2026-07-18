@@ -67,6 +67,11 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Same-browser SwiftShader `756×326`, seed `491009`, 120-frame sample: `12.37 → 12.75 FPS`; p95 improved from `136.4 → 132.5 ms` at effective DPR `1.0`.
 - A deterministic full-viewport screenshot retained dense bright coverage and edge definition.
 
+## Post-process grain optimization (2026-07-18)
+- Replaced the final full-screen grain's structural vec3 hash with a compact interleaved-gradient hash; effect geometry, palette, and native backing density are unchanged.
+- Mirrored 120-frame RGB Subpixels checks at `800×600`, seed `491009`, moved median `11.97 → 12.31 FPS` at effective DPR `1.0`; p95 remained effectively flat (`126.8 → 127.7 ms`).
+- Deterministic screenshots retained full-frame texture and increased measured edge variation slightly rather than blurring the image.
+
 ## Design Concepts
 - **RGB Subpixels:** zoomed-in TV-pixel entities made from adjacent red, green, and blue rectangles, with scanlines, glitter, chromatic edge glow, prism/reflection streaks, phosphor smear, imperfect glass warping, and aging/dead-pixel behavior.
 - **Stipple Family Pages:** standalone raw-WebGL pages exploring the original stipple-wave language as topographic contour dots, glass/reef caustics, and ink-dune paper grain.

@@ -51,6 +51,7 @@ For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Exampl
   - `stipple-glass-reef.html` — caustic/glass/glitter stipple waves
   - `stipple-ink-dunes.html` — desert ink/paper-grain stipple waves
 - Cross-browser shader error reporting
+- Low-ALU interleaved-gradient film grain preserves texture without reusing the heavier structural noise hash on every pixel
 - Mic mode with Web Audio API
 - Demo fallback mode when mic access is unavailable
 - Autonomous creative contract and anti-repetition ledger in `CREATIVE_ENGINE.md` and `EFFECTS.md`

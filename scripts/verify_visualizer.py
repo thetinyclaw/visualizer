@@ -96,6 +96,8 @@ require(html.count("<script") == html.count("</script>"), "unbalanced script tag
 require(html.count("const fragSrc = `") == 1, "unexpected fragment-shader source count")
 require("devicePixelRatio || 1, 2" in html, "DPR cap missing")
 require("if (transition > 0.0)" in html, "transition cost guard missing")
+require("grainHash(gl_FragCoord.xy + time)" in html,
+        "post-process grain returned to the heavier structural hash")
 
 if errors:
     print("visualizer verification FAILED")
