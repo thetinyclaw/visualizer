@@ -940,66 +940,95 @@ vec3 spectralHive(vec2 uv, float t) {
     float angularKey = fract(angle / TAU + 0.5);
     float angularBand = fftBand(angularKey);
 
-    // Two incommensurate angular lattices create volumetric shafts without loops.
-    float rayDrift = sin(t * 0.17 + seed * 0.031) * 0.42;
-    float rayASignal = 0.5 + 0.5 * cos(angle * 18.0 + rayDrift);
+    // The internal source projects seam-aligned light beyond the shell silhouette.
+    float shellSpin = t * 0.105;
+    float rayASignal = 0.5 + 0.5 * cos(angle * 18.0 - shellSpin * 1.7);
     float rayA2 = rayASignal * rayASignal;
     float rayA4 = rayA2 * rayA2;
     float rayA8 = rayA4 * rayA4;
     float rayA = rayA8 * rayA8 * rayA2;
-    float rayBSignal = 0.5 + 0.5 * cos(angle * 30.0 - rayDrift * 0.73 + seed);
+    float rayBSignal = 0.5 + 0.5 * cos(angle * 30.0 + shellSpin * 1.1 + seed);
     float rayB2 = rayBSignal * rayBSignal;
     float rayB4 = rayB2 * rayB2;
     float rayB8 = rayB4 * rayB4;
     float rayB16 = rayB8 * rayB8;
     float rayB = rayB16 * rayB16;
-    float rayBreath = 0.72 + 0.28 * sin(radius * 12.0 - t * 0.31 + angularBand * 2.6);
-    float rayEnvelope = smoothstep(0.10, 0.34, radius) * smoothstep(1.45, 0.28, radius);
-    float broadSignal = 0.5 + 0.5 * cos(angle * 6.0 - t * 0.055);
+    float rayBreath = 0.76 + 0.24 * sin(radius * 11.0 - t * 0.26 + angularBand * 2.4);
+    float rayEnvelope = smoothstep(0.54, 0.76, radius) * smoothstep(1.46, 0.74, radius);
+    float broadSignal = 0.5 + 0.5 * cos(angle * 6.0 - shellSpin * 0.55);
     float broad2 = broadSignal * broadSignal;
     float broad4 = broad2 * broad2;
     float broadShaft = broad4 * broad2 * broadSignal;
-    float rays = (rayA * 0.62 + rayB * 0.34 + broadShaft * 0.16) * rayBreath * rayEnvelope;
+    float rays = (rayA * 0.58 + rayB * 0.28 + broadShaft * 0.20) * rayBreath * rayEnvelope;
 
-    vec3 rayColor = mix(color1, color2, 0.5 + 0.5 * sin(angle * 2.0 + seed));
-    rayColor = mix(rayColor, color3, angularBand * 0.52);
-    vec3 col = color4 * (0.075 + angularBand * 0.045);
-    col += rayColor * rays * (0.20 + angularBand * 0.82 + treble * 0.16);
+    vec3 spectralTint = mix(color2, color3, angularBand);
+    vec3 lightColor = mix(vec3(0.92, 0.96, 1.0), spectralTint, 0.18);
+    vec3 col = color4 * (0.055 + angularBand * 0.026);
+    col += lightColor * rays * (0.24 + angularBand * 0.58 + treble * 0.14);
 
-    // A nearly stationary seven-cell hive anchors the scene while its light migrates.
-    float hiveScale = 3.55 + sin(t * 0.12 + seed) * 0.045 + bass * 0.10;
-    vec2 hivePoint = uv * hiveScale;
-    vec4 cell = spectralHexCell(hivePoint);
+    // Project the visible hemisphere, rotate its normal in 3D, then tile that
+    // curved surface. About three hex shells fit between center and silhouette.
+    const float ballRadius = 0.72;
+    vec2 sphereXY = uv / ballRadius;
+    float sphereRadius2 = dot(sphereXY, sphereXY);
+    float surfaceZ = sqrt(max(0.0001, 1.0 - sphereRadius2));
+    float sphereMask = 1.0 - smoothstep(0.985, 1.015, sphereRadius2);
+    vec3 surfaceNormal = vec3(sphereXY, surfaceZ);
+    float spinCos = cos(shellSpin);
+    float spinSin = sin(shellSpin);
+    surfaceNormal = vec3(
+        spinCos * surfaceNormal.x + spinSin * surfaceNormal.z,
+        surfaceNormal.y,
+        -spinSin * surfaceNormal.x + spinCos * surfaceNormal.z
+    );
+    float tilt = 0.16 + 0.06 * sin(seed * 0.17);
+    float tiltCos = cos(tilt);
+    float tiltSin = sin(tilt);
+    surfaceNormal = vec3(
+        surfaceNormal.x,
+        tiltCos * surfaceNormal.y - tiltSin * surfaceNormal.z,
+        tiltSin * surfaceNormal.y + tiltCos * surfaceNormal.z
+    );
+    float longitude = atan(surfaceNormal.x, surfaceNormal.z);
+    float latitude = asin(clamp(surfaceNormal.y, -0.999, 0.999));
+    vec2 shellPoint = vec2(longitude, latitude) * 2.08;
+    vec4 cell = spectralHexCell(shellPoint);
     vec2 cellLocal = cell.xy;
     vec2 cellId = cell.zw;
-    vec2 cellRingPosition = cellId * vec2(0.5, 0.8660254);
-    float cellRadius2 = dot(cellRingPosition, cellRingPosition);
-    float hiveEnvelope = 1.0 - smoothstep(1.3225, 2.6244, cellRadius2);
+    float cellRadius2 = dot(cellId, cellId);
     float cellKey = hash(cellId + seed * 2.47);
     float cellBand = fftBand(cellKey);
     float hexMetric = spectralHexMetric(cellLocal);
-    float apertureSize = 0.315 + cellBand * 0.055 + bass * 0.025;
-    float chamber = (1.0 - smoothstep(apertureSize, apertureSize + 0.022, hexMetric)) * hiveEnvelope;
-    float seam = (1.0 - smoothstep(0.012, 0.072, abs(hexMetric - apertureSize))) * hiveEnvelope;
-    float bevel = (1.0 - smoothstep(0.025, 0.145, abs(hexMetric - apertureSize))) * hiveEnvelope;
+    float panelRadius = 0.392 - bass * 0.010 - cellBand * 0.014;
+    float panel = (1.0 - smoothstep(panelRadius, panelRadius + 0.018, hexMetric)) * sphereMask;
+    float seam = (1.0 - smoothstep(0.010, 0.060, abs(hexMetric - panelRadius))) * sphereMask;
+    float looseGap = smoothstep(panelRadius - 0.006, 0.49, hexMetric) * sphereMask;
+    float bevel = (1.0 - smoothstep(0.025, 0.135, abs(hexMetric - panelRadius))) * sphereMask;
 
-    // Illumination orbits the six neighboring chambers instead of rotating geometry.
-    float lightDirection = angle - t * 0.24;
-    float migratingSignal = 0.5 + 0.5 * cos(lightDirection * 3.0 + cellKey * TAU);
+    // Internal pressure is strongest near the facing center and leaks through gaps.
+    float facing = clamp(surfaceZ, 0.0, 1.0);
+    float internalPressure = 0.28 + facing * 0.58 + bass * 0.28 + cellBand * 0.24;
+    float centralPressure = 1.0 - smoothstep(0.02, 0.72, sphereRadius2);
+    float migratingSignal = 0.5 + 0.5 * cos(shellSpin * 2.7 + cellKey * TAU);
     float migrating2 = migratingSignal * migratingSignal;
     float migratingLight = 0.24 + 0.76 * migrating2 * migrating2 * migratingSignal;
-    vec3 seamColor = mix(color2, color3, cellKey);
-    seamColor = mix(seamColor, vec3(1.0), 0.18 + cellBand * 0.38);
-    col += seamColor * bevel * migratingLight * (0.08 + cellBand * 0.28);
-    col += seamColor * seam * migratingLight * (0.42 + cellBand * 0.74);
-    col = mix(col, color4 * 0.012, chamber * 0.985);
+    vec3 seamColor = mix(vec3(0.88, 0.93, 1.0), mix(color2, color3, cellKey), 0.16);
+    float trappedLight = internalPressure * (0.30 + migratingLight * 0.42) + centralPressure * (0.58 + bass * 0.34);
+    col += seamColor * looseGap * trappedLight * 0.42;
+    col += seamColor * bevel * trappedLight * 0.34;
+    col += seamColor * seam * trappedLight * 0.92;
 
-    // The central chamber retains hexagonal grammar; low bins ignite its seam
-    // instead of introducing an unrelated circular bloom.
-    float centerCell = 1.0 - smoothstep(0.0144, 0.5184, cellRadius2);
+    // Panels remain dark, curved, and subtly FFT-tinted; rim falloff sells volume.
+    float curvatureShade = 0.035 + facing * 0.095 + cellBand * 0.035;
+    vec3 panelColor = mix(color4 * 0.08, color1 * 0.11, cellBand) * curvatureShade;
+    col = mix(col, panelColor, panel * 0.96);
+    float silhouette = 1.0 - smoothstep(0.78, 1.0, sphereRadius2);
+    col += seamColor * seam * silhouette * 0.12;
+
+    // Whichever rotating cell crosses the optical center becomes the revelation cell.
+    float centerCell = 1.0 - smoothstep(0.00, 0.52, sphereRadius2);
     float centerRevelation = fftBinsA.x;
-    col += mix(color3, vec3(1.0), 0.42) * seam * centerCell *
-        (0.22 + bass * 0.34 + centerRevelation * 0.66);
+    col += seamColor * seam * centerCell * (0.18 + bass * 0.25 + centerRevelation * 0.48);
     return col;
 }
 

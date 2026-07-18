@@ -84,15 +84,15 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Browser QA activated demo mode and reported `94 Hz` peak, `8.19 kHz` centroid, `28%` energy, and no horizontal overflow at `756px` viewport width.
 
 ## Spectral Hive (2026-07-18)
-- Translated the high-level grammar of a supplied honeycomb/light-ray reference into an original prismatic seven-chamber aperture rather than copying its monochrome stock frames.
-- Angular shafts and individual chambers consume the shared 16-bin FFT bus; low bins ignite the central hex while cell bands control aperture size and migrating seam light.
-- Fixed multiplication chains and squared cell-radius gates replaced general powers and a redundant square root, improving the same-route 120-frame result from `8.36 → 12.31 FPS` at native `1280×633`, effective DPR `1.0`.
+- Translated the supplied reference into an original spherical shell rather than copying its monochrome stock frames: a center-facing hex and roughly three foreshortened surrounding layers rotate over a front-hemisphere projection.
+- A central source leaks through loose shell seams and continues outward as angular shafts; rotating chambers and ray sectors consume the shared 16-bin FFT bus.
+- Fixed multiplication ray chains and squared shell gates preserve native density; the corrected spherical version measured `13.30 FPS` at `1280×633`, effective DPR `1.0`.
 
 ## Design Concepts
 - **RGB Subpixels:** scattered multi-scale RGB clusters with tightly overlapping channels, randomized placement, FFT-owned motion/scale, chromatic spill, and luminous edge contours.
 - **Stipple Family Pages:** standalone raw-WebGL pages exploring the original stipple-wave language as topographic contour dots, glass/reef caustics, and ink-dune paper grain.
 - **Cosmic Mycelium:** a living radial aperture with domain-warped fungal filaments, phase-slipping revelation rings, gravitational lensing, and audio-structured stellar spores.
-- **Spectral Hive:** seven dark hexagonal chambers surrounded by prismatic beveled seams and angular FFT-owned volumetric shafts.
+- **Spectral Hive:** a rotating three-layer spherical hex shell containing a central light source that escapes through FFT-owned seams and volumetric shafts.
 
 ## Continuous evolution
 - `CREATIVE_ENGINE.md` defines the concept grammar, three-candidate tournament, novelty gate, performance doctrine, and acceptance loop.

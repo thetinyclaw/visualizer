@@ -57,7 +57,7 @@ For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Exampl
 - Branches uses inverse-folded binary trees and cell-hashed drifting seeds instead of 286 per-pixel distance tests
 - Voronoi assigns every generator one of 16 logarithmic FFT bins; weighted distance makes loud-bin cells expand dramatically while quiet-bin neighbors compress, without changing global grid density
 - RGB Subpixels scatters randomized multi-scale RGB clusters across the frame; tightly overlapping channels, 16-bin FFT ownership, soft chromatic spill, edge contours, and seam-free two-nearest compositing replace the former rigid panel grid
-- Spectral Hive is an original prismatic honeycomb aperture with seven dark chambers, migrating beveled illumination, loop-free radial light shafts, and per-cell/per-angle 16-bin FFT ownership
+- Spectral Hive projects roughly three hex layers onto a slowly rotating sphere; dark plates trap a central light source while FFT-owned seams and loop-free rays leak outward
 - Stipple family pages:
   - `stipple-topography.html` — contour-map stipple waves
   - `stipple-glass-reef.html` — caustic/glass/glitter stipple waves

@@ -12,3 +12,9 @@ Decision: Use `CREATIVE_ENGINE.md` for candidate generation/selection and `EFFEC
 Reason: Perpetual generation without a novelty gate converges on palette and parameter variants; fingerprints force structural invention while bounded commits preserve stability.
 Tradeoff: Some runs will choose performance or QA work when no candidate clears the novelty threshold.
 
+## 2026-07-18 — Treat Spectral Hive as a rotating shell, not a flat aperture
+Context: Frame analysis initially misread the supplied honeycomb reference as seven planar cells around a central opening.
+Decision: Model Spectral Hive as a projected rotating sphere with a center hex and approximately three surrounding shell layers. Internal light leaks through curved shell seams and produces outward volumetric rays.
+Reason: The outer hex rows are foreshortened surface bands; sphere rotation, shell curvature, and central backlighting are the effect's defining topology.
+Tradeoff: Spherical projection and moving surface coordinates cost more shader work than a fixed planar lattice, so performance must be recovered through analytic coordinates and bounded arithmetic rather than reducing backing density.
+

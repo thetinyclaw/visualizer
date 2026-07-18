@@ -48,6 +48,15 @@ require("float cellRadius2 = dot(" in spectral_hive,
         "Spectral Hive returned to per-fragment cell-radius square roots")
 require("float centerRevelation = fftBinsA.x;" in spectral_hive,
         "Spectral Hive center is not driven by the lowest FFT bin")
+require("const float ballRadius = 0.72;" in spectral_hive and
+        "vec3 surfaceNormal = vec3(sphereXY, surfaceZ);" in spectral_hive,
+        "Spectral Hive lost its front-hemisphere spherical projection")
+require("float shellSpin = t * 0.105;" in spectral_hive and
+        "float longitude = atan(surfaceNormal.x, surfaceNormal.z);" in spectral_hive and
+        "float latitude = asin(" in spectral_hive,
+        "Spectral Hive lost rotating spherical surface coordinates")
+require("float centralPressure" in spectral_hive and "float trappedLight" in spectral_hive,
+        "Spectral Hive no longer models a central source leaking through seams")
 require("?pattern=" in readme, "README lacks deterministic pattern-selection documentation")
 require("QUERY.get('seed')" in html, "deterministic seed-selection route missing")
 require("!PATTERN_LOCKED && elapsed > patternDuration" in html, "deterministic pattern route does not lock transitions")
