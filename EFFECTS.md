@@ -10,6 +10,7 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Motion:** rolling surface and drifting flow
 - **Audio:** bass breathes elevation; mids resize dots; treble brightens glow
 - **Material:** luminous point-cloud cloth
+- **Cost:** one five-harmonic loop reuses phase calculations for both surface height and analytic normals
 
 ### Neurons
 - **Composition:** dense cellular somas joined by two field-wide families of luminous axons

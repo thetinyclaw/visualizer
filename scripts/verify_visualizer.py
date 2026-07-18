@@ -36,6 +36,10 @@ require("QUERY.get('seed')" in html, "deterministic seed-selection route missing
 require("!PATTERN_LOCKED && elapsed > patternDuration" in html, "deterministic pattern route does not lock transitions")
 require("for (float i = 0.0; i < 50.0; i++)" not in html, "legacy 1500-step Flow Field loop returned")
 require("float flowPhaseA" in html, "analytic Flow Field implementation missing")
+require("float waveX = uv.x * freq + t * flowSpeed * i + seed;" in html,
+        "Stipple Waves does not reuse harmonic phases for height and normal")
+require(html.count("for (float i = 1.0; i <= 5.0; i++)") == 1,
+        "Stipple Waves harmonic work is split across duplicate loops")
 require("float backgroundFlow = noise" in html, "Flow Field returned to multi-octave background work")
 require("for (float i = 0.0; i < 12.0; i++)" not in html, "legacy 12-neuron distance loop returned")
 require("for (float i = 0.0; i < 20.0; i++)" not in html, "legacy 20-spark distance loop returned")
