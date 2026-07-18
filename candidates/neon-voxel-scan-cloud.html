@@ -1,0 +1,38 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"><title>Neon Voxel Scan Cloud</title><style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#d8f7ff;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}canvas{display:block;position:fixed;inset:0;z-index:0;width:100vw;height:100vh;pointer-events:none}#overlay{position:fixed;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:radial-gradient(circle at 50% 45%,rgba(16,22,36,.92),rgba(0,0,0,.97));transition:opacity .35s}#overlay.hidden{opacity:0;pointer-events:none}h1{margin:0;letter-spacing:.16em;text-transform:uppercase;font-size:clamp(22px,4vw,56px)}p{max-width:720px;text-align:center;color:#92a9b8;line-height:1.55}button{border:1px solid rgba(128,230,255,.45);background:rgba(10,28,42,.82);color:#e8fcff;border-radius:999px;padding:10px 16px;font:inherit;font-weight:700;cursor:pointer}#info{position:fixed;left:10px;bottom:10px;z-index:3;color:rgba(210,245,255,.55);text-shadow:0 1px 2px #000}</style></head><body><div id="overlay"><h1>Neon Voxel Scan Cloud</h1><p>Reference 2 → neon cube/cloud optics: horizontal scan-lines, voxel clusters, spectral depth, and FFT-owned blocks in a fresh procedural grid.</p><div><button id="start-demo">Start demo FFT</button> <button id="start-mic">Start microphone</button></div></div><div id="info"></div><canvas id="canvas"></canvas><script>window.VISUALIZER_CANDIDATE={name:'Neon Voxel Scan Cloud',reference:'doc_f2b4cd0d597b_20260718-2040-38.8387510.mp4',defaultSeed:582114,shader:`
+vec3 candidateColor(vec2 uv, float t){
+    uv.x *= resolution.x/resolution.y;
+    vec2 camera=uv+vec2(sin(t*.12+seed)*.06, cos(t*.10)*.04);
+    vec3 col=vec3(0.0); float occ=0.0;
+    for(int slice=0; slice<3; slice++){
+        float sf=float(slice); float z=(sf+1.0)/3.0;
+        vec2 p=camera*(1.0+z*.34) + vec2((z-.5)*.28 + sin(t*.16+sf)*.055, (z-.5)*-.20);
+        vec2 gridUv=vec2(p.x*(5.2+z*3.1) + sin(p.y*2.4+t*.12)*.20, p.y*(4.0+z*2.2) + cos(p.x*1.7-t*.11)*.16);
+        vec2 cell=floor(gridUv); vec2 f=fract(gridUv)-.5;
+        float id=hash(cell+seed+sf*19.7); float band=fftBand(id);
+        float lane=fract(cell.y*.083+t*(.34+band*.48)+z*.21);
+        float active=step(.28-z*.055, id) * smoothstep(.02,.20,lane) * smoothstep(.98,.42,lane);
+        float blockChance=step(.62-band*.13-z*.05, hash(cell*vec2(1.3,2.1)+seed*.7+sf));
+        vec2 boxSize=vec2(.145+.055*band,.105+.045*band)*mix(.72,1.08,z);
+        float front=boxMetric(f,boxSize);
+        vec2 skew=vec2(.105,-.070)*(0.45+z*.65);
+        float topEdge=1.0-smoothstep(.010,.033,abs(boxMetric(f+skew,boxSize*.92)));
+        float sideEdge=1.0-smoothstep(.012,.034,abs(boxMetric(f-skew*.55,boxSize*.86)));
+        float outline=1.0-smoothstep(.010,.034,abs(front));
+        float face=1.0-smoothstep(-.050,.018,front);
+        float scanFace=pow(max(0.0,1.0-abs(fract((f.y+.5)*5.0+t*(.35+z*.25))-0.5)*2.0),7.0);
+        vec3 green=vec3(.04,1.0,.18), cyan=vec3(.02,.76,1.0), mag=vec3(.95,.06,1.0), amber=vec3(1.0,.48,.03);
+        vec3 neon=mix(green,cyan,smoothstep(.20,.56,id)); neon=mix(neon,mag,step(.79,id)); neon=mix(neon,amber,step(.93,id));
+        float alpha=active*blockChance*(0.30+z*.40)*(1.0-occ*.45);
+        col += neon*(outline*.46 + topEdge*.16 + sideEdge*.13)*(0.55+band*.92)*alpha;
+        col += mix(neon,vec3(1.0),.20)*face*scanFace*(0.12+band*.24)*alpha;
+        col += green*pow(max(0.0,1.0-abs(f.y)*3.8),3.0)*active*(0.025+band*.06)*(1.0-z*.18);
+        occ += face*alpha*.34;
+    }
+    float scan=pow(max(0.0,1.0-abs(fract((uv.y+.75)*22.0-t*2.75)-.5)*2.0),12.0);
+    vec2 starCell=floor((uv+vec2(t*.12,0.0))*vec2(82.0,34.0)); vec2 sf=fract((uv+vec2(t*.12,0.0))*vec2(82.0,34.0))-.5;
+    float spark=step(.988-treble*.018,hash(starCell+seed))*smoothstep(.0009,.0001,dot(sf,sf));
+    col += vec3(.25,.75,1.0)*spark + vec3(.03,.8,.16)*scan*(.045+mid*.10);
+    col *= smoothstep(1.45,.22,length(uv*vec2(.82,1.05)));
+    col = col/(vec3(1.0)+col*0.95);
+    return col;
+}`};</script><script src="cosmic-candidate-runner.js"></script></body></html>

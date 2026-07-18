@@ -118,3 +118,11 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Material:** crisp white-blue metallic fibers over a blue-black cosmic void with a restrained violet throat rim
 - **Novelty boundary:** preserves only high-level topology/material/motion from the supplied image; no pixels, tracing, source texture, or monochrome frame reproduction
 - **Cost:** three analytic lane families plus one seeded clump hash; no particle integration, raymarch, texture dependency, or sub-native backing resolution
+
+### Reference Candidate Suite
+- **Prismatic Rupture Cathedral:** full-frame monochrome shard ribs and aperture fractures; FFT bins alter slab opening, seam width, and glint hierarchy.
+- **Chromatic Iris Mycorrhiza:** biological toroidal iris with radial fiber bundles, spores, a breathing void, and angular 16-band ownership.
+- **Recursive Diamond Lattice:** tone-mapped folded diamond rails, circuit nodes, and FFT packet gates over controlled recursive scales.
+- **Neon Voxel Scan Cloud:** three occluding parallax voxel slices with spectral block ownership and moving scan faces.
+- **Scarlet Velocity Ribbons:** black/scarlet aerodynamic layers surrounding a nonliteral low-slung singularity, with FFT-controlled widths, wakes, and ring pressure.
+- **Novelty boundary:** these remain standalone candidates until direct visual acceptance; autonomous runs may refine them but must not collapse them into existing Hive, Mycelium, RGB, or Stipple fingerprints.

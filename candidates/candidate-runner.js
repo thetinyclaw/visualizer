@@ -212,7 +212,7 @@
         else if (frameDeltas.length < benchmarkFrames) frameDeltas.push(dt);
         if (frameDeltas.length === benchmarkFrames && !window.__CANDIDATE_BENCHMARK__) summarize();
       }
-      if (!benchmarkMode || frameDeltas.length < benchmarkFrames) requestAnimationFrame(render);
+      requestAnimationFrame(render);
     }
     requestAnimationFrame(render);
   };

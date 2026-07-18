@@ -1,0 +1,38 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"><title>Recursive Diamond Lattice</title><style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#d8f7ff;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}canvas{display:block;position:fixed;inset:0;z-index:0;width:100vw;height:100vh;pointer-events:none}#overlay{position:fixed;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:radial-gradient(circle at 50% 45%,rgba(16,22,36,.92),rgba(0,0,0,.97));transition:opacity .35s}#overlay.hidden{opacity:0;pointer-events:none}h1{margin:0;letter-spacing:.16em;text-transform:uppercase;font-size:clamp(22px,4vw,56px)}p{max-width:720px;text-align:center;color:#92a9b8;line-height:1.55}button{border:1px solid rgba(128,230,255,.45);background:rgba(10,28,42,.82);color:#e8fcff;border-radius:999px;padding:10px 16px;font:inherit;font-weight:700;cursor:pointer}#info{position:fixed;left:10px;bottom:10px;z-index:3;color:rgba(210,245,255,.55);text-shadow:0 1px 2px #000}</style></head><body><div id="overlay"><h1>Recursive Diamond Lattice</h1><p>Reference 1 → monochrome recursive diamond/circuit topology: deterministic nested rails, nodes, and FFT-owned packet gates; original geometry, not a copy.</p><div><button id="start-demo">Start demo FFT</button> <button id="start-mic">Start microphone</button></div></div><div id="info"></div><canvas id="canvas"></canvas><script>window.VISUALIZER_CANDIDATE={name:'Recursive Diamond Lattice',reference:'doc_79df0f13ed04_20260718-2040-08.4133386.mp4',defaultSeed:791337,shader:`
+vec3 candidateColor(vec2 uv, float t){
+    uv.x *= resolution.x / resolution.y;
+    float rot = PI * 0.25 + sin(t*0.07 + seed)*0.012;
+    mat2 r = mat2(cos(rot),-sin(rot),sin(rot),cos(rot));
+    vec2 p = r * uv;
+    p *= 0.86 + bass*0.10 + 0.018*sin(t*.17);
+    float line=0.0; float glow=0.0; float node=0.0; float micro=0.0;
+    vec2 q=p;
+    for(int layer=0; layer<5; layer++){
+        float lf=float(layer); float band=fftBand(fract(0.071*lf + seed*0.00013));
+        vec2 a=abs(q); float radius=0.32+lf*0.155+band*0.018;
+        float diamond=abs(a.x+a.y-radius);
+        float railWidth=0.0065+lf*0.0009+band*.004;
+        float rails=1.0-smoothstep(railWidth,railWidth*2.85,diamond);
+        float railGlow=1.0-smoothstep(railWidth*3.0,0.070+band*.035,diamond);
+        float packet=fract((a.x-a.y)*7.25 + lf*0.41 + t*(0.22+band*.38));
+        float gate=mix(0.72,1.0,smoothstep(0.18,0.50,packet)*smoothstep(0.96,0.62,packet));
+        line += rails * (0.34+band*0.42) * gate; glow += railGlow * (0.026+band*.045);
+        float grid=2.05+lf*.72; vec2 cell=floor((q + vec2(.54))*grid); vec2 local=fract((q + vec2(.54))*grid)-0.5;
+        float ckey=hash(cell+lf+seed); float cb=fftBand(ckey); vec2 jp=(hash2(cell+seed*0.3+lf)-0.5)*0.22;
+        float d2=dot(local-jp,local-jp); float n=1.0-smoothstep(0.006+cb*.006,0.020+cb*.016,d2);
+        node += n * step(.82-lf*.035, ckey) * (0.22+cb*0.58);
+        float trace=1.0-smoothstep(0.0055,0.017,abs(abs(local.x)-abs(local.y)));
+        micro += trace * step(.66,hash(cell+lf*11.0)) * (0.032+cb*.075);
+        q = abs(q)*1.43 - vec2(0.37+0.018*sin(t*.10+lf),0.245-0.014*cos(t*.12+lf));
+        q = mat2(0.707,-0.707,0.707,0.707)*q;
+    }
+    float coreRing=abs(length(p)-(.115+bass*.018));
+    float center=1.0-smoothstep(.012,.052,coreRing);
+    vec3 col=vec3(0.0025,0.0032,0.0042);
+    col += vec3(0.50,0.58,0.62)*line + vec3(0.20,0.46,0.70)*glow;
+    col += vec3(0.95,0.82,0.45)*node + vec3(0.52,0.60,0.62)*micro;
+    col += vec3(0.55,0.78,1.0)*center*(0.16+fftBinsA.x*.18);
+    col *= 0.90 + 0.10*sin((uv.y+t*.018)*210.0);
+    col = col/(vec3(1.0)+col*1.55);
+    return col*1.12;
+}`};</script><script src="cosmic-candidate-runner.js"></script></body></html>

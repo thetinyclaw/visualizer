@@ -24,6 +24,7 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - [x] Establish recurring creative evolution contract, novelty gate, effect ledger, and structural verifier (2026-07-17)
 - [x] Add standalone FFT Observatory with honest microphone/demo states and logarithmic spectral analysis (2026-07-18)
 - [x] Add standalone Filament Vortex candidate route with 16-band FFT topology controls (2026-07-18)
+- [x] Build six reference-informed standalone candidates through isolated parallel worktrees, with native-density benchmarks and FFT-ready runners (2026-07-18)
 
 ## Recent Refresh (2026-07-05)
 - Capped high-DPI render buffer to reduce fill-rate cost on Retina/TV displays.

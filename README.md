@@ -47,7 +47,16 @@ Safari does not expose an AirPlay picker for a WebGL canvas, so the television i
 
 For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Example: `index.html?pattern=8&seed=491009` opens and locks a repeatable **Cosmic Mycelium** scene without auto-transitioning.
 
-Standalone candidates live under `candidates/`. The filament-vortex prototype is available at `candidates/filament-vortex.html?seed=491009` and exports comparable benchmark telemetry at `candidates/filament-vortex.html?benchmark=1&seed=491009&frames=120`.
+Standalone candidates live under `candidates/`. Every route accepts deterministic `?seed=...`; append `?benchmark=1&seed=491009&frames=120` for native-density telemetry:
+
+- `candidates/filament-vortex.html`
+- `candidates/prismatic-rupture-cathedral.html`
+- `candidates/chromatic-iris-mycorrhiza.html`
+- `candidates/recursive-diamond-lattice.html`
+- `candidates/neon-voxel-scan-cloud.html`
+- `candidates/scarlet-velocity-ribbons.html`
+
+Example benchmark route: `candidates/filament-vortex.html?benchmark=1&seed=491009&frames=120`.
 
 ## Current status
 
