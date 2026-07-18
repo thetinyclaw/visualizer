@@ -8,17 +8,17 @@
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #010208; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-  canvas { display: block; width: 100vw; height: 100vh; background: radial-gradient(circle at 48% 48%, #090b18 0%, #010208 70%); }
-  #overlay { position: fixed; inset: 0; display: grid; place-items: center; z-index: 10; background: rgba(0,0,0,0.78); color: #dce7ff; cursor: pointer; text-align: center; transition: opacity 420ms ease; }
+  canvas { position: fixed; inset: 0; z-index: 0; display: block; width: 100vw; height: 100vh; background: radial-gradient(circle at 48% 48%, #090b18 0%, #010208 70%); }
+  #overlay { position: fixed; inset: 0; display: grid; place-items: center; z-index: 30; background: rgba(0,0,0,0.78); color: #dce7ff; cursor: pointer; text-align: center; transition: opacity 420ms ease; pointer-events: auto; }
   #overlay.hidden { opacity: 0; pointer-events: none; }
-  .panel { border: 1px solid rgba(160,190,255,0.26); border-radius: 18px; padding: 28px 32px; background: rgba(4,8,18,0.76); box-shadow: 0 24px 90px rgba(0,0,0,0.7); max-width: min(580px, calc(100vw - 32px)); }
+  .panel { position: relative; z-index: 31; border: 1px solid rgba(160,190,255,0.26); border-radius: 18px; padding: 28px 32px; background: rgba(4,8,18,0.76); box-shadow: 0 24px 90px rgba(0,0,0,0.7); max-width: min(580px, calc(100vw - 32px)); pointer-events: auto; }
   h1 { margin: 0 0 12px; letter-spacing: 0.18em; font-size: clamp(26px, 6vw, 54px); font-weight: 800; color: #eef4ff; text-shadow: 0 0 22px rgba(176,198,255,0.42); }
   p { margin: 8px 0; color: #8794b8; line-height: 1.45; }
   .actions { margin-top: 18px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-  button { appearance: none; border: 1px solid rgba(168,199,255,0.4); background: rgba(42,68,120,0.32); color: #dce7ff; padding: 10px 14px; border-radius: 999px; font: inherit; cursor: pointer; }
+  button { position: relative; z-index: 32; appearance: none; border: 1px solid rgba(168,199,255,0.4); background: rgba(42,68,120,0.32); color: #dce7ff; padding: 10px 14px; border-radius: 999px; font: inherit; cursor: pointer; touch-action: manipulation; }
   button:hover { border-color: rgba(220,234,255,0.75); }
-  #hud { position: fixed; left: 12px; bottom: 10px; z-index: 5; color: rgba(193,210,255,0.42); font-size: 11px; white-space: pre; pointer-events: none; }
-  #links { position: fixed; right: 12px; top: 10px; z-index: 5; color: rgba(193,210,255,0.48); font-size: 11px; }
+  #hud { position: fixed; left: 12px; bottom: 10px; z-index: 20; color: rgba(193,210,255,0.42); font-size: 11px; white-space: pre; pointer-events: none; }
+  #links { position: fixed; right: 12px; top: 10px; z-index: 40; color: rgba(193,210,255,0.48); font-size: 11px; pointer-events: auto; }
   #links a { color: inherit; text-decoration: none; margin-left: 12px; }
 </style>
 </head>
@@ -131,56 +131,68 @@ vec3 filamentVortex(vec2 uv, float t) {
   float highMid = (fftBinsC.x + fftBinsC.y + fftBinsC.z + fftBinsC.w) * 0.25;
   float treble = (fftBinsD.x + fftBinsD.y + fftBinsD.z + fftBinsD.w) * 0.25;
 
-  // Audio changes topology: bass opens the throat, mids curl the flow, treble adds lane splitting.
-  float aperture = 0.052 + bass * 0.058 + fftBinsA.w * 0.022;
-  float throat = smoothstep(aperture * 1.05, aperture * 0.42, r);
-  float rim = 1.0 - smoothstep(0.010, 0.044 + bass * 0.030, abs(r - aperture));
+  // Audio changes topology: bass opens an organic throat, mids curl bundles, treble splits hair lanes.
+  float rimWarp = 0.014 * sin(a * 3.0 + seed * 0.011 + t * 0.07) +
+                  0.008 * sin(a * 7.0 - seed * 0.017 + lowMid * 2.6) +
+                  0.005 * sin(a * 11.0 + t * 0.16 + highMid * 3.1);
+  float aperture = 0.050 + bass * 0.052 + fftBinsA.w * 0.018;
+  float apertureRadius = aperture + rimWarp;
+  float apertureDelta = r - apertureRadius;
+  float throat = smoothstep(0.007, -0.006, apertureDelta);
+  float rim = 1.0 - smoothstep(0.0025, 0.010 + bass * 0.004, abs(apertureDelta));
 
-  float logR = log(r + 0.028);
-  float curl = baseTwist + lowMid * 2.1 - treble * 0.72;
+  float logR = log(r + 0.026);
+  float curl = baseTwist + lowMid * 2.35 - treble * 0.64;
   float angularFlow = a + logR * curl;
-  angularFlow += 0.23 * sin(a * 3.0 - logR * 3.7 + t * (0.18 + highMid * 0.75));
-  angularFlow += 0.09 * sin(a * 8.0 + r * 9.0 - t * (0.42 + treble));
+  float bundleWarp = 0.26 * sin(a * 2.7 - logR * 5.1 + t * (0.16 + highMid * 0.72));
+  bundleWarp += 0.15 * sin(a * 6.3 + r * 11.0 - t * (0.36 + treble * 0.64));
+  bundleWarp += 0.055 * sin((a + logR) * 17.0 + seed * 0.003 + t * 0.23);
+  angularFlow += bundleWarp;
 
   float inward = 1.0 / (r + 0.12);
-  float radialAdvection = r * (9.6 + bass * 2.4) - t * (0.33 + lowMid * 0.72) + 0.45 * sin(angularFlow * 2.0 + t * 0.21);
-  float laneCountA = 46.0 + floor(material * 14.0) + treble * 10.0;
-  float laneCountB = 74.0 + floor(seed - floor(seed / 17.0) * 17.0);
+  float radialAdvection = r * (8.4 + bass * 2.0) - t * (0.28 + lowMid * 0.58) + 0.36 * sin(angularFlow * 2.3 + t * 0.17);
   float bandKey = fract(angularFlow / TAU + 0.5 + seed * 0.000019);
   float owned = fftBand(bandKey);
-  float filamentWidth = mix(0.032, 0.083, clamp(owned + treble * 0.45, 0.0, 1.0));
+  float filamentWidth = mix(0.018, 0.052, clamp(owned + treble * 0.35, 0.0, 1.0));
 
-  float primary = aaLine(angularFlow / TAU * laneCountA + radialAdvection * 0.055, filamentWidth);
-  float secondary = aaLine(angularFlow / TAU * laneCountB - radialAdvection * (0.12 + highMid * 0.10), 0.020 + owned * 0.028);
-  float hair = aaLine((angularFlow + sin(radialAdvection) * 0.08) / TAU * 148.0 + radialAdvection * 0.22, 0.012 + treble * 0.018);
+  // Three non-harmonic hair families replace the contour-ring read. Radial phase offsets
+  // are deliberately unequal so bundles fray, merge, and shear instead of forming rings.
+  float laneCountA = 88.0 + floor(material * 22.0) + treble * 16.0;
+  float laneCountB = 131.0 + floor(seed - floor(seed / 29.0) * 29.0);
+  float laneCountC = 211.0 + floor(seed - floor(seed / 17.0) * 17.0);
+  float familyA = aaLine(angularFlow / TAU * laneCountA + radialAdvection * 0.019 + sin(radialAdvection * 0.71) * 0.11, filamentWidth);
+  float familyB = aaLine((angularFlow + sin(r * 15.0 - t * 0.24) * 0.035) / TAU * laneCountB - radialAdvection * (0.037 + highMid * 0.035), 0.013 + owned * 0.022);
+  float familyC = aaLine((angularFlow + sin(radialAdvection * 1.9 + a * 5.0) * 0.055) / TAU * laneCountC + radialAdvection * (0.071 + treble * 0.05), 0.0085 + treble * 0.012);
 
-  float radialGate = smoothstep(aperture * 0.30, 0.84 + bass * 0.10, r) * (1.0 - smoothstep(1.02, 1.50, r));
-  float vortexGain = pow(clamp(inward * 0.58, 0.0, 1.0), 0.47);
-  float fibers = (primary * 0.74 + secondary * 0.40 + hair * 0.28) * radialGate;
-  fibers *= 0.56 + 0.55 * vortexGain;
+  vec2 bundleCell = floor(vec2(angularFlow / TAU * 42.0 + sin(logR * 4.0), log(r + 0.045) * 24.0 - t * 0.10));
+  float bundleHash = hash(bundleCell + seed * 0.113);
+  float shred = 0.54 + 0.58 * smoothstep(0.10, 0.92, bundleHash + owned * 0.32);
+  float gapNoise = hash(bundleCell + vec2(17.0, 71.0) + floor(t * 0.65));
+  float brokenBundle = 0.70 + 0.36 * smoothstep(0.04, 0.88, gapNoise + owned * 0.24 + highMid * 0.16);
 
-  // Seeded clumps prevent stock-radial uniformity while preserving full-frame density.
-  vec2 cell = floor(vec2(angularFlow / TAU * 31.0, log(r + 0.05) * 18.0 + t * 0.08));
-  float grain = hash(cell + seed * 0.113);
-  float clump = 0.72 + 0.36 * smoothstep(0.18, 0.96, grain + owned * 0.25);
-  fibers *= clump;
+  float radialGate = smoothstep(apertureRadius - 0.004, apertureRadius + 0.030, r) * (1.0 - smoothstep(1.04, 1.50, r));
+  float midFieldMist = smoothstep(apertureRadius + 0.035, 0.72, r) * smoothstep(1.42, 0.36, r);
+  float vortexGain = pow(clamp(inward * 0.56, 0.0, 1.0), 0.44);
+  float fibers = (familyA * 0.62 + familyB * 0.44 + familyC * 0.34) * radialGate;
+  fibers *= shred * brokenBundle * (0.58 + 0.52 * vortexGain);
+  float capillaryFog = (familyA + familyB * 0.8 + familyC * 0.7) * midFieldMist * (0.06 + highMid * 0.10);
 
   float dust = hash(gl_FragCoord.xy + floor(t * 20.0) + seed) - 0.5;
-  float farHaze = smoothstep(1.35, 0.22, r) * (0.08 + highMid * 0.16);
-  vec3 cold = mix(vec3(0.48,0.56,0.68), vec3(0.72,0.78,1.0), owned + treble * 0.35);
-  vec3 pearl = vec3(0.92, 0.96, 1.0);
-  vec3 violet = vec3(0.22, 0.19, 0.38) * (0.4 + lowMid);
+  float farHaze = smoothstep(1.36, 0.20, r) * (0.08 + highMid * 0.15);
+  vec3 cold = mix(vec3(0.43,0.53,0.66), vec3(0.72,0.79,1.0), owned + treble * 0.32);
+  vec3 pearl = vec3(0.93, 0.97, 1.0);
+  vec3 violet = vec3(0.20, 0.18, 0.35) * (0.42 + lowMid);
   vec3 col = vec3(0.004, 0.006, 0.015);
-  col += violet * farHaze;
-  col += cold * fibers * (0.62 + owned * 0.92);
-  col += pearl * fibers * fibers * (0.72 + treble * 0.75);
-  col += vec3(0.66,0.70,1.0) * rim * (0.50 + bass * 0.85);
-  col *= 1.0 - throat * (0.92 + bass * 0.05);
-  col += vec3(dust * 0.022);
+  col += violet * (farHaze + capillaryFog);
+  col += cold * fibers * (0.72 + owned * 0.86);
+  col += pearl * fibers * fibers * (0.74 + treble * 0.72);
+  col += mix(vec3(0.50,0.58,0.92), pearl, 0.34) * rim * (0.92 + bass * 0.80);
+  col *= 1.0 - throat * (0.86 + bass * 0.06);
+  col += vec3(dust * 0.018);
 
-  // Soft lensing shadow at the aperture makes the center read as an opening rather than a bright blob.
-  float lens = smoothstep(aperture * 1.65, aperture * 0.52, r);
-  col = mix(col, vec3(0.0, 0.0, 0.004), lens * (0.80 + bass * 0.10));
+  // Crisp, asymmetrical lensing keeps the center open without a broad dead zone.
+  float lens = smoothstep(apertureRadius + 0.016, apertureRadius - 0.003, r);
+  col = mix(col, vec3(0.0, 0.0, 0.004), lens * (0.78 + bass * 0.06));
   return col;
 }
 

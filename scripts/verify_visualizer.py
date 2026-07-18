@@ -239,10 +239,18 @@ require("FILAMENT VORTEX" in filament_vortex and "function updateMicSpectrum()" 
 require("const FFT_BANDS = 16;" in filament_vortex and "uniform vec4 fftBinsA;" in filament_vortex and
         "uniform vec4 fftBinsD;" in filament_vortex and "float fftBand(float key)" in filament_vortex,
         "Filament Vortex does not expose the 16-band four-vec4 FFT shader bus")
-require("float aperture = 0.052 + bass * 0.058" in filament_vortex and
-        "float curl = baseTwist + lowMid * 2.1 - treble * 0.72;" in filament_vortex and
+require("float aperture = 0.050 + bass * 0.052" in filament_vortex and
+        "float apertureRadius = aperture + rimWarp;" in filament_vortex and
+        "float curl = baseTwist + lowMid * 2.35 - treble * 0.64;" in filament_vortex and
         "float filamentWidth = mix" in filament_vortex,
-        "Filament Vortex audio is not structurally mapped to aperture/curl/filament width")
+        "Filament Vortex audio is not structurally mapped to organic aperture/curl/filament width")
+require("float laneCountA = 88.0" in filament_vortex and "float laneCountB = 131.0" in filament_vortex and
+        "float laneCountC = 211.0" in filament_vortex and "float brokenBundle" in filament_vortex,
+        "Filament Vortex lacks multi-scale irregular hair bundles")
+require("canvas { position: fixed; inset: 0; z-index: 0;" in filament_vortex and
+        "#overlay { position: fixed; inset: 0;" in filament_vortex and "z-index: 30" in filament_vortex and
+        "button { position: relative; z-index: 32;" in filament_vortex,
+        "Filament Vortex overlay/button hit-test layering is not explicit")
 require("Math.max(1, Math.min(window.devicePixelRatio || 1, 2))" in filament_vortex and
         "effectiveDprX: canvas.width / window.innerWidth" in filament_vortex,
         "Filament Vortex lacks native-density backing and benchmark telemetry")
