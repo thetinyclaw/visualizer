@@ -19,7 +19,7 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - [x] Implement audio analysis (FFT)
 - [x] Fix WebGL/shader error handling
 - [x] Fix GLSL Intel/Windows loop compatibility
-- [x] Add ten generated shader patterns, including Cosmic Mycelium and RGB subpixel rectangle blocks
+- [x] Add eleven generated shader patterns, including Cosmic Mycelium, scattered RGB Subpixels, and Spectral Hive
 - [x] Refresh render-loop performance and layout (Ponytail pass, 2026-07-05)
 - [x] Establish recurring creative evolution contract, novelty gate, effect ledger, and structural verifier (2026-07-17)
 - [x] Add standalone FFT Observatory with honest microphone/demo states and logarithmic spectral analysis (2026-07-18)
@@ -74,7 +74,7 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Deterministic screenshots retained full-frame texture and increased measured edge variation slightly rather than blurring the image.
 
 ## Frequency-owned Voronoi cells (2026-07-18)
-- Replaced uniform bass-driven grid scaling with stable per-generator bass/mid/treble affinity and weighted distance, so loud-band cells consume area while quiet neighbors compress.
+- Replaced uniform bass-driven grid scaling with stable per-generator 16-bin logarithmic FFT affinity and weighted distance, so loud-bin cells consume area while quiet neighbors compress.
 - Audio also changes each owner’s motion rate, boundary width, and nucleus size without lowering global tessellation density.
 - Deterministic 120-frame browser evidence at `756×469`, seed `491009`, measured `15.48 FPS` at effective DPR `1.0`; the full-frame screenshot retained dense, crisp stained-glass coverage.
 
@@ -83,10 +83,16 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Microphone startup is user-gesture and secure-context gated; idle, demo, live microphone, and permission-error states remain explicit.
 - Browser QA activated demo mode and reported `94 Hz` peak, `8.19 kHz` centroid, `28%` energy, and no horizontal overflow at `756px` viewport width.
 
+## Spectral Hive (2026-07-18)
+- Translated the high-level grammar of a supplied honeycomb/light-ray reference into an original prismatic seven-chamber aperture rather than copying its monochrome stock frames.
+- Angular shafts and individual chambers consume the shared 16-bin FFT bus; low bins ignite the central hex while cell bands control aperture size and migrating seam light.
+- Fixed multiplication chains and squared cell-radius gates replaced general powers and a redundant square root, improving the same-route 120-frame result from `8.36 → 12.31 FPS` at native `1280×633`, effective DPR `1.0`.
+
 ## Design Concepts
-- **RGB Subpixels:** zoomed-in TV-pixel entities made from adjacent red, green, and blue rectangles, with scanlines, glitter, chromatic edge glow, prism/reflection streaks, phosphor smear, imperfect glass warping, and aging/dead-pixel behavior.
+- **RGB Subpixels:** scattered multi-scale RGB clusters with tightly overlapping channels, randomized placement, FFT-owned motion/scale, chromatic spill, and luminous edge contours.
 - **Stipple Family Pages:** standalone raw-WebGL pages exploring the original stipple-wave language as topographic contour dots, glass/reef caustics, and ink-dune paper grain.
 - **Cosmic Mycelium:** a living radial aperture with domain-warped fungal filaments, phase-slipping revelation rings, gravitational lensing, and audio-structured stellar spores.
+- **Spectral Hive:** seven dark hexagonal chambers surrounded by prismatic beveled seams and angular FFT-owned volumetric shafts.
 
 ## Continuous evolution
 - `CREATIVE_ENGINE.md` defines the concept grammar, three-candidate tournament, novelty gate, performance doctrine, and acceptance loop.

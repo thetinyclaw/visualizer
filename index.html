@@ -915,6 +915,94 @@ vec3 cosmicMycelium(vec2 uv, float t) {
 // ─────────────────────────────────────────────────────────────────
 // PATTERN 9: RGB SUBPIXEL BLOCKS
 // ─────────────────────────────────────────────────────────────────
+vec4 spectralHexCell(vec2 p) {
+    vec2 spacing = vec2(1.0, 1.7320508);
+    vec2 halfSpacing = spacing * 0.5;
+    vec2 localA = mod(p + halfSpacing, spacing) - halfSpacing;
+    vec2 localB = mod(p, spacing) - halfSpacing;
+    vec2 idA = floor((p + halfSpacing) / spacing) * 2.0;
+    vec2 idB = floor(p / spacing) * 2.0 + 1.0;
+    return dot(localA, localA) < dot(localB, localB)
+        ? vec4(localA, idA)
+        : vec4(localB, idB);
+}
+
+float spectralHexMetric(vec2 p) {
+    p = abs(p);
+    return max(p.y, p.x * 0.8660254 + p.y * 0.5);
+}
+
+// PATTERN 10: SPECTRAL HIVE APERTURE
+// An original prismatic interpretation of radiating honeycomb light geometry.
+vec3 spectralHive(vec2 uv, float t) {
+    float radius = length(uv);
+    float angle = atan(uv.y, uv.x);
+    float angularKey = fract(angle / TAU + 0.5);
+    float angularBand = fftBand(angularKey);
+
+    // Two incommensurate angular lattices create volumetric shafts without loops.
+    float rayDrift = sin(t * 0.17 + seed * 0.031) * 0.42;
+    float rayASignal = 0.5 + 0.5 * cos(angle * 18.0 + rayDrift);
+    float rayA2 = rayASignal * rayASignal;
+    float rayA4 = rayA2 * rayA2;
+    float rayA8 = rayA4 * rayA4;
+    float rayA = rayA8 * rayA8 * rayA2;
+    float rayBSignal = 0.5 + 0.5 * cos(angle * 30.0 - rayDrift * 0.73 + seed);
+    float rayB2 = rayBSignal * rayBSignal;
+    float rayB4 = rayB2 * rayB2;
+    float rayB8 = rayB4 * rayB4;
+    float rayB16 = rayB8 * rayB8;
+    float rayB = rayB16 * rayB16;
+    float rayBreath = 0.72 + 0.28 * sin(radius * 12.0 - t * 0.31 + angularBand * 2.6);
+    float rayEnvelope = smoothstep(0.10, 0.34, radius) * smoothstep(1.45, 0.28, radius);
+    float broadSignal = 0.5 + 0.5 * cos(angle * 6.0 - t * 0.055);
+    float broad2 = broadSignal * broadSignal;
+    float broad4 = broad2 * broad2;
+    float broadShaft = broad4 * broad2 * broadSignal;
+    float rays = (rayA * 0.62 + rayB * 0.34 + broadShaft * 0.16) * rayBreath * rayEnvelope;
+
+    vec3 rayColor = mix(color1, color2, 0.5 + 0.5 * sin(angle * 2.0 + seed));
+    rayColor = mix(rayColor, color3, angularBand * 0.52);
+    vec3 col = color4 * (0.075 + angularBand * 0.045);
+    col += rayColor * rays * (0.20 + angularBand * 0.82 + treble * 0.16);
+
+    // A nearly stationary seven-cell hive anchors the scene while its light migrates.
+    float hiveScale = 3.55 + sin(t * 0.12 + seed) * 0.045 + bass * 0.10;
+    vec2 hivePoint = uv * hiveScale;
+    vec4 cell = spectralHexCell(hivePoint);
+    vec2 cellLocal = cell.xy;
+    vec2 cellId = cell.zw;
+    vec2 cellRingPosition = cellId * vec2(0.5, 0.8660254);
+    float cellRadius2 = dot(cellRingPosition, cellRingPosition);
+    float hiveEnvelope = 1.0 - smoothstep(1.3225, 2.6244, cellRadius2);
+    float cellKey = hash(cellId + seed * 2.47);
+    float cellBand = fftBand(cellKey);
+    float hexMetric = spectralHexMetric(cellLocal);
+    float apertureSize = 0.315 + cellBand * 0.055 + bass * 0.025;
+    float chamber = (1.0 - smoothstep(apertureSize, apertureSize + 0.022, hexMetric)) * hiveEnvelope;
+    float seam = (1.0 - smoothstep(0.012, 0.072, abs(hexMetric - apertureSize))) * hiveEnvelope;
+    float bevel = (1.0 - smoothstep(0.025, 0.145, abs(hexMetric - apertureSize))) * hiveEnvelope;
+
+    // Illumination orbits the six neighboring chambers instead of rotating geometry.
+    float lightDirection = angle - t * 0.24;
+    float migratingSignal = 0.5 + 0.5 * cos(lightDirection * 3.0 + cellKey * TAU);
+    float migrating2 = migratingSignal * migratingSignal;
+    float migratingLight = 0.24 + 0.76 * migrating2 * migrating2 * migratingSignal;
+    vec3 seamColor = mix(color2, color3, cellKey);
+    seamColor = mix(seamColor, vec3(1.0), 0.18 + cellBand * 0.38);
+    col += seamColor * bevel * migratingLight * (0.08 + cellBand * 0.28);
+    col += seamColor * seam * migratingLight * (0.42 + cellBand * 0.74);
+    col = mix(col, color4 * 0.012, chamber * 0.985);
+
+    // The central chamber retains hexagonal grammar; low bins ignite its seam
+    // instead of introducing an unrelated circular bloom.
+    float centerCell = 1.0 - smoothstep(0.0144, 0.5184, cellRadius2);
+    float centerRevelation = fftBinsA.x;
+    col += mix(color3, vec3(1.0), 0.42) * seam * centerCell *
+        (0.22 + bass * 0.34 + centerRevelation * 0.66);
+    return col;
+}
+
 float boxDistance(vec2 p, vec2 halfSize) {
     vec2 d = abs(p) - halfSize;
     return max(d.x, d.y);
@@ -1034,7 +1122,8 @@ vec3 patternColor(int p, vec2 uv, float t) {
     if (p == 6) return ribbons(uv, t);
     if (p == 7) return galaxy(uv, t);
     if (p == 8) return cosmicMycelium(uv, t);
-    return rgbSubpixels(uv, t);
+    if (p == 9) return rgbSubpixels(uv, t);
+    return spectralHive(uv, t);
 }
 
 // MAIN
@@ -1053,7 +1142,7 @@ void main() {
     
     vec3 col = patternColor(pattern, uv, time);
     if (transition > 0.0) {
-        int nextPattern = int(mod(float(pattern + 1), 10.0));
+        int nextPattern = int(mod(float(pattern + 1), 11.0));
         col = mix(col, patternColor(nextPattern, uv, time), transition);
     }
     
@@ -1157,10 +1246,11 @@ let patternDuration = 20000;
 let transitionDuration = 3000;
 let startTime = performance.now();
 let lastInfoUpdate = 0;
-const PATTERN_COUNT = 10;
+const PATTERN_COUNT = 11;
 const PATTERN_NAMES = [
     'Stipple Waves', 'Neurons', 'Flow Field', 'Branches',
-    'Reaction', 'Voronoi', 'Ribbons', 'Galaxy', 'Cosmic Mycelium', 'RGB Subpixels'
+    'Reaction', 'Voronoi', 'Ribbons', 'Galaxy', 'Cosmic Mycelium', 'RGB Subpixels',
+    'Spectral Hive'
 ];
 const BENCHMARK_WARMUP_FRAMES = 30;
 const requestedBenchmarkFrames = Number.parseInt(QUERY.get('frames'), 10);

@@ -50,13 +50,14 @@ For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Exampl
 ## Current status
 
 - Static WebGL/GLSL app
-- Ten generated patterns: Stipple Waves, Neurons, Flow Field, Branches, Reaction, Voronoi, Ribbons, Galaxy, Cosmic Mycelium, RGB Subpixels
+- Eleven generated patterns: Stipple Waves, Neurons, Flow Field, Branches, Reaction, Voronoi, Ribbons, Galaxy, Cosmic Mycelium, RGB Subpixels, Spectral Hive
 - Neurons uses cell-local somas and analytic warped axons instead of 32 full-screen distance tests per pixel
 - Cosmic Mycelium combines a bass-opened gravitational aperture, living log-polar filaments, nested revelation rings, and treble-revealed stellar spores; its domain fields are reused for low-cost nebula shading
 - Flow Field uses fast analytic domain-warped rivers and capillaries instead of the former 1,500-step-per-pixel particle integration
 - Branches uses inverse-folded binary trees and cell-hashed drifting seeds instead of 286 per-pixel distance tests
 - Voronoi assigns every generator one of 16 logarithmic FFT bins; weighted distance makes loud-bin cells expand dramatically while quiet-bin neighbors compress, without changing global grid density
 - RGB Subpixels scatters randomized multi-scale RGB clusters across the frame; tightly overlapping channels, 16-bin FFT ownership, soft chromatic spill, edge contours, and seam-free two-nearest compositing replace the former rigid panel grid
+- Spectral Hive is an original prismatic honeycomb aperture with seven dark chambers, migrating beveled illumination, loop-free radial light shafts, and per-cell/per-angle 16-bin FFT ownership
 - Stipple family pages:
   - `stipple-topography.html` — contour-map stipple waves
   - `stipple-glass-reef.html` — caustic/glass/glitter stipple waves

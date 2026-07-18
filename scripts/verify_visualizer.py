@@ -32,6 +32,22 @@ require(f"mod(float(pattern + 1), {count}.0)" in html, "shader transition modulo
 require("Cosmic Mycelium" in names, "Cosmic Mycelium pattern is not registered")
 require("vec3 cosmicMycelium(vec2 uv, float t)" in html, "Cosmic Mycelium shader function missing")
 require("return cosmicMycelium(uv, t);" in html, "Cosmic Mycelium dispatcher route missing")
+require("Spectral Hive" in names, "Spectral Hive pattern is not registered")
+require("vec3 spectralHive(vec2 uv, float t)" in html, "Spectral Hive shader function missing")
+require("return spectralHive(uv, t);" in html, "Spectral Hive dispatcher route missing")
+require("vec4 spectralHexCell(vec2 p)" in html and "float spectralHexMetric(vec2 p)" in html,
+        "Spectral Hive analytic honeycomb geometry missing")
+spectral_hive_match = re.search(r"vec3 spectralHive\(vec2 uv, float t\) \{(.*?)\n\}", html, re.S)
+spectral_hive = spectral_hive_match.group(1) if spectral_hive_match else ""
+require(spectral_hive_match is not None, "Spectral Hive function body missing")
+require("float angularBand = fftBand(angularKey);" in spectral_hive and
+        "float cellBand = fftBand(cellKey);" in spectral_hive,
+        "Spectral Hive lacks angular and per-cell FFT ownership")
+require("pow(" not in spectral_hive, "Spectral Hive returned to general power calls")
+require("float cellRadius2 = dot(" in spectral_hive,
+        "Spectral Hive returned to per-fragment cell-radius square roots")
+require("float centerRevelation = fftBinsA.x;" in spectral_hive,
+        "Spectral Hive center is not driven by the lowest FFT bin")
 require("?pattern=" in readme, "README lacks deterministic pattern-selection documentation")
 require("QUERY.get('seed')" in html, "deterministic seed-selection route missing")
 require("!PATTERN_LOCKED && elapsed > patternDuration" in html, "deterministic pattern route does not lock transitions")

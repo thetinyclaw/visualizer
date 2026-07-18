@@ -91,3 +91,12 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Audio:** bass opens the aperture, mids bend the living filaments, treble reveals spores and stellar microstructure
 - **Material:** bioluminescent tissue suspended in a velvet stellar void
 - **Cost:** seven bounded warp octaves feed both geometry and nebula shading; analytic polar fields and a cell-local spore layer avoid redundant noise and particle loops
+
+### Spectral Hive Aperture
+- **Composition:** seven dark hexagonal chambers around a central revelation cell, with full-frame radial light shafts
+- **Primitive:** analytic two-lattice hex coordinates, hex edge metric, and loop-free angular ray fields
+- **Motion:** geometry stays calm while prismatic seam illumination migrates and layered shafts breathe
+- **Audio:** angular rays and chamber identities consume the 16-bin FFT bus; bass opens cells and low bins ignite the center seam
+- **Material:** black glass apertures, colored beveled light, and restrained volumetric haze
+- **Novelty boundary:** inspired only by the supplied reference's honeycomb/radiation grammar; seeded color, seven-cell composition, FFT ownership, depth hierarchy, and central spectral behavior are original
+- **Cost:** no loops, general powers, or cell-radius square roots; fixed multiplication chains form narrow shafts
