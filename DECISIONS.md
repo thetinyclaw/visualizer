@@ -18,3 +18,9 @@ Decision: Model Spectral Hive as a projected rotating sphere with a center hex a
 Reason: The outer hex rows are foreshortened surface bands; sphere rotation, shell curvature, and central backlighting are the effect's defining topology.
 Tradeoff: Spherical projection and moving surface coordinates cost more shader work than a fixed planar lattice, so performance must be recovered through analytic coordinates and bounded arithmetic rather than reducing backing density.
 
+## 2026-07-18 — Preserve Spectral Hive interpretations as three pages
+Context: The flat aperture and loose rotating shell are both visually useful even though neither fully replaces the other.
+Decision: Keep Aperture, Shell, and Infinite Hexsphere as separate registered patterns and dedicated pages. Infinite Hexsphere uses an 80%-height sphere, lattice-matched perfect hex tiling, internal seam beams, FFT cell scale, and integrated FFT rotation velocity.
+Reason: Creative iteration should branch successful interpretations instead of destructively replacing them.
+Tradeoff: The uber-shader and verification surface grow, but each visual identity remains reproducible and independently benchmarkable.
+

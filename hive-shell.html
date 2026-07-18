@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#020308">
+<title>Spectral Hive Shell — TinyClaw</title>
+<style>
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#020308;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}iframe{position:fixed;inset:0;width:100%;height:100%;border:0}.variants{position:fixed;z-index:20;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;gap:6px;padding:5px;border:1px solid #ffffff18;border-radius:999px;background:#02050bba;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}.variants a{padding:7px 10px;border-radius:999px;color:#728093;font-size:9px;letter-spacing:.08em;text-decoration:none;white-space:nowrap}.variants a.active{color:#e7f8ff;background:#5ee7ff18;box-shadow:inset 0 0 0 1px #72eaff55}@media(max-width:460px){.variants a{padding:7px 8px;font-size:8px}}
+</style>
+</head>
+<body>
+<iframe id="stage" title="Spectral Hive Shell visualizer" allow="microphone; fullscreen" allowfullscreen></iframe>
+<nav class="variants" aria-label="Spectral Hive variants">
+<a data-page="hive-aperture.html" href="hive-aperture.html">APERTURE</a>
+<a class="active" data-page="hive-shell.html" href="hive-shell.html">SHELL</a>
+<a data-page="hive-infinite.html" href="hive-infinite.html">INFINITE</a>
+</nav>
+<script>
+const sourceParams=new URLSearchParams(location.search);const seed=sourceParams.get('seed')||'491009';const target=new URL('index.html',location.href);target.searchParams.set('pattern','10');target.searchParams.set('seed',seed);if(sourceParams.get('tv')==='1')target.searchParams.set('tv','1');document.getElementById('stage').src=target.href;document.querySelectorAll('[data-page]').forEach(link=>{const url=new URL(link.dataset.page,location.href);url.searchParams.set('seed',seed);link.href=url.href;});
+</script>
+</body>
+</html>

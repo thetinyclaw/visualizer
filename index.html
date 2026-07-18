@@ -315,6 +315,7 @@ uniform vec4 fftBinsA;
 uniform vec4 fftBinsB;
 uniform vec4 fftBinsC;
 uniform vec4 fftBinsD;
+uniform float hiveRotation;
 
 // Palette uniforms
 uniform vec3 color1;
@@ -932,9 +933,14 @@ float spectralHexMetric(vec2 p) {
     return max(p.y, p.x * 0.8660254 + p.y * 0.5);
 }
 
+float perfectTiledHexMetric(vec2 p) {
+    p = abs(p);
+    return max(p.x, p.x * 0.5 + p.y * 0.8660254);
+}
+
 // PATTERN 10: SPECTRAL HIVE APERTURE
 // An original prismatic interpretation of radiating honeycomb light geometry.
-vec3 spectralHive(vec2 uv, float t) {
+vec3 spectralHiveShell(vec2 uv, float t) {
     float radius = length(uv);
     float angle = atan(uv.y, uv.x);
     float angularKey = fract(angle / TAU + 0.5);
@@ -1029,6 +1035,146 @@ vec3 spectralHive(vec2 uv, float t) {
     float centerCell = 1.0 - smoothstep(0.00, 0.52, sphereRadius2);
     float centerRevelation = fftBinsA.x;
     col += seamColor * seam * centerCell * (0.18 + bass * 0.25 + centerRevelation * 0.48);
+    return col;
+}
+
+// PATTERN 11: PRESERVED FLAT SPECTRAL HIVE APERTURE
+// Recovered from 7d20cbe so the earlier interpretation remains available.
+vec3 spectralHiveAperture(vec2 uv, float t) {
+    float radius = length(uv);
+    float angle = atan(uv.y, uv.x);
+    float angularKey = fract(angle / TAU + 0.5);
+    float angularBand = fftBand(angularKey);
+    float rayDrift = sin(t * 0.17 + seed * 0.031) * 0.42;
+    float rayASignal = 0.5 + 0.5 * cos(angle * 18.0 + rayDrift);
+    float rayA2 = rayASignal * rayASignal;
+    float rayA4 = rayA2 * rayA2;
+    float rayA8 = rayA4 * rayA4;
+    float rayA = rayA8 * rayA8 * rayA2;
+    float rayBSignal = 0.5 + 0.5 * cos(angle * 30.0 - rayDrift * 0.73 + seed);
+    float rayB2 = rayBSignal * rayBSignal;
+    float rayB4 = rayB2 * rayB2;
+    float rayB8 = rayB4 * rayB4;
+    float rayB16 = rayB8 * rayB8;
+    float rayB = rayB16 * rayB16;
+    float rayBreath = 0.72 + 0.28 * sin(radius * 12.0 - t * 0.31 + angularBand * 2.6);
+    float rayEnvelope = smoothstep(0.10, 0.34, radius) * smoothstep(1.45, 0.28, radius);
+    float broadSignal = 0.5 + 0.5 * cos(angle * 6.0 - t * 0.055);
+    float broad2 = broadSignal * broadSignal;
+    float broad4 = broad2 * broad2;
+    float broadShaft = broad4 * broad2 * broadSignal;
+    float rays = (rayA * 0.62 + rayB * 0.34 + broadShaft * 0.16) * rayBreath * rayEnvelope;
+    vec3 rayColor = mix(color1, color2, 0.5 + 0.5 * sin(angle * 2.0 + seed));
+    rayColor = mix(rayColor, color3, angularBand * 0.52);
+    vec3 col = color4 * (0.075 + angularBand * 0.045);
+    col += rayColor * rays * (0.20 + angularBand * 0.82 + treble * 0.16);
+
+    float hiveScale = 3.55 + sin(t * 0.12 + seed) * 0.045 + bass * 0.10;
+    vec2 hivePoint = uv * hiveScale;
+    vec4 cell = spectralHexCell(hivePoint);
+    vec2 cellLocal = cell.xy;
+    vec2 cellId = cell.zw;
+    vec2 cellRingPosition = cellId * vec2(0.5, 0.8660254);
+    float cellRadius2 = dot(cellRingPosition, cellRingPosition);
+    float hiveEnvelope = 1.0 - smoothstep(1.3225, 2.6244, cellRadius2);
+    float cellKey = hash(cellId + seed * 2.47);
+    float cellBand = fftBand(cellKey);
+    float hexMetric = spectralHexMetric(cellLocal);
+    float apertureSize = 0.315 + cellBand * 0.055 + bass * 0.025;
+    float chamber = (1.0 - smoothstep(apertureSize, apertureSize + 0.022, hexMetric)) * hiveEnvelope;
+    float seam = (1.0 - smoothstep(0.012, 0.072, abs(hexMetric - apertureSize))) * hiveEnvelope;
+    float bevel = (1.0 - smoothstep(0.025, 0.145, abs(hexMetric - apertureSize))) * hiveEnvelope;
+    float lightDirection = angle - t * 0.24;
+    float migratingSignal = 0.5 + 0.5 * cos(lightDirection * 3.0 + cellKey * TAU);
+    float migrating2 = migratingSignal * migratingSignal;
+    float migratingLight = 0.24 + 0.76 * migrating2 * migrating2 * migratingSignal;
+    vec3 seamColor = mix(color2, color3, cellKey);
+    seamColor = mix(seamColor, vec3(1.0), 0.18 + cellBand * 0.38);
+    col += seamColor * bevel * migratingLight * (0.08 + cellBand * 0.28);
+    col += seamColor * seam * migratingLight * (0.42 + cellBand * 0.74);
+    col = mix(col, color4 * 0.012, chamber * 0.985);
+    float centerCell = 1.0 - smoothstep(0.0144, 0.5184, cellRadius2);
+    float centerRevelation = fftBinsA.x;
+    col += mix(color3, vec3(1.0), 0.42) * seam * centerCell *
+        (0.22 + bass * 0.34 + centerRevelation * 0.66);
+    return col;
+}
+
+// PATTERN 12: INFINITE TILED HEXSPHERE
+vec3 infiniteHexsphere(vec2 uv, float t) {
+    float radius = length(uv);
+    float angle = atan(uv.y, uv.x);
+    float angularKey = fract(angle / TAU + 0.5);
+    float angularBand = fftBand(angularKey);
+    const float ballRadius = 0.40; // exactly 80% of viewport height
+
+    // Narrow external beams rotate with the shell and begin at its silhouette.
+    float beamSignalA = 0.5 + 0.5 * cos(angle * 24.0 - hiveRotation * 1.9);
+    float beamA2 = beamSignalA * beamSignalA;
+    float beamA4 = beamA2 * beamA2;
+    float beamA8 = beamA4 * beamA4;
+    float beamA = beamA8 * beamA8;
+    float beamSignalB = 0.5 + 0.5 * cos(angle * 42.0 + hiveRotation * 1.3 + seed);
+    float beamB2 = beamSignalB * beamSignalB;
+    float beamB4 = beamB2 * beamB2;
+    float beamB8 = beamB4 * beamB4;
+    float beamB = beamB8 * beamB8 * beamB8 * beamB8;
+    float beamEnvelope = smoothstep(ballRadius * 0.82, ballRadius * 1.08, radius) *
+        smoothstep(1.42, ballRadius * 0.94, radius);
+    float beamBreath = 0.78 + 0.22 * sin(radius * 13.0 - t * 0.24 + angularBand * 2.2);
+    float beams = (beamA * 0.72 + beamB * 0.38) * beamEnvelope * beamBreath;
+    vec3 beamTint = mix(vec3(0.94, 0.97, 1.0), mix(color2, color3, angularKey), 0.14);
+    vec3 col = color4 * (0.045 + angularBand * 0.020);
+    col += beamTint * beams * (0.26 + angularBand * 0.66);
+
+    // Perfect two-lattice hex tiling is sampled over an infinitely repeating
+    // longitude/latitude domain, then clipped only by the spherical silhouette.
+    vec2 sphereXY = uv / ballRadius;
+    float sphereRadius2 = dot(sphereXY, sphereXY);
+    float surfaceZ = sqrt(max(0.0001, 1.0 - sphereRadius2));
+    float sphereMask = 1.0 - smoothstep(0.985, 1.015, sphereRadius2);
+    vec3 surfaceNormal = vec3(sphereXY, surfaceZ);
+    float spinCos = cos(hiveRotation);
+    float spinSin = sin(hiveRotation);
+    surfaceNormal = vec3(
+        spinCos * surfaceNormal.x + spinSin * surfaceNormal.z,
+        surfaceNormal.y,
+        -spinSin * surfaceNormal.x + spinCos * surfaceNormal.z
+    );
+    float tilt = 0.22 + 0.07 * sin(hiveRotation * 0.37 + seed);
+    float tiltCos = cos(tilt);
+    float tiltSin = sin(tilt);
+    surfaceNormal = vec3(
+        surfaceNormal.x,
+        tiltCos * surfaceNormal.y - tiltSin * surfaceNormal.z,
+        tiltSin * surfaceNormal.y + tiltCos * surfaceNormal.z
+    );
+    float longitude = atan(surfaceNormal.x, surfaceNormal.z);
+    float latitude = asin(clamp(surfaceNormal.y, -0.999, 0.999));
+
+    // Bass expands cells; high-frequency energy adds finer shell detail.
+    float tilingScale = 5.65 - bass * 1.45 + treble * 0.48;
+    vec4 cell = spectralHexCell(vec2(longitude, latitude) * tilingScale);
+    vec2 cellLocal = cell.xy;
+    vec2 cellId = cell.zw;
+    float cellKey = hash(cellId + seed * 4.19);
+    float cellBand = fftBand(cellKey);
+    float hexMetric = perfectTiledHexMetric(cellLocal);
+    float panelRadius = 0.468 - cellBand * 0.006;
+    float panel = (1.0 - smoothstep(panelRadius, panelRadius + 0.010, hexMetric)) * sphereMask;
+    float seam = (1.0 - smoothstep(0.006, 0.036, abs(hexMetric - panelRadius))) * sphereMask;
+    float gap = smoothstep(panelRadius - 0.003, 0.495, hexMetric) * sphereMask;
+
+    float facing = clamp(surfaceZ, 0.0, 1.0);
+    float sourcePressure = 0.34 + facing * 0.72 + bass * 0.32 + cellBand * 0.20;
+    vec3 seamTint = mix(vec3(0.92, 0.96, 1.0), mix(color2, color3, cellKey), 0.12);
+    col += seamTint * gap * sourcePressure * 0.48;
+    col += seamTint * seam * sourcePressure * (0.72 + cellBand * 0.38);
+
+    vec3 panelColor = mix(color4 * 0.055, color1 * 0.075, cellBand) * (0.04 + facing * 0.10);
+    col = mix(col, panelColor, panel * 0.975);
+    float rim = smoothstep(0.72, 1.0, sphereRadius2) * sphereMask;
+    col += seamTint * seam * rim * 0.16;
     return col;
 }
 
@@ -1152,7 +1298,9 @@ vec3 patternColor(int p, vec2 uv, float t) {
     if (p == 7) return galaxy(uv, t);
     if (p == 8) return cosmicMycelium(uv, t);
     if (p == 9) return rgbSubpixels(uv, t);
-    return spectralHive(uv, t);
+    if (p == 10) return spectralHiveShell(uv, t);
+    if (p == 11) return spectralHiveAperture(uv, t);
+    return infiniteHexsphere(uv, t);
 }
 
 // MAIN
@@ -1161,7 +1309,7 @@ void main() {
     vec2 uv = (gl_FragCoord.xy - resolution * 0.5) / min(resolution.x, resolution.y);
     
     // Global rotation; RGB panels stay axis-aligned so subpixels read like zoomed TV geometry.
-    if (pattern != 9) {
+    if (pattern != 9 && pattern != 10 && pattern != 12) {
         float a = time * rotationSpeed;
         uv = mat2(cos(a), -sin(a), sin(a), cos(a)) * uv;
     }
@@ -1171,7 +1319,7 @@ void main() {
     
     vec3 col = patternColor(pattern, uv, time);
     if (transition > 0.0) {
-        int nextPattern = int(mod(float(pattern + 1), 11.0));
+        int nextPattern = int(mod(float(pattern + 1), 13.0));
         col = mix(col, patternColor(nextPattern, uv, time), transition);
     }
     
@@ -1249,6 +1397,7 @@ const uni = {
     fftBinsB: gl.getUniformLocation(prog, 'fftBinsB'),
     fftBinsC: gl.getUniformLocation(prog, 'fftBinsC'),
     fftBinsD: gl.getUniformLocation(prog, 'fftBinsD'),
+    hiveRotation: gl.getUniformLocation(prog, 'hiveRotation'),
     color1: gl.getUniformLocation(prog, 'color1'),
     color2: gl.getUniformLocation(prog, 'color2'),
     color3: gl.getUniformLocation(prog, 'color3'),
@@ -1275,11 +1424,13 @@ let patternDuration = 20000;
 let transitionDuration = 3000;
 let startTime = performance.now();
 let lastInfoUpdate = 0;
-const PATTERN_COUNT = 11;
+let lastRenderFrame = startTime;
+let hiveRotationPhase = 0;
+const PATTERN_COUNT = 13;
 const PATTERN_NAMES = [
     'Stipple Waves', 'Neurons', 'Flow Field', 'Branches',
     'Reaction', 'Voronoi', 'Ribbons', 'Galaxy', 'Cosmic Mycelium', 'RGB Subpixels',
-    'Spectral Hive'
+    'Spectral Hive Shell', 'Spectral Hive Aperture', 'Infinite Hexsphere'
 ];
 const BENCHMARK_WARMUP_FRAMES = 30;
 const requestedBenchmarkFrames = Number.parseInt(QUERY.get('frames'), 10);
@@ -1458,7 +1609,11 @@ function toggleTvPanel() {
 // ─────────────────────────────────────────────────────────────────
 function render() {
     const now = performance.now();
+    const frameSeconds = Math.min(0.1, Math.max(0.0, (now - lastRenderFrame) / 1000));
+    lastRenderFrame = now;
     updateAudio(now);
+    const hiveRotationRate = 0.035 + fftBins[2] * 0.13 + fftBins[7] * 0.075 + fftBins[12] * 0.035;
+    hiveRotationPhase += frameSeconds * hiveRotationRate;
     
     const time = (now - startTime) / 1000;
     const elapsed = now - patternTime;
@@ -1485,6 +1640,7 @@ function render() {
     gl.uniform4fv(uni.fftBinsB, fftUniformB);
     gl.uniform4fv(uni.fftBinsC, fftUniformC);
     gl.uniform4fv(uni.fftBinsD, fftUniformD);
+    gl.uniform1f(uni.hiveRotation, hiveRotationPhase);
     
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     recordBenchmarkFrame(now);

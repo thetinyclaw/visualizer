@@ -50,14 +50,17 @@ For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Exampl
 ## Current status
 
 - Static WebGL/GLSL app
-- Eleven generated patterns: Stipple Waves, Neurons, Flow Field, Branches, Reaction, Voronoi, Ribbons, Galaxy, Cosmic Mycelium, RGB Subpixels, Spectral Hive
+- Thirteen generated patterns, including three preserved Spectral Hive variants: Aperture, Shell, and Infinite Hexsphere
 - Neurons uses cell-local somas and analytic warped axons instead of 32 full-screen distance tests per pixel
 - Cosmic Mycelium combines a bass-opened gravitational aperture, living log-polar filaments, nested revelation rings, and treble-revealed stellar spores; its domain fields are reused for low-cost nebula shading
 - Flow Field uses fast analytic domain-warped rivers and capillaries instead of the former 1,500-step-per-pixel particle integration
 - Branches uses inverse-folded binary trees and cell-hashed drifting seeds instead of 286 per-pixel distance tests
 - Voronoi assigns every generator one of 16 logarithmic FFT bins; weighted distance makes loud-bin cells expand dramatically while quiet-bin neighbors compress, without changing global grid density
 - RGB Subpixels scatters randomized multi-scale RGB clusters across the frame; tightly overlapping channels, 16-bin FFT ownership, soft chromatic spill, edge contours, and seam-free two-nearest compositing replace the former rigid panel grid
-- Spectral Hive projects roughly three hex layers onto a slowly rotating sphere; dark plates trap a central light source while FFT-owned seams and loop-free rays leak outward
+- Spectral Hive now has three dedicated pages:
+  - `hive-aperture.html` — preserved flat seven-cell aperture
+  - `hive-shell.html` — loose three-layer rotating spherical shell
+  - `hive-infinite.html` — 80%-height perfectly tiled Hexsphere with FFT-driven cell scale and smoothly integrated FFT rotation speed
 - Stipple family pages:
   - `stipple-topography.html` — contour-map stipple waves
   - `stipple-glass-reef.html` — caustic/glass/glitter stipple waves

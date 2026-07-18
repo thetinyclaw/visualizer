@@ -14,6 +14,9 @@ pipeline = (ROOT / "EFFECT_PIPELINE.md").read_text()
 benchmark = (ROOT / "benchmark.html").read_text()
 agents = (ROOT / "AGENTS.md").read_text()
 fft = (ROOT / "fft.html").read_text()
+hive_aperture_page = (ROOT / "hive-aperture.html").read_text()
+hive_shell_page = (ROOT / "hive-shell.html").read_text()
+hive_infinite_page = (ROOT / "hive-infinite.html").read_text()
 
 errors = []
 
@@ -32,12 +35,19 @@ require(f"mod(float(pattern + 1), {count}.0)" in html, "shader transition modulo
 require("Cosmic Mycelium" in names, "Cosmic Mycelium pattern is not registered")
 require("vec3 cosmicMycelium(vec2 uv, float t)" in html, "Cosmic Mycelium shader function missing")
 require("return cosmicMycelium(uv, t);" in html, "Cosmic Mycelium dispatcher route missing")
-require("Spectral Hive" in names, "Spectral Hive pattern is not registered")
-require("vec3 spectralHive(vec2 uv, float t)" in html, "Spectral Hive shader function missing")
-require("return spectralHive(uv, t);" in html, "Spectral Hive dispatcher route missing")
+require("Spectral Hive Shell" in names and "Spectral Hive Aperture" in names and "Infinite Hexsphere" in names,
+        "all three Spectral Hive patterns are not registered")
+require("vec3 spectralHiveShell(vec2 uv, float t)" in html and
+        "vec3 spectralHiveAperture(vec2 uv, float t)" in html and
+        "vec3 infiniteHexsphere(vec2 uv, float t)" in html,
+        "one or more Spectral Hive shader variants are missing")
+require("return spectralHiveShell(uv, t);" in html and
+        "return spectralHiveAperture(uv, t);" in html and
+        "return infiniteHexsphere(uv, t);" in html,
+        "one or more Spectral Hive dispatcher routes are missing")
 require("vec4 spectralHexCell(vec2 p)" in html and "float spectralHexMetric(vec2 p)" in html,
         "Spectral Hive analytic honeycomb geometry missing")
-spectral_hive_match = re.search(r"vec3 spectralHive\(vec2 uv, float t\) \{(.*?)\n\}", html, re.S)
+spectral_hive_match = re.search(r"vec3 spectralHiveShell\(vec2 uv, float t\) \{(.*?)\n\}", html, re.S)
 spectral_hive = spectral_hive_match.group(1) if spectral_hive_match else ""
 require(spectral_hive_match is not None, "Spectral Hive function body missing")
 require("float angularBand = fftBand(angularKey);" in spectral_hive and
@@ -57,6 +67,25 @@ require("float shellSpin = t * 0.105;" in spectral_hive and
         "Spectral Hive lost rotating spherical surface coordinates")
 require("float centralPressure" in spectral_hive and "float trappedLight" in spectral_hive,
         "Spectral Hive no longer models a central source leaking through seams")
+infinite_hive_match = re.search(r"vec3 infiniteHexsphere\(vec2 uv, float t\) \{(.*?)\n\}", html, re.S)
+infinite_hive = infinite_hive_match.group(1) if infinite_hive_match else ""
+require(infinite_hive_match is not None, "Infinite Hexsphere function body missing")
+require("const float ballRadius = 0.40;" in infinite_hive,
+        "Infinite Hexsphere is not exactly 80 percent of viewport height")
+require("perfectTiledHexMetric(cellLocal)" in infinite_hive,
+        "Infinite Hexsphere lacks lattice-matched perfect tiling")
+require("float tilingScale = 5.65 - bass * 1.45 + treble * 0.48;" in infinite_hive,
+        "Infinite Hexsphere cell size is not FFT-driven")
+require("uniform float hiveRotation;" in html and "const hiveRotationRate = 0.035 + fftBins[2]" in html and
+        "hiveRotationPhase += frameSeconds * hiveRotationRate;" in html,
+        "Infinite Hexsphere lacks smoothly integrated FFT rotation speed")
+require("target.searchParams.set('pattern','11')" in hive_aperture_page and
+        "target.searchParams.set('pattern','10')" in hive_shell_page and
+        "target.searchParams.set('pattern','12')" in hive_infinite_page,
+        "dedicated hive pages do not map to all three variants")
+require(all('allow="microphone; fullscreen"' in page for page in
+            (hive_aperture_page, hive_shell_page, hive_infinite_page)),
+        "dedicated hive pages do not forward microphone/fullscreen permissions")
 require("?pattern=" in readme, "README lacks deterministic pattern-selection documentation")
 require("QUERY.get('seed')" in html, "deterministic seed-selection route missing")
 require("!PATTERN_LOCKED && elapsed > patternDuration" in html, "deterministic pattern route does not lock transitions")

@@ -19,7 +19,7 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - [x] Implement audio analysis (FFT)
 - [x] Fix WebGL/shader error handling
 - [x] Fix GLSL Intel/Windows loop compatibility
-- [x] Add eleven generated shader patterns, including Cosmic Mycelium, scattered RGB Subpixels, and Spectral Hive
+- [x] Add thirteen generated shader patterns, including Cosmic Mycelium, scattered RGB Subpixels, and three Spectral Hive variants
 - [x] Refresh render-loop performance and layout (Ponytail pass, 2026-07-05)
 - [x] Establish recurring creative evolution contract, novelty gate, effect ledger, and structural verifier (2026-07-17)
 - [x] Add standalone FFT Observatory with honest microphone/demo states and logarithmic spectral analysis (2026-07-18)
@@ -87,6 +87,8 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Translated the supplied reference into an original spherical shell rather than copying its monochrome stock frames: a center-facing hex and roughly three foreshortened surrounding layers rotate over a front-hemisphere projection.
 - A central source leaks through loose shell seams and continues outward as angular shafts; rotating chambers and ray sectors consume the shared 16-bin FFT bus.
 - Fixed multiplication ray chains and squared shell gates preserve native density; the corrected spherical version measured `13.30 FPS` at `1280×633`, effective DPR `1.0`.
+- Preserved the earlier flat aperture and loose shell as separate patterns/pages rather than overwriting them.
+- Added Infinite Hexsphere: a perfectly repeating lattice-matched tessellation on an 80%-height ball, with FFT-driven cell scale, smoothly integrated FFT rotation velocity, and seam-origin external beams.
 
 ## Design Concepts
 - **RGB Subpixels:** scattered multi-scale RGB clusters with tightly overlapping channels, randomized placement, FFT-owned motion/scale, chromatic spill, and luminous edge contours.
