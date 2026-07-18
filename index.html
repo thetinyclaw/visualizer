@@ -913,95 +913,111 @@ vec3 cosmicMycelium(vec2 uv, float t) {
 // ─────────────────────────────────────────────────────────────────
 // PATTERN 9: RGB SUBPIXEL BLOCKS
 // ─────────────────────────────────────────────────────────────────
-float rectMask(vec2 p, vec2 halfSize) {
+float boxDistance(vec2 p, vec2 halfSize) {
     vec2 d = abs(p) - halfSize;
-    return smoothstep(0.015, 0.0, max(d.x, d.y));
+    return max(d.x, d.y);
+}
+
+vec3 shadeRgbCluster(vec2 pixelDelta, vec2 pixelCell, vec2 uv, float t) {
+    float identity = hash(pixelCell + seed * 2.11);
+    float scaleSeed = hash(pixelCell + seed * 4.73 + 19.0);
+    float angleSeed = hash(pixelCell + seed * 7.31 + 53.0);
+    float bandKey = hash(pixelCell + seed * 3.17 + 101.0);
+    float bandAmplitude = fftBand(bandKey);
+
+    // Every cluster owns a log-frequency bin. Its signal controls size, drift,
+    // brightness, and halo pressure while the seeded scale keeps the field varied.
+    float pixelScale = mix(0.58, 1.38, scaleSeed) * (0.68 + bandAmplitude * 0.52);
+    pixelDelta += vec2(
+        sin(t * (0.31 + bandKey * 0.28) + identity * TAU),
+        cos(t * (0.27 + bandKey * 0.24) + angleSeed * TAU)
+    ) * (0.018 + bandAmplitude * 0.035);
+    float angle = (angleSeed - 0.5) * 0.52 + sin(t * 0.13 + identity * TAU) * 0.035;
+    mat2 pixelRotation = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+    vec2 p = pixelRotation * pixelDelta / pixelScale;
+
+    // RGB cores slightly overlap rather than sitting behind obvious black gutters.
+    float channelSpread = 0.105;
+    vec2 halfPixel = vec2(0.080, 0.205);
+    vec3 channelDistance = vec3(
+        boxDistance(p + vec2(channelSpread, 0.0), halfPixel),
+        boxDistance(p, halfPixel),
+        boxDistance(p - vec2(channelSpread, 0.0), halfPixel)
+    );
+    vec3 core = 1.0 - smoothstep(vec3(-0.008), vec3(0.014), channelDistance);
+    vec3 halo = 1.0 - smoothstep(vec3(0.005), vec3(0.095), channelDistance);
+    vec3 edge = 1.0 - smoothstep(vec3(0.003), vec3(0.038), abs(channelDistance));
+
+    vec3 drive = 0.84 + 0.16 * sin(vec3(1.07, 1.31, 1.59) * t +
+        vec3(identity, scaleSeed, angleSeed) * TAU);
+    float pulse = 0.82 + 0.18 * sin(t * (0.65 + bandKey) + identity * 11.0);
+    float spectralLevel = 0.24 + bandAmplitude * 1.26;
+    vec3 rgb = core * drive * pulse * spectralLevel;
+
+    // Soft chromatic spill bridges the channels; a tighter luminous contour
+    // preserves crisp pixel edges inside the restrained blur.
+    vec3 softSpill = halo * (1.0 - core) * (0.055 + bandAmplitude * 0.22);
+    vec3 edgeLight = edge * (0.10 + bandAmplitude * 0.34);
+    float whiteContour = dot(edge, vec3(0.3333));
+
+    float scan = 0.92 + 0.08 * sin((uv.y + t * 0.055) * 150.0);
+    vec3 col = vec3(0.0);
+    col += rgb * scan;
+    col += softSpill;
+    col += edgeLight;
+    col += mix(color3, vec3(1.0), 0.48) * whiteContour * (0.015 + bandAmplitude * 0.055);
+
+    // Rare spectral glints keep the scattered field alive without restoring panels.
+    float glintSeed = hash(pixelCell + seed * 9.7 + 211.0);
+    if (glintSeed > 0.965) {
+        float glint = (1.0 - smoothstep(0.0, 0.055, length(p))) * bandAmplitude;
+        col += mix(vec3(1.0, 0.35, 0.18), vec3(0.35, 0.72, 1.0), identity) * glint;
+    }
+    return col;
 }
 
 vec3 rgbSubpixels(vec2 uv, float t) {
-    vec3 col = color4 * 0.18;
-    vec2 grid = uv * vec2(4.8, 3.2);
-    vec2 cell = floor(grid);
-    vec2 local = fract(grid) - 0.5;
-    float id = hash(cell + seed);
-    float fx = hash(cell + seed + 17.0);
-    float fy = hash(cell + seed + 41.0);
-    float mode = floor(hash(cell + seed + 91.0) * 10.0);
-    
-    // 1) loose panel drift / imperfect glass alignment
-    float jitter = (id - 0.5) * 0.08;
-    local += vec2(
-        sin(t * 0.35 + id * TAU) * jitter,
-        cos(t * 0.28 + id * TAU) * jitter
-    );
-    
-    // 2) reflective glass warps the rectangular panel slightly
-    vec2 glass = local;
-    glass.x += sin(local.y * 8.0 + t * 0.7 + fx * TAU) * 0.018 * (0.4 + treble);
-    glass.y += sin(local.x * 6.0 - t * 0.45 + fy * TAU) * 0.012 * (0.4 + mid);
-    
-    float entity = rectMask(glass, vec2(0.43, 0.30));
-    vec2 sub = vec2((glass.x + 0.43) / 0.86, glass.y);
-    float gap = 0.016 + 0.012 * smoothstep(7.0, 9.0, mode);
-    float r = rectMask(vec2(sub.x - 0.17, sub.y), vec2(0.13 - gap, 0.25));
-    float g = rectMask(vec2(sub.x - 0.50, sub.y), vec2(0.13 - gap, 0.25));
-    float b = rectMask(vec2(sub.x - 0.83, sub.y), vec2(0.13 - gap, 0.25));
-    
-    // 3) independent RGB drive, like cheap panels with uneven subpixel response
-    vec3 drive = vec3(
-        0.75 + 0.25 * sin(t * 1.1 + fx * TAU),
-        0.78 + 0.22 * sin(t * 1.3 + id * TAU),
-        0.72 + 0.28 * sin(t * 1.6 + fy * TAU)
-    );
-    float pulse = 0.50 + 0.50 * sin(t * (0.8 + id) + id * 12.0);
-    pulse *= 0.50 + bass * 0.70 + mid * 0.25;
-    vec3 rgb = vec3(r, g, b) * drive * pulse * entity;
-    
-    // 4) phosphor persistence / smear
-    vec3 smear = vec3(
-        rectMask(vec2(sub.x - 0.19, sub.y + 0.035), vec2(0.16, 0.09)),
-        rectMask(vec2(sub.x - 0.52, sub.y + 0.030), vec2(0.16, 0.08)),
-        rectMask(vec2(sub.x - 0.85, sub.y + 0.025), vec2(0.16, 0.07))
-    ) * 0.20 * smoothstep(0.25, 1.0, bass);
-    
-    // 5) scanlines and moire shimmer
-    float scan = 0.82 + 0.18 * sin((uv.y + t * 0.08) * 135.0);
-    float moire = 0.90 + 0.10 * sin((uv.x - uv.y) * 90.0 + t * 0.6);
-    
-    // 6) glitter specks that only flare on some panel cells
-    vec2 sparkleCell = floor((uv + t * vec2(0.03, -0.02)) * 42.0);
-    float glitterSeed = hash(sparkleCell + cell + seed);
-    float glitter = step(0.985, glitterSeed) * step(0.65, treble + 0.25 * sin(t * 8.0 + glitterSeed * TAU));
-    vec3 glitterColor = mix(vec3(1.0, 0.25, 0.12), vec3(0.35, 0.65, 1.0), fx);
-    
-    // 7) white reflection slash across the glass
-    float slash = smoothstep(0.035, 0.0, abs(local.y + local.x * 0.45 - 0.10 * sin(t * 0.4 + id)));
-    slash *= smoothstep(-0.45, 0.1, local.x) * smoothstep(0.5, -0.05, local.x);
-    
-    // 8) chromatic halo at panel edges
-    float panel = rectMask(glass, vec2(0.48, 0.35));
-    float bezel = panel - entity;
-    float edgeGlow = (panel - rectMask(glass, vec2(0.39, 0.26))) * (0.15 + treble * 0.25);
-    
-    // 9) some cells behave like aging/dead pixels, but never fully disappear
-    float dead = step(0.93, fx) * (0.35 + 0.25 * sin(t * 2.0 + id * 9.0));
-    rgb *= 1.0 - dead * smoothstep(0.0, 0.6, mode / 9.0);
-    
-    // 10) prism/reflection mode alternates by cell for weird light play
-    vec3 prism = vec3(
-        rectMask(glass + vec2(0.035, 0.0), vec2(0.43, 0.30)),
-        rectMask(glass, vec2(0.43, 0.30)),
-        rectMask(glass - vec2(0.035, 0.0), vec2(0.43, 0.30))
-    ) * 0.12 * smoothstep(5.0, 9.0, mode);
-    
-    col += rgb * scan * moire;
-    col += smear;
-    col += prism;
-    col += vec3(0.025, 0.03, 0.04) * bezel;
-    col += vec3(0.9, 0.95, 1.0) * slash * (0.08 + 0.25 * smoothstep(8.0, 9.0, mode));
-    col += glitterColor * glitter * entity;
-    col += vec3(r, g, b) * edgeGlow;
-    
+    vec2 lattice = uv * vec2(7.2, 4.8);
+    vec2 baseCell = floor(lattice);
+    vec2 withinCell = fract(lattice);
+    float nearestDistance2 = 100.0;
+    float secondDistance2 = 100.0;
+    vec2 nearestDelta = vec2(0.0);
+    vec2 secondDelta = vec2(0.0);
+    vec2 nearestCell = baseCell;
+    vec2 secondCell = baseCell;
+
+    // Track two jittered generators. Their contribution order swaps at each
+    // Voronoi boundary, so enlarged FFT-driven clusters never develop cut seams.
+    for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+            vec2 neighbor = vec2(float(i), float(j));
+            vec2 candidateCell = baseCell + neighbor;
+            vec2 randomPoint = hash2(candidateCell + seed * 1.37);
+            vec2 point = neighbor + 0.5 + (randomPoint - 0.5) * 0.72;
+            vec2 delta = withinCell - point;
+            float distance2 = dot(delta, delta);
+            if (distance2 < nearestDistance2) {
+                secondDistance2 = nearestDistance2;
+                secondDelta = nearestDelta;
+                secondCell = nearestCell;
+                nearestDistance2 = distance2;
+                nearestDelta = delta;
+                nearestCell = candidateCell;
+            } else if (distance2 < secondDistance2) {
+                secondDistance2 = distance2;
+                secondDelta = delta;
+                secondCell = candidateCell;
+            }
+        }
+    }
+
+    float spectralFog = fftBand(fract(uv.x * 0.29 + uv.y * 0.17 + 0.5));
+    vec3 col = color4 * (0.12 + spectralFog * 0.075);
+    col += shadeRgbCluster(nearestDelta, nearestCell, uv, t);
+    if (secondDistance2 < 0.24) {
+        col += shadeRgbCluster(secondDelta, secondCell, uv, t);
+    }
     return col;
 }
 

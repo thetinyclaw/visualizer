@@ -68,11 +68,12 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Cost:** one local star test per fragment replaces 100 full-screen star-distance tests
 
 ### RGB Subpixels
-- **Composition:** axis-aligned panel grid of RGB entities
-- **Primitive:** rectangle SDFs, scanlines, masks
-- **Motion:** panel drift, phosphor persistence, shimmer
-- **Audio:** bands independently drive panel response and glitter
-- **Material:** imperfect glass and phosphor
+- **Composition:** irregular full-frame field of independently scaled and rotated RGB clusters
+- **Primitive:** jittered two-nearest generators with overlapping RGB box-distance cores, soft spill, and luminous edge contours
+- **Motion:** frequency-owned drift, rotation, breathing scale, and sparse spectral glints
+- **Audio:** every cluster owns one of 16 logarithmic FFT bins controlling size, brightness, motion, blur pressure, and edge intensity
+- **Material:** crisp emissive subpixels suspended in restrained chromatic bloom
+- **Cost:** nine cheap generator comparisons shade one cluster plus a distance-gated second cluster; rare glint square roots are branch-gated
 
 ### Stipple concept family
 - **Composition:** standalone topographic, reef, and ink-dune dotted terrains

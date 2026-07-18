@@ -83,6 +83,18 @@ require(ribbons_match is not None, "Ribbons shader function missing")
 require("exp(" not in ribbons, "Ribbons returned to per-layer exponential glow")
 require("float invRibbonCount" in ribbons, "Ribbons does not hoist its invariant layer division")
 require("outside = length(max(d, 0.0))" not in html, "RGB rectangles returned to per-mask square roots")
+require("vec3 shadeRgbCluster" in html and "vec2 randomPoint = hash2(candidateCell" in html,
+        "RGB randomized cluster field missing")
+require("float pixelScale = mix(0.58, 1.38, scaleSeed)" in html,
+        "RGB seeded multi-scale geometry missing")
+require("float channelSpread = 0.105" in html and "vec2 halfPixel = vec2(0.080, 0.205)" in html,
+        "RGB channels returned to obvious wide gutters")
+require("vec3 softSpill" in html and "vec3 edgeLight" in html,
+        "RGB blur and luminous edge treatment missing")
+require("if (secondDistance2 < 0.24)" in html,
+        "RGB seam-free distance-gated second cluster missing")
+require("vec2 grid = uv * vec2(4.8, 3.2)" not in html,
+        "legacy rigid RGB panel grid returned")
 require("window.__VISUALIZER_BENCHMARK__ = result" in html, "benchmark telemetry export missing")
 require("effectiveDprX: canvas.width / window.innerWidth" in html, "benchmark native-density telemetry missing")
 require("BENCHMARK_SAMPLE_FRAMES" in html, "benchmark frame sampler missing")

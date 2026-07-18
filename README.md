@@ -56,7 +56,7 @@ For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Exampl
 - Flow Field uses fast analytic domain-warped rivers and capillaries instead of the former 1,500-step-per-pixel particle integration
 - Branches uses inverse-folded binary trees and cell-hashed drifting seeds instead of 286 per-pixel distance tests
 - Voronoi assigns every generator one of 16 logarithmic FFT bins; weighted distance makes loud-bin cells expand dramatically while quiet-bin neighbors compress, without changing global grid density
-- RGB Subpixels includes experimental panel effects: glitter, reflections, chromatic halos, phosphor smear, moire shimmer, and aging pixel cells
+- RGB Subpixels scatters randomized multi-scale RGB clusters across the frame; tightly overlapping channels, 16-bin FFT ownership, soft chromatic spill, edge contours, and seam-free two-nearest compositing replace the former rigid panel grid
 - Stipple family pages:
   - `stipple-topography.html` — contour-map stipple waves
   - `stipple-glass-reef.html` — caustic/glass/glitter stipple waves
