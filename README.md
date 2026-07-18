@@ -60,7 +60,7 @@ For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Exampl
 - Spectral Hive now has three dedicated pages:
   - `hive-aperture.html` — preserved flat seven-cell aperture
   - `hive-shell.html` — loose three-layer rotating spherical shell
-  - `hive-infinite.html` — 80%-height perfectly tiled Hexsphere with FFT-driven cell scale and smoothly integrated FFT rotation speed
+  - `hive-infinite.html` — 80%-height perfectly tiled Hexsphere with hidden longitude wrap, FFT-driven cell scale/gap width/rotation speed, and rays sampled directly from live circumference seams
 - Stipple family pages:
   - `stipple-topography.html` — contour-map stipple waves
   - `stipple-glass-reef.html` — caustic/glass/glitter stipple waves

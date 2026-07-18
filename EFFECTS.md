@@ -92,7 +92,7 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Material:** bioluminescent tissue suspended in a velvet stellar void
 - **Cost:** seven bounded warp octaves feed both geometry and nebula shading; analytic polar fields and a cell-local spore layer avoid redundant noise and particle loops
 
-### Spectral Hive Aperture
+### Spectral Hive Shell
 - **Composition:** a center-facing hex with roughly three foreshortened shell layers across a loose spherical hive, surrounded by full-frame radial shafts
 - **Primitive:** front-hemisphere normals, 3D rotation, longitude/latitude projection, analytic two-lattice hex coordinates, and loop-free angular rays
 - **Motion:** the shell rotates slowly in three dimensions while trapped seam illumination migrates and external shafts breathe
@@ -100,3 +100,12 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Material:** dark shell plates around a bright internal source, cool beveled leakage, and restrained volumetric haze
 - **Novelty boundary:** inspired only by the supplied reference's spherical honeycomb/internal-light grammar; seeded spectral tint, FFT ownership, rotating projection, and depth hierarchy are original
 - **Cost:** no loops or general powers; fixed multiplication chains form narrow shafts and squared gates avoid redundant shell-distance roots
+
+### Infinite Hexsphere
+- **Composition:** a perfectly tiled sphere fixed at 80% viewport height, surrounded only by rays emitted from live circumference gaps
+- **Primitive:** lattice-matched hex Voronoi cells over an unbounded front-hemisphere longitude/latitude domain with the coordinate wrap permanently behind the camera
+- **Motion:** FFT-integrated longitude motion rotates continuously without exposing a projection seam or changing the silhouette
+- **Audio:** bass and treble alter cell scale; each cell's FFT bin plus aggregate bands dynamically open its gap and seam; circumference samples gate matching external beams
+- **Material:** near-black shell plates, narrow cold internal-light seams, and source-coupled volumetric shafts
+- **Novelty boundary:** the silhouette stays invariant; no independent background ray lattice, random tile placement, or visible longitude reset is permitted
+- **Cost:** coherent interior/exterior branches keep shell and circumference lookups spatially exclusive except near the silhouette; no loops or texture reads

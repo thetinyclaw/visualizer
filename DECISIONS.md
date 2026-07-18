@@ -24,3 +24,9 @@ Decision: Keep Aperture, Shell, and Infinite Hexsphere as separate registered pa
 Reason: Creative iteration should branch successful interpretations instead of destructively replacing them.
 Tradeoff: The uber-shader and verification surface grow, but each visual identity remains reproducible and independently benchmarkable.
 
+## 2026-07-18 — Keep Hexsphere projection seams behind the camera
+Context: Rotating the sphere normal before equirectangular mapping moved the longitude wrap across the visible ball and visibly modulated its expansion.
+Decision: Compute longitude on the fixed front hemisphere, add an unbounded rotation offset, and never wrap visible coordinates. Sample the actual tiled gap pattern at the circumference to gate external beams, and drive panel gaps dynamically from FFT data.
+Reason: The sphere silhouette must remain continuous while beams visibly originate from shell openings.
+Tradeoff: Circumference gap sampling adds a second analytic hex lookup per fragment, so native-density performance must be re-benchmarked.
+

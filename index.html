@@ -1107,74 +1107,68 @@ vec3 infiniteHexsphere(vec2 uv, float t) {
     float angularKey = fract(angle / TAU + 0.5);
     float angularBand = fftBand(angularKey);
     const float ballRadius = 0.40; // exactly 80% of viewport height
+    float tilingScale = 5.65 - bass * 1.45 + treble * 0.48;
+    float latitudeDrift = 0.16 * sin(hiveRotation * 0.37 + seed);
 
-    // Narrow external beams rotate with the shell and begin at its silhouette.
-    float beamSignalA = 0.5 + 0.5 * cos(angle * 24.0 - hiveRotation * 1.9);
-    float beamA2 = beamSignalA * beamSignalA;
-    float beamA4 = beamA2 * beamA2;
-    float beamA8 = beamA4 * beamA4;
-    float beamA = beamA8 * beamA8;
-    float beamSignalB = 0.5 + 0.5 * cos(angle * 42.0 + hiveRotation * 1.3 + seed);
-    float beamB2 = beamSignalB * beamSignalB;
-    float beamB4 = beamB2 * beamB2;
-    float beamB8 = beamB4 * beamB4;
-    float beamB = beamB8 * beamB8 * beamB8 * beamB8;
-    float beamEnvelope = smoothstep(ballRadius * 0.82, ballRadius * 1.08, radius) *
-        smoothstep(1.42, ballRadius * 0.94, radius);
-    float beamBreath = 0.78 + 0.22 * sin(radius * 13.0 - t * 0.24 + angularBand * 2.2);
-    float beams = (beamA * 0.72 + beamB * 0.38) * beamEnvelope * beamBreath;
-    vec3 beamTint = mix(vec3(0.94, 0.97, 1.0), mix(color2, color3, angularKey), 0.14);
-    vec3 col = color4 * (0.045 + angularBand * 0.020);
-    col += beamTint * beams * (0.26 + angularBand * 0.66);
-
-    // Perfect two-lattice hex tiling is sampled over an infinitely repeating
-    // longitude/latitude domain, then clipped only by the spherical silhouette.
+    // The silhouette is view-fixed. Rotation is an unbounded longitude offset,
+    // so the equirectangular discontinuity stays permanently behind the sphere.
     vec2 sphereXY = uv / ballRadius;
     float sphereRadius2 = dot(sphereXY, sphereXY);
     float surfaceZ = sqrt(max(0.0001, 1.0 - sphereRadius2));
     float sphereMask = 1.0 - smoothstep(0.985, 1.015, sphereRadius2);
-    vec3 surfaceNormal = vec3(sphereXY, surfaceZ);
-    float spinCos = cos(hiveRotation);
-    float spinSin = sin(hiveRotation);
-    surfaceNormal = vec3(
-        spinCos * surfaceNormal.x + spinSin * surfaceNormal.z,
-        surfaceNormal.y,
-        -spinSin * surfaceNormal.x + spinCos * surfaceNormal.z
-    );
-    float tilt = 0.22 + 0.07 * sin(hiveRotation * 0.37 + seed);
-    float tiltCos = cos(tilt);
-    float tiltSin = sin(tilt);
-    surfaceNormal = vec3(
-        surfaceNormal.x,
-        tiltCos * surfaceNormal.y - tiltSin * surfaceNormal.z,
-        tiltSin * surfaceNormal.y + tiltCos * surfaceNormal.z
-    );
-    float longitude = atan(surfaceNormal.x, surfaceNormal.z);
-    float latitude = asin(clamp(surfaceNormal.y, -0.999, 0.999));
+    vec3 col = color4 * (0.045 + angularBand * 0.020);
 
-    // Bass expands cells; high-frequency energy adds finer shell detail.
-    float tilingScale = 5.65 - bass * 1.45 + treble * 0.48;
-    vec4 cell = spectralHexCell(vec2(longitude, latitude) * tilingScale);
-    vec2 cellLocal = cell.xy;
-    vec2 cellId = cell.zw;
-    float cellKey = hash(cellId + seed * 4.19);
-    float cellBand = fftBand(cellKey);
-    float hexMetric = perfectTiledHexMetric(cellLocal);
-    float panelRadius = 0.468 - cellBand * 0.006;
-    float panel = (1.0 - smoothstep(panelRadius, panelRadius + 0.010, hexMetric)) * sphereMask;
-    float seam = (1.0 - smoothstep(0.006, 0.036, abs(hexMetric - panelRadius))) * sphereMask;
-    float gap = smoothstep(panelRadius - 0.003, 0.495, hexMetric) * sphereMask;
+    // Sample the actual tiling near the circumference. Only directions that
+    // intersect a live shell gap are allowed to emit an external radial beam.
+    if (radius > ballRadius * 0.96) {
+        const float edgeRadius = 0.965;
+        vec2 edgeXY = vec2(cos(angle), sin(angle)) * edgeRadius;
+        float edgeZ = sqrt(1.0 - edgeRadius * edgeRadius);
+        float edgeLongitude = atan(edgeXY.x, edgeZ) + hiveRotation;
+        float edgeLatitude = asin(clamp(edgeXY.y, -0.999, 0.999)) + latitudeDrift;
+        vec4 edgeCell = spectralHexCell(vec2(edgeLongitude, edgeLatitude) * tilingScale);
+        float edgeKey = hash(edgeCell.zw + seed * 4.19);
+        float edgeBand = fftBand(edgeKey);
+        float edgeMetric = perfectTiledHexMetric(edgeCell.xy);
+        float edgePanelRadius = 0.478 - bass * 0.026 - edgeBand * 0.050 - treble * 0.010;
+        float edgeGap = smoothstep(edgePanelRadius - 0.003, 0.498, edgeMetric);
+        float sourceGate = smoothstep(0.18, 0.78, edgeGap);
+        sourceGate *= sourceGate;
+        float beamEnvelope = smoothstep(ballRadius * 0.985, ballRadius * 1.035, radius) *
+            smoothstep(1.42, ballRadius * 1.01, radius);
+        float beamBreath = 0.76 + 0.24 * sin(radius * 13.0 - t * 0.24 + edgeBand * 2.2);
+        float beams = sourceGate * beamEnvelope * beamBreath * (0.50 + edgeBand * 0.72);
+        vec3 beamTint = mix(vec3(0.94, 0.97, 1.0), mix(color2, color3, edgeKey), 0.14);
+        col += beamTint * beams * (0.34 + angularBand * 0.58);
+    }
 
-    float facing = clamp(surfaceZ, 0.0, 1.0);
-    float sourcePressure = 0.34 + facing * 0.72 + bass * 0.32 + cellBand * 0.20;
-    vec3 seamTint = mix(vec3(0.92, 0.96, 1.0), mix(color2, color3, cellKey), 0.12);
-    col += seamTint * gap * sourcePressure * 0.48;
-    col += seamTint * seam * sourcePressure * (0.72 + cellBand * 0.38);
+    // Perfect two-lattice hex tiling repeats without a finite boundary.
+    if (sphereRadius2 < 1.03) {
+        float longitude = atan(sphereXY.x, surfaceZ) + hiveRotation;
+        float latitude = asin(clamp(sphereXY.y, -0.999, 0.999)) + latitudeDrift;
+        vec4 cell = spectralHexCell(vec2(longitude, latitude) * tilingScale);
+        vec2 cellLocal = cell.xy;
+        vec2 cellId = cell.zw;
+        float cellKey = hash(cellId + seed * 4.19);
+        float cellBand = fftBand(cellKey);
+        float hexMetric = perfectTiledHexMetric(cellLocal);
+        float panelRadius = 0.478 - bass * 0.026 - cellBand * 0.050 - treble * 0.010;
+        float seamWidth = 0.020 + bass * 0.012 + cellBand * 0.024;
+        float panel = (1.0 - smoothstep(panelRadius, panelRadius + 0.010, hexMetric)) * sphereMask;
+        float seam = (1.0 - smoothstep(0.005, seamWidth, abs(hexMetric - panelRadius))) * sphereMask;
+        float gap = smoothstep(panelRadius - 0.003, 0.498, hexMetric) * sphereMask;
 
-    vec3 panelColor = mix(color4 * 0.055, color1 * 0.075, cellBand) * (0.04 + facing * 0.10);
-    col = mix(col, panelColor, panel * 0.975);
-    float rim = smoothstep(0.72, 1.0, sphereRadius2) * sphereMask;
-    col += seamTint * seam * rim * 0.16;
+        float facing = clamp(surfaceZ, 0.0, 1.0);
+        float sourcePressure = 0.34 + facing * 0.72 + bass * 0.32 + cellBand * 0.20;
+        vec3 seamTint = mix(vec3(0.92, 0.96, 1.0), mix(color2, color3, cellKey), 0.12);
+        col += seamTint * gap * sourcePressure * 0.48;
+        col += seamTint * seam * sourcePressure * (0.72 + cellBand * 0.38);
+
+        vec3 panelColor = mix(color4 * 0.055, color1 * 0.075, cellBand) * (0.04 + facing * 0.10);
+        col = mix(col, panelColor, panel * 0.975);
+        float rim = smoothstep(0.72, 1.0, sphereRadius2) * sphereMask;
+        col += seamTint * seam * rim * 0.16;
+    }
     return col;
 }
 

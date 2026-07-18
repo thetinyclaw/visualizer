@@ -76,6 +76,19 @@ require("perfectTiledHexMetric(cellLocal)" in infinite_hive,
         "Infinite Hexsphere lacks lattice-matched perfect tiling")
 require("float tilingScale = 5.65 - bass * 1.45 + treble * 0.48;" in infinite_hive,
         "Infinite Hexsphere cell size is not FFT-driven")
+require("float longitude = atan(sphereXY.x, surfaceZ) + hiveRotation;" in infinite_hive and
+        "spinCos" not in infinite_hive and "surfaceNormal" not in infinite_hive,
+        "Infinite Hexsphere can expose its longitude wrap on the visible hemisphere")
+require("float panelRadius = 0.478 - bass * 0.026 - cellBand * 0.050 - treble * 0.010;" in infinite_hive and
+        "float seamWidth = 0.020 + bass * 0.012 + cellBand * 0.024;" in infinite_hive,
+        "Infinite Hexsphere gaps are not dynamically FFT-driven")
+require("vec4 edgeCell = spectralHexCell" in infinite_hive and
+        "float sourceGate = smoothstep" in infinite_hive and
+        "float beams = sourceGate * beamEnvelope" in infinite_hive,
+        "Infinite Hexsphere beams are not causally sampled from circumference gaps")
+require("if (radius > ballRadius * 0.96)" in infinite_hive and
+        "if (sphereRadius2 < 1.03)" in infinite_hive,
+        "Infinite Hexsphere lost interior/exterior shader partitioning")
 require("uniform float hiveRotation;" in html and "const hiveRotationRate = 0.035 + fftBins[2]" in html and
         "hiveRotationPhase += frameSeconds * hiveRotationRate;" in html,
         "Infinite Hexsphere lacks smoothly integrated FFT rotation speed")
