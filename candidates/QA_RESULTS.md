@@ -1,18 +1,18 @@
 # Candidate QA results — video organics A
 
-## Reference inspection
+## Repair pass
 
-- `doc_e54f7242eea9_20260718-2038-39.1716252.mp4`: h264 1240×628 at 30 fps, duration 5.482646s, AAC audio. Contact sheets showed a monochrome volumetric shard/tunnel/cathedral: cracked line networks, aperture slabs, camera/light motion through high-contrast panels, and intentional dark negative space.
-- `doc_f2e836acf4a0_20260718-2039-12.9391643.mp4`: h264 1220×656 at 30 fps, duration 3.519979s, AAC audio. Contact sheets showed an oblique chromatic iris/toroid: central dark void, iridescent cyan/violet/amber sectors, radial fiber bundles, rim spores, and drifting highlight phase.
+- `Prismatic Rupture Cathedral`: broadened the rupture topology from a single central column into a full-frame mirrored cathedral lattice: wider fracture layers, flank cracks, oblique shard sheets, arch ribs, and a subtle background veil. The central aperture/cross hierarchy remains crisp and monochrome, with intentional dark falloff only near the far edges.
+- `Chromatic Iris Mycorrhiza`: replaced undefined reversed `smoothstep` masks with explicit `invSmooth(...)`, which removes the portability path that could render black on stricter WebGL implementations. Reworked the expensive 3×3 spore neighborhood into a faster seeded cell/dust field and kept the dense toroidal iris, central void, chromatic sectors, mycelial filaments, spores, and 16-band FFT ownership.
 
 ## Browser visual QA
 
-- `candidates/prismatic-rupture-cathedral.html?seed=491009`: WebGL compiled with clean console. Visual inspection: crisp monochrome fracture lines, bright central aperture, layered shard tunnel/cathedral feel. Honest defect: still uses deliberate black side negative space; density is concentrated in the central vertical volume rather than uniformly filling every edge.
-- `candidates/chromatic-iris-mycorrhiza.html?seed=491009`: WebGL compiled with clean console. Visual inspection: full-screen chromatic iris with dark void, dense radial fibers/spores, organic/cosmic material. Honest defect: soft bloom makes parts of the ring painterly rather than razor-sharp, though fine particle/fiber detail remains visible.
+- `candidates/prismatic-rupture-cathedral.html?seed=491009`: WebGL compiled with clean console. Visual inspection: dense fractured cathedral/rupture fills most of the 1280×633 viewport, including side-wall shards and arch ribs; no blank half-frame. Remaining edge darkness reads as vignette/negative space rather than inert black.
+- `candidates/chromatic-iris-mycorrhiza.html?seed=491009`: WebGL compiled with clean console. Visual inspection: visible dense chromatic toroidal organic iris with a dark central void, radial filaments, spores, cyan/violet/amber sectoring, and nebular background; no blank/black render.
 
 ## Exact benchmark telemetry
 
-Both benchmarks used `?benchmark=1&seed=491009&frames=120` in HeadlessChrome 150 / WebKit WebGL at 1280×633 CSS/backing, effective DPR 1.0, 30 warmup frames, 16 FFT-ready bands.
+Both benchmarks used `?benchmark=1&seed=491009&frames=120` in HeadlessChrome 150 / WebKit WebGL at 1280×633 CSS/backing, effective DPR 1.0, 30 warmup frames, 16 FFT-ready bands. Console check after benchmark reported 0 JS errors and 0 console messages.
 
 ### Prismatic Rupture Cathedral
 
@@ -23,10 +23,10 @@ Both benchmarks used `?benchmark=1&seed=491009&frames=120` in HeadlessChrome 150
   "seed": 491009,
   "frames": 120,
   "warmupFrames": 30,
-  "avgFrameMs": 75.83083333333335,
-  "avgFps": 13.18724793125048,
-  "p95FrameMs": 116.69999999999892,
-  "worstFrameMs": 133.30000000000018,
+  "avgFrameMs": 50.83166666666666,
+  "avgFps": 19.6727761565953,
+  "p95FrameMs": 133.30000000000018,
+  "worstFrameMs": 133.39999999999964,
   "cssWidth": 1280,
   "cssHeight": 633,
   "backingWidth": 1280,
@@ -36,7 +36,7 @@ Both benchmarks used `?benchmark=1&seed=491009&frames=120` in HeadlessChrome 150
   "renderer": "WebKit WebGL",
   "vendor": "WebKit",
   "fftReadyBands": 16,
-  "timestamp": "2026-07-18T20:54:18.360Z"
+  "timestamp": "2026-07-18T21:04:57.841Z"
 }
 ```
 
@@ -49,10 +49,10 @@ Both benchmarks used `?benchmark=1&seed=491009&frames=120` in HeadlessChrome 150
   "seed": 491009,
   "frames": 120,
   "warmupFrames": 30,
-  "avgFrameMs": 100.9675,
-  "avgFps": 9.90417708668631,
-  "p95FrameMs": 133.3000000000011,
-  "worstFrameMs": 133.40000000000146,
+  "avgFrameMs": 62.08083333333334,
+  "avgFps": 16.108031195887083,
+  "p95FrameMs": 100,
+  "worstFrameMs": 133.39999999999964,
   "cssWidth": 1280,
   "cssHeight": 633,
   "backingWidth": 1280,
@@ -62,6 +62,6 @@ Both benchmarks used `?benchmark=1&seed=491009&frames=120` in HeadlessChrome 150
   "renderer": "WebKit WebGL",
   "vendor": "WebKit",
   "fftReadyBands": 16,
-  "timestamp": "2026-07-18T20:53:56.322Z"
+  "timestamp": "2026-07-18T21:05:24.303Z"
 }
 ```

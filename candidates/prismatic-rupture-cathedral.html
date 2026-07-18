@@ -27,6 +27,8 @@
   <script src="candidate-runner.js"></script>
   <script>
     startCandidate(`
+      float invSmooth(float lo, float hi, float x) { return 1.0 - smoothstep(lo, hi, x); }
+
       float fractureCell(vec2 p, float scale, float bandBase) {
         vec2 g = p * scale;
         vec2 id = floor(g);
@@ -46,9 +48,17 @@
       float shardSlab(vec2 p, float angle, float lane, float width) {
         vec2 q = rot(angle) * p;
         float stripe = abs(fract(q.x * lane + seed * 0.001) - 0.5);
-        float panel = smoothstep(width, 0.0, stripe) * smoothstep(0.72, 0.06, abs(q.y));
-        float clip = smoothstep(1.25, 0.18, length(p));
+        float panel = invSmooth(0.0, width, stripe) * invSmooth(0.06, 0.92, abs(q.y));
+        float clip = invSmooth(0.18, 1.55, length(p));
         return panel * clip;
+      }
+
+      float archRib(vec2 p, float span, float lift, float band) {
+        vec2 q = p;
+        q.y += lift;
+        float arch = abs(length(q * vec2(1.0 / span, 1.26)) - 0.82);
+        float sideGate = smoothstep(0.05, 0.95, abs(p.x));
+        return invSmooth(0.0, 0.022 + band * 0.024, arch) * sideGate * invSmooth(0.12, 1.82, length(p));
       }
 
       vec3 effect(vec2 uv, float t) {
@@ -65,52 +75,53 @@
         for (int i = 0; i < 5; i++) {
           float fi = float(i);
           float depth = fi / 4.0;
-          float z = 0.38 + depth * 1.72;
-          vec2 q = p * (1.0 + depth * 1.24);
-          q *= rot(orbit * (0.55 + depth * 0.37) + fi * 0.61 + 0.11 * sin(t * 0.23 + fi));
-          q.x += sin(t * 0.19 + fi * 1.73 + seed * 0.002) * 0.21 * depth;
+          vec2 q = p * (0.78 + depth * 1.00);
+          q *= rot(orbit * (0.48 + depth * 0.34) + fi * 0.61 + 0.11 * sin(t * 0.23 + fi));
+          q.x += sin(t * 0.19 + fi * 1.73 + seed * 0.002) * 0.24 * depth;
           q.y += cos(t * 0.16 + fi * 1.11) * 0.13 * depth;
 
-          float scale = 2.8 + fi * 1.35 + bass * 0.55;
+          float scale = 2.2 + fi * 1.22 + bass * 0.45;
           float crack = fractureCell(q, scale, fi * 2.7);
-          float seamWidth = 0.022 + fftBand(fi * 2.0 + 2.0) * 0.045;
-          float seam = smoothstep(seamWidth, 0.0, crack);
-          float filament = smoothstep(seamWidth * 0.30, 0.0, crack);
-          float ring = abs(length(q) - (0.30 + depth * 0.38 + 0.05 * sin(t * 0.7 + fi)));
-          float tunnelRib = smoothstep(0.026 + high * 0.018, 0.0, ring);
-          float radialGate = smoothstep(1.62, 0.04, length(q));
-          float mirror = max(shardSlab(q, fi * 0.77 + orbit, 3.0 + fi * 0.8, 0.034 + lowMid * 0.018), shardSlab(q, -fi * 0.54 + orbit * 0.7, 2.2 + fi, 0.022 + high * 0.015));
-          float aperture = smoothstep(0.82 + bass * 0.08, 0.18, max(abs(q.x * 0.42), abs(q.y * 1.65 + sin(fi + t * 0.4) * 0.12)));
-          float layerLight = (seam * 0.72 + filament * 1.4 + tunnelRib * 0.55 + mirror * (1.4 + 1.5 * fftBand(fi + 8.0))) * radialGate;
-          float flash = smoothstep(0.91, 0.22, abs(q.x + sin(t * 0.33 + fi) * 0.22)) * smoothstep(0.72, 0.0, abs(q.y)) * aperture;
-          layerLight += flash * (0.16 + 1.85 * bass) * (1.0 - depth * 0.12);
-          color += vec3(layerLight) * (0.29 + depth * 0.26) * occlusion;
-          color += vec3(0.18, 0.21, 0.25) * seam * depth * 0.22;
-          occlusion *= 0.78 + 0.12 * smoothstep(0.55, 1.45, length(q));
+          float seamWidth = 0.020 + fftBand(fi * 2.0 + 2.0) * 0.040;
+          float seam = invSmooth(0.0, seamWidth, crack);
+          float filament = invSmooth(0.0, seamWidth * 0.32, crack);
+          float ring = abs(length(q * vec2(0.86, 1.05)) - (0.36 + depth * 0.42 + 0.05 * sin(t * 0.7 + fi)));
+          float tunnelRib = invSmooth(0.0, 0.026 + high * 0.018, ring);
+          float radialGate = invSmooth(1.42, 2.38, length(q));
+          float mirror = max(shardSlab(q, fi * 0.77 + orbit, 2.6 + fi * 0.7, 0.034 + lowMid * 0.018), shardSlab(q, -fi * 0.54 + orbit * 0.7, 2.0 + fi, 0.022 + high * 0.015));
+          float aperture = invSmooth(0.18, 0.98 + bass * 0.08, max(abs(q.x * 0.34), abs(q.y * 1.42 + sin(fi + t * 0.4) * 0.12)));
+          float layerLight = (seam * 0.68 + filament * 1.18 + tunnelRib * 0.62 + mirror * (1.20 + 1.20 * fftBand(fi + 8.0))) * radialGate;
+          float flash = invSmooth(0.22, 1.20, abs(q.x + sin(t * 0.33 + fi) * 0.22)) * invSmooth(0.0, 0.82, abs(q.y)) * aperture;
+          layerLight += flash * (0.12 + 1.30 * bass) * (1.0 - depth * 0.12);
+          color += vec3(layerLight) * (0.28 + depth * 0.25) * occlusion;
+          color += vec3(0.18, 0.21, 0.25) * seam * depth * 0.24;
+          occlusion *= 0.82 + 0.10 * smoothstep(0.55, 1.45, length(q));
         }
 
-        vec2 wide = p * vec2(aspect, 1.0);
-        vec2 flankA = rot(0.74 + orbit * 0.55) * (wide + vec2(-0.78, 0.08));
-        vec2 flankB = rot(-0.68 + orbit * 0.42) * (wide + vec2(0.72, -0.04));
-        float wideCrackA = smoothstep(0.030 + high * 0.012, 0.0, fractureCell(flankA, 3.25 + bass, 6.0));
-        float wideCrackB = smoothstep(0.026 + lowMid * 0.014, 0.0, fractureCell(flankB, 4.10 + high, 10.0));
-        float sideShardA = shardSlab(flankA, 0.23, 5.2, 0.020 + high * 0.015);
-        float sideShardB = shardSlab(flankB, -0.18, 4.6, 0.018 + lowMid * 0.014);
-        float sideMask = smoothstep(2.15, 0.05, length(wide)) * (0.30 + 0.92 * smoothstep(0.25, 1.55, abs(wide.x)));
-        float obliqueSheets = shardSlab(wide, 0.92 + orbit * 0.18, 3.6, 0.018 + high * 0.012) + shardSlab(wide, -0.82 + orbit * 0.15, 3.2, 0.018 + lowMid * 0.012);
-        color += vec3(0.56, 0.60, 0.66) * (wideCrackA * 0.98 + wideCrackB * 0.86) * sideMask;
-        color += vec3(0.88, 0.92, 0.98) * (sideShardA + sideShardB + obliqueSheets * 0.75) * sideMask * (0.34 + 0.96 * high);
+        vec2 flankA = rot(0.62 + orbit * 0.42) * (p + vec2(-0.72, 0.02));
+        vec2 flankB = rot(-0.60 + orbit * 0.38) * (p + vec2(0.72, -0.02));
+        float wideCrackA = invSmooth(0.0, 0.030 + high * 0.012, fractureCell(flankA, 3.10 + bass, 6.0));
+        float wideCrackB = invSmooth(0.0, 0.028 + lowMid * 0.014, fractureCell(flankB, 3.75 + high, 10.0));
+        float sideShardA = shardSlab(flankA, 0.23, 4.6, 0.020 + high * 0.015);
+        float sideShardB = shardSlab(flankB, -0.18, 4.3, 0.018 + lowMid * 0.014);
+        float sideMask = invSmooth(1.35, 2.45, length(p)) * (0.36 + 0.82 * smoothstep(0.18, 1.40, abs(p.x)));
+        float obliqueSheets = shardSlab(p, 0.92 + orbit * 0.18, 3.2, 0.020 + high * 0.012) + shardSlab(p, -0.82 + orbit * 0.15, 3.0, 0.020 + lowMid * 0.012);
+        float arch = archRib(p + vec2(0.0, 0.26), 1.28, 0.12, lowMid) + archRib(p + vec2(0.0, -0.16), 1.55, -0.08, high);
+        color += vec3(0.52, 0.57, 0.64) * (wideCrackA * 0.95 + wideCrackB * 0.84) * sideMask;
+        color += vec3(0.86, 0.91, 0.98) * (sideShardA + sideShardB + obliqueSheets * 0.78 + arch * 1.10) * sideMask * (0.36 + 0.90 * high);
 
-        float apertureCore = smoothstep(0.095 + bass * 0.04, 0.0, abs(p.x * aspect)) * smoothstep(1.08, 0.0, abs(p.y));
-        float cross = apertureCore + smoothstep(0.062 + high * 0.024, 0.0, abs(p.y)) * smoothstep(0.98, 0.0, abs(p.x * aspect));
-        float vignette = smoothstep(1.95, 0.08, length(wide));
-        color += vec3(cross) * (0.58 + bass * 1.55);
+        float apertureCore = invSmooth(0.0, 0.102 + bass * 0.04, abs(p.x)) * invSmooth(0.0, 1.10, abs(p.y));
+        float cross = apertureCore + invSmooth(0.0, 0.065 + high * 0.024, abs(p.y)) * invSmooth(0.0, 1.42, abs(p.x));
+        float veil = invSmooth(0.0, 0.030 + lowMid * 0.018, abs(sin((p.x * 1.7 + p.y * 0.6) * 9.0 + t * 0.24))) * invSmooth(1.05, 2.35, length(p));
+        float vignette = invSmooth(1.60, 2.72, length(p));
+        color += vec3(cross) * (0.46 + bass * 1.15);
+        color += vec3(0.12, 0.14, 0.17) * veil * 0.55;
         color *= vignette;
-        color += vec3(0.018, 0.022, 0.027) * (1.0 - vignette);
+        color += vec3(0.018, 0.022, 0.027) * (1.0 - vignette) + vec3(0.020, 0.024, 0.030);
         color = color / (1.0 + color * 0.72);
-        color = pow(color, vec3(0.72));
+        color = pow(max(color, vec3(0.0)), vec3(0.72));
         float grain = hash21(gl_FragCoord.xy + time * 23.0 + seed) - 0.5;
-        return color + grain * 0.028;
+        return max(color + grain * 0.026, vec3(0.0));
       }
 
       void main() {
