@@ -47,7 +47,7 @@ Safari does not expose an AirPlay picker for a WebGL canvas, so the television i
 
 For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Example: `index.html?pattern=8&seed=491009` opens and locks a repeatable **Cosmic Mycelium** scene without auto-transitioning.
 
-Standalone candidates live under `candidates/`. Every route accepts deterministic `?seed=...`; append `?benchmark=1&seed=491009&frames=120` for native-density telemetry:
+The six reference-informed effects are part of the automatic main cycle at indices `13–18` and remain available as standalone candidate pages. Every route accepts deterministic `?seed=...`; append `?benchmark=1&seed=491009&frames=120` for native-density telemetry:
 
 - `candidates/filament-vortex.html`
 - `candidates/prismatic-rupture-cathedral.html`
@@ -61,7 +61,7 @@ Example benchmark route: `candidates/filament-vortex.html?benchmark=1&seed=49100
 ## Current status
 
 - Static WebGL/GLSL app
-- Thirteen generated patterns, including three preserved Spectral Hive variants: Aperture, Shell, and Infinite Hexsphere
+- Nineteen generated patterns, including three preserved Spectral Hive variants and six reference-informed effects in the automatic cycle
 - Neurons uses cell-local somas and analytic warped axons instead of 32 full-screen distance tests per pixel
 - Cosmic Mycelium combines a bass-opened gravitational aperture, living log-polar filaments, nested revelation rings, and treble-revealed stellar spores; its domain fields are reused for low-cost nebula shading
 - Flow Field uses fast analytic domain-warped rivers and capillaries instead of the former 1,500-step-per-pixel particle integration

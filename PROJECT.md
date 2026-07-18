@@ -19,12 +19,13 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - [x] Implement audio analysis (FFT)
 - [x] Fix WebGL/shader error handling
 - [x] Fix GLSL Intel/Windows loop compatibility
-- [x] Add thirteen generated shader patterns, including Cosmic Mycelium, scattered RGB Subpixels, and three Spectral Hive variants
+- [x] Add nineteen generated shader patterns, including Cosmic Mycelium, scattered RGB Subpixels, three Spectral Hive variants, and six reference-informed effects
 - [x] Refresh render-loop performance and layout (Ponytail pass, 2026-07-05)
 - [x] Establish recurring creative evolution contract, novelty gate, effect ledger, and structural verifier (2026-07-17)
 - [x] Add standalone FFT Observatory with honest microphone/demo states and logarithmic spectral analysis (2026-07-18)
 - [x] Add standalone Filament Vortex candidate route with 16-band FFT topology controls (2026-07-18)
 - [x] Build six reference-informed standalone candidates through isolated parallel worktrees, with native-density benchmarks and FFT-ready runners (2026-07-18)
+- [x] Merge all six reference-informed candidates into automatic main-cycle indices 13–18 while preserving standalone routes (2026-07-18)
 
 ## Recent Refresh (2026-07-05)
 - Capped high-DPI render buffer to reduce fill-rate cost on Retina/TV displays.

@@ -87,6 +87,7 @@
     </div>
     <canvas id="canvas"></canvas>
 
+<script src="candidate-cycle-shaders.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════
 // TINYCLAW VISUALIZER v3 - Generative Art Engine
@@ -1278,6 +1279,8 @@ vec3 rgbSubpixels(vec2 uv, float t) {
     return col;
 }
 
+${window.CANDIDATE_CYCLE_SHADER_BLOCK}
+
 // ─────────────────────────────────────────────────────────────────
 vec3 patternColor(int p, vec2 uv, float t) {
     if (p == 0) return stippleWaves(uv, t);
@@ -1292,7 +1295,13 @@ vec3 patternColor(int p, vec2 uv, float t) {
     if (p == 9) return rgbSubpixels(uv, t);
     if (p == 10) return spectralHiveShell(uv, t);
     if (p == 11) return spectralHiveAperture(uv, t);
-    return infiniteHexsphere(uv, t);
+    if (p == 12) return infiniteHexsphere(uv, t);
+    if (p == 13) return cycleFilamentVortex(uv, t);
+    if (p == 14) return cyclePrismaticRupture(uv, t);
+    if (p == 15) return cycleChromaticIris(uv, t);
+    if (p == 16) return cycleRecursiveDiamond(uv, t);
+    if (p == 17) return cycleNeonVoxel(uv, t);
+    return cycleScarletVelocity(uv, t);
 }
 
 // MAIN
@@ -1301,7 +1310,7 @@ void main() {
     vec2 uv = (gl_FragCoord.xy - resolution * 0.5) / min(resolution.x, resolution.y);
     
     // Global rotation; RGB panels stay axis-aligned so subpixels read like zoomed TV geometry.
-    if (pattern != 9 && pattern != 10 && pattern != 12) {
+    if (pattern < 13 && pattern != 9 && pattern != 10 && pattern != 12) {
         float a = time * rotationSpeed;
         uv = mat2(cos(a), -sin(a), sin(a), cos(a)) * uv;
     }
@@ -1311,7 +1320,7 @@ void main() {
     
     vec3 col = patternColor(pattern, uv, time);
     if (transition > 0.0) {
-        int nextPattern = int(mod(float(pattern + 1), 13.0));
+        int nextPattern = int(mod(float(pattern + 1), 19.0));
         col = mix(col, patternColor(nextPattern, uv, time), transition);
     }
     
@@ -1434,11 +1443,13 @@ let lastRenderFrame = startTime;
 let hiveRotationPhase = 0;
 let hiveRadiusPulse = 0;
 let hiveFluxReady = false;
-const PATTERN_COUNT = 13;
+const PATTERN_COUNT = 19;
 const PATTERN_NAMES = [
     'Stipple Waves', 'Neurons', 'Flow Field', 'Branches',
     'Reaction', 'Voronoi', 'Ribbons', 'Galaxy', 'Cosmic Mycelium', 'RGB Subpixels',
-    'Spectral Hive Shell', 'Spectral Hive Aperture', 'Infinite Hexsphere'
+    'Spectral Hive Shell', 'Spectral Hive Aperture', 'Infinite Hexsphere',
+    'Filament Vortex', 'Prismatic Rupture Cathedral', 'Chromatic Iris Mycorrhiza',
+    'Recursive Diamond Lattice', 'Neon Voxel Scan Cloud', 'Scarlet Velocity Ribbons'
 ];
 const BENCHMARK_WARMUP_FRAMES = 30;
 const requestedBenchmarkFrames = Number.parseInt(QUERY.get('frames'), 10);

@@ -6,6 +6,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 html = (ROOT / "index.html").read_text()
+cycle_shaders = (ROOT / "candidate-cycle-shaders.js").read_text()
 readme = (ROOT / "README.md").read_text()
 project = (ROOT / "PROJECT.md").read_text()
 creative = (ROOT / "CREATIVE_ENGINE.md").read_text()
@@ -33,12 +34,35 @@ count = int(count_match.group(1)) if count_match else -1
 names_match = re.search(r"const PATTERN_NAMES = \[(.*?)\];", html, re.S)
 names = re.findall(r"'([^']+)'", names_match.group(1)) if names_match else []
 require(len(names) == count, f"PATTERN_NAMES has {len(names)} entries, expected {count}")
+require(count == 19, f"main cycle has {count} patterns, expected 19")
 require(f"mod(float(pattern + 1), {count}.0)" in html, "shader transition modulo does not match PATTERN_COUNT")
 require("Cosmic Mycelium" in names, "Cosmic Mycelium pattern is not registered")
 require("vec3 cosmicMycelium(vec2 uv, float t)" in html, "Cosmic Mycelium shader function missing")
 require("return cosmicMycelium(uv, t);" in html, "Cosmic Mycelium dispatcher route missing")
 require("Spectral Hive Shell" in names and "Spectral Hive Aperture" in names and "Infinite Hexsphere" in names,
         "all three Spectral Hive patterns are not registered")
+cycle_names = [
+    "Filament Vortex", "Prismatic Rupture Cathedral", "Chromatic Iris Mycorrhiza",
+    "Recursive Diamond Lattice", "Neon Voxel Scan Cloud", "Scarlet Velocity Ribbons",
+]
+require(names[13:19] == cycle_names, "reference candidates are not registered at main-cycle indices 13-18")
+require('<script src="candidate-cycle-shaders.js"></script>' in html and
+        "${window.CANDIDATE_CYCLE_SHADER_BLOCK}" in html,
+        "main page does not inject the candidate-cycle shader module")
+cycle_functions = [
+    "cycleFilamentVortex", "cyclePrismaticRupture", "cycleChromaticIris",
+    "cycleRecursiveDiamond", "cycleNeonVoxel", "cycleScarletVelocity",
+]
+for index, function_name in enumerate(cycle_functions, start=13):
+    require(f"vec3 {function_name}(" in cycle_shaders,
+            f"{function_name} shader function missing from cycle module")
+    require(f"if (p == {index}) return {function_name}(uv, t);" in html if index < 18 else
+            f"return {function_name}(uv, t);" in html,
+            f"{function_name} main-cycle dispatcher route missing")
+require("cycleFftIndex" in cycle_shaders and "fftBand(" in cycle_shaders,
+        "candidate-cycle shaders are not connected to the shared FFT bus")
+require("uniform " not in cycle_shaders and "void main" not in cycle_shaders,
+        "candidate-cycle module duplicates main shader uniforms or entry point")
 require("vec3 spectralHiveShell(vec2 uv, float t)" in html and
         "vec3 spectralHiveAperture(vec2 uv, float t)" in html and
         "vec3 infiniteHexsphere(vec2 uv, float t)" in html,
