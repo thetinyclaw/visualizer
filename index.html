@@ -29,8 +29,8 @@
         #seed-display { color: #333; font-size: 0.7em; margin-top: 30px; }
         #info { position: fixed; bottom: 10px; left: 10px; color: #222; font-size: 10px; z-index: 50; }
         #controls { position: fixed; top: max(10px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); color: #555; font-size: 11px; z-index: 50; transition: opacity 0.25s; }
-        #controls span { cursor: pointer; margin-left: 10px; opacity: 0.5; transition: opacity 0.2s; }
-        #controls span:hover { opacity: 1; }
+        #controls span, #controls a { cursor: pointer; margin-left: 10px; opacity: 0.5; color: inherit; text-decoration: none; transition: opacity 0.2s; }
+        #controls span:hover, #controls a:hover { opacity: 1; }
         #cast-panel {
             position: fixed; inset: 0; z-index: 110; display: none;
             align-items: center; justify-content: center; padding: 24px;
@@ -65,6 +65,7 @@
     </div>
     <div id="info"></div>
     <div id="controls">
+        <a id="btn-fft" href="fft.html" title="Open FFT Observatory">[FFT]</a>
         <span id="btn-next" title="Next pattern">[N]ext</span>
         <span id="btn-seed" title="New seed">[R]andomize</span>
         <span id="btn-tv" title="AirPlay / television mode">[TV] Mode</span>
@@ -609,7 +610,9 @@ vec3 reaction(vec2 uv, float t) {
 // PATTERN 5: VORONOI CELLS
 // ─────────────────────────────────────────────────────────────────
 vec3 voronoi(vec2 uv, float t) {
-    vec2 p = uv * (8.0 + bass * 4.0);
+    // Keep generator density stable so audio changes individual cell area rather
+    // than shrinking the entire tessellation uniformly.
+    vec2 p = uv * 8.0;
     
     vec2 n = floor(p);
     vec2 f = fract(p);
@@ -617,22 +620,34 @@ vec3 voronoi(vec2 uv, float t) {
     float minDist2 = 100.0;
     float secondDist2 = 100.0;
     vec2 minPoint;
+    float winningBandAmplitude = 0.0;
+    float winningBandKey = 0.0;
     
     for (int j = -1; j <= 1; j++) {
         for (int i = -1; i <= 1; i++) {
             vec2 neighbor = vec2(float(i), float(j));
-            vec2 point = hash2(n + neighbor + seed);
+            vec2 pointSeed = hash2(n + neighbor + seed);
+            float bandKey = fract(dot(pointSeed, vec2(0.75487766, 0.56984029)));
+            float bandAmplitude = bandKey < 0.333
+                ? bass
+                : (bandKey < 0.666 ? mid : treble);
             
-            // Animate points
-            point = 0.5 + 0.5 * sin(t * 0.5 + 6.28 * point);
+            // Each generator has a stable low/mid/high affinity. Loud bands move
+            // their generators more assertively and receive much lower distance
+            // weight, so their cells consume dramatically more area.
+            vec2 point = 0.5 + 0.5 * sin(t * (0.22 + bandAmplitude * 0.92) + TAU * pointSeed);
             
             vec2 diff = neighbor + point - f;
-            float dist2 = dot(diff, diff);
+            float rawDist2 = dot(diff, diff);
+            float frequencyCellWeight = mix(2.20, 0.24, bandAmplitude);
+            float dist2 = rawDist2 * frequencyCellWeight;
             
             if (dist2 < minDist2) {
                 secondDist2 = minDist2;
                 minDist2 = dist2;
                 minPoint = point;
+                winningBandAmplitude = bandAmplitude;
+                winningBandKey = bandKey;
             } else if (dist2 < secondDist2) {
                 secondDist2 = dist2;
             }
@@ -643,17 +658,20 @@ vec3 voronoi(vec2 uv, float t) {
     // distances used for shading: two roots per fragment instead of nine.
     float minDist = sqrt(minDist2);
     float edge = sqrt(secondDist2) - minDist;
-    float edgeLine = smoothstep(0.0, 0.05, edge);
+    float edgeWidth = mix(0.025, 0.115, winningBandAmplitude);
+    float edgeLine = smoothstep(0.0, edgeWidth, edge);
     
-    vec3 cellColor = mix(color1, color2, minPoint.x);
-    cellColor = mix(cellColor, color3, minPoint.y * 0.5);
+    vec3 lowMidColor = mix(color1, color2, smoothstep(0.08, 0.62, winningBandKey));
+    vec3 cellColor = mix(lowMidColor, color3, smoothstep(0.56, 0.96, winningBandKey));
+    cellColor = mix(cellColor, color3, winningBandAmplitude * 0.22 + minPoint.y * 0.08);
     
     vec3 col = cellColor * edgeLine;
-    col += color3 * (1.0 - edgeLine) * (1.0 + mid);
+    col += color3 * (1.0 - edgeLine) * (0.72 + winningBandAmplitude * 1.55);
     
-    // Glow at cell centers
-    float centerGlow = smoothstep(0.3, 0.0, minDist);
-    col += color3 * centerGlow * treble * 0.5;
+    // Loud frequency-owned cells develop broader, brighter nuclei.
+    float centerRadius = mix(0.20, 0.64, winningBandAmplitude);
+    float centerGlow = smoothstep(centerRadius, 0.0, minDist);
+    col += mix(cellColor, color3, 0.55) * centerGlow * (0.12 + winningBandAmplitude * 0.82);
     
     return col;
 }

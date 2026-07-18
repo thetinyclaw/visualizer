@@ -22,6 +22,7 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - [x] Add ten generated shader patterns, including Cosmic Mycelium and RGB subpixel rectangle blocks
 - [x] Refresh render-loop performance and layout (Ponytail pass, 2026-07-05)
 - [x] Establish recurring creative evolution contract, novelty gate, effect ledger, and structural verifier (2026-07-17)
+- [x] Add standalone FFT Observatory with honest microphone/demo states and logarithmic spectral analysis (2026-07-18)
 
 ## Recent Refresh (2026-07-05)
 - Capped high-DPI render buffer to reduce fill-rate cost on Retina/TV displays.
@@ -71,6 +72,16 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Replaced the final full-screen grain's structural vec3 hash with a compact interleaved-gradient hash; effect geometry, palette, and native backing density are unchanged.
 - Mirrored 120-frame RGB Subpixels checks at `800×600`, seed `491009`, moved median `11.97 → 12.31 FPS` at effective DPR `1.0`; p95 remained effectively flat (`126.8 → 127.7 ms`).
 - Deterministic screenshots retained full-frame texture and increased measured edge variation slightly rather than blurring the image.
+
+## Frequency-owned Voronoi cells (2026-07-18)
+- Replaced uniform bass-driven grid scaling with stable per-generator bass/mid/treble affinity and weighted distance, so loud-band cells consume area while quiet neighbors compress.
+- Audio also changes each owner’s motion rate, boundary width, and nucleus size without lowering global tessellation density.
+- Deterministic 120-frame browser evidence at `756×469`, seed `491009`, measured `15.48 FPS` at effective DPR `1.0`; the full-frame screenshot retained dense, crisp stained-glass coverage.
+
+## FFT Observatory (2026-07-18)
+- Added `fft.html`, a standalone no-build Canvas/Web Audio instrument with waveform, logarithmic spectrum, radial field, decaying peaks, restrained spectrogram history, and peak/centroid/RMS telemetry.
+- Microphone startup is user-gesture and secure-context gated; idle, demo, live microphone, and permission-error states remain explicit.
+- Browser QA activated demo mode and reported `94 Hz` peak, `8.19 kHz` centroid, `28%` energy, and no horizontal overflow at `756px` viewport width.
 
 ## Design Concepts
 - **RGB Subpixels:** zoomed-in TV-pixel entities made from adjacent red, green, and blue rectangles, with scanlines, glitter, chromatic edge glow, prism/reflection streaks, phosphor smear, imperfect glass warping, and aging/dead-pixel behavior.

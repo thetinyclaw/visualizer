@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#02040a">
+    <title>FFT Observatory — TinyClaw Visualizer</title>
+    <style>
+        :root { color-scheme: dark; --cyan:#61e6ff; --violet:#9a78ff; --rose:#ff67ae; --ink:#02040a; }
+        * { box-sizing: border-box; }
+        html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--ink); }
+        body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color:#d8ebff; }
+        canvas { position:fixed; inset:0; width:100%; height:100%; display:block; }
+        #chrome { position:fixed; inset:0; z-index:10; pointer-events:none; }
+        .topbar {
+            position:absolute; top:max(14px, env(safe-area-inset-top)); left:max(14px, env(safe-area-inset-left));
+            right:max(14px, env(safe-area-inset-right)); display:flex; align-items:flex-start;
+            justify-content:space-between; gap:16px; pointer-events:none;
+        }
+        .brand { text-shadow:0 0 28px rgba(97,230,255,.35); }
+        .brand strong { display:block; color:#eaf7ff; font-size:13px; letter-spacing:.24em; }
+        .brand span { display:block; margin-top:5px; color:#52708e; font-size:9px; letter-spacing:.14em; }
+        .controls { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px; pointer-events:auto; }
+        button, .nav-link {
+            appearance:none; border:1px solid rgba(113,170,224,.25); border-radius:999px;
+            padding:8px 11px; background:rgba(3,10,21,.7); color:#7893ad; font:inherit;
+            font-size:9px; letter-spacing:.08em; text-decoration:none; cursor:pointer;
+            backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+        }
+        button:hover, .nav-link:hover, button.active { color:#dff9ff; border-color:rgba(97,230,255,.65); }
+        #metrics {
+            position:absolute; left:max(14px, env(safe-area-inset-left)); bottom:max(13px, env(safe-area-inset-bottom));
+            display:grid; grid-template-columns:repeat(4, minmax(66px,auto)); gap:8px 18px;
+            color:#57728d; font-size:9px; letter-spacing:.08em;
+        }
+        #metrics b { display:block; color:#b6d9f3; font-size:12px; font-weight:500; margin-top:3px; }
+        #start {
+            position:fixed; inset:0; z-index:30; display:flex; align-items:center; justify-content:center;
+            padding:24px; background:radial-gradient(circle at 50% 45%, rgba(19,35,68,.72), rgba(1,3,8,.96) 60%);
+            transition:opacity .55s ease;
+        }
+        #start.hidden { opacity:0; pointer-events:none; }
+        .start-card { width:min(560px,100%); text-align:center; }
+        .eyebrow { color:#58708d; font-size:10px; letter-spacing:.35em; }
+        h1 {
+            margin:16px 0 12px; font-size:clamp(34px,8vw,72px); line-height:.9; letter-spacing:-.055em;
+            background:linear-gradient(100deg,#e9fbff 5%,#61e6ff 42%,#9a78ff 72%,#ff67ae);
+            -webkit-background-clip:text; background-clip:text; color:transparent;
+        }
+        .lede { max-width:460px; margin:0 auto 24px; color:#6e829b; font-size:12px; line-height:1.65; }
+        .start-actions { display:flex; justify-content:center; flex-wrap:wrap; gap:10px; }
+        .start-actions button { min-width:170px; padding:13px 16px; color:#cdefff; border-color:rgba(97,230,255,.45); }
+        .start-actions .demo { color:#8c829f; border-color:rgba(154,120,255,.3); }
+        #secure-warning { display:none; margin:18px auto 0; max-width:440px; color:#ff9dba; font-size:10px; line-height:1.5; }
+        #secure-warning a { color:#92eaff; }
+        #hint { position:absolute; right:max(14px, env(safe-area-inset-right)); bottom:max(13px, env(safe-area-inset-bottom)); color:#33485f; font-size:9px; letter-spacing:.06em; }
+        body.clean-ui #chrome { opacity:0; }
+        @media (max-width:700px) {
+            .topbar { align-items:flex-start; }
+            .brand span { display:none; }
+            .controls { max-width:230px; }
+            button, .nav-link { padding:7px 9px; }
+            #metrics { grid-template-columns:repeat(2,minmax(70px,auto)); gap:7px 18px; }
+            #hint { display:none; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="fft-canvas" aria-label="Live microphone FFT visualization"></canvas>
+    <div id="chrome">
+        <div class="topbar">
+            <div class="brand"><strong>FFT OBSERVATORY</strong><span>LOG-FREQUENCY SPECTRAL CARTOGRAPHY</span></div>
+            <div class="controls">
+                <a class="nav-link" href="index.html">VISUALIZER</a>
+                <button id="fft-size" type="button">FFT 2048</button>
+                <button id="source" type="button">SOURCE MIC</button>
+                <button id="freeze" type="button">FREEZE</button>
+                <button id="fullscreen" type="button">FULLSCREEN</button>
+            </div>
+        </div>
+        <div id="metrics">
+            <span>PEAK<b id="peak">—</b></span>
+            <span>CENTROID<b id="centroid">—</b></span>
+            <span>ENERGY<b id="energy">—</b></span>
+            <span>MODE<b id="mode">IDLE</b></span>
+        </div>
+        <div id="hint">tap canvas: hide UI · space: freeze</div>
+    </div>
+    <div id="start">
+        <div class="start-card">
+            <div class="eyebrow">TINYCLAW SIGNAL LAB</div>
+            <h1>FFT<br>OBSERVATORY</h1>
+            <p class="lede">A logarithmic microphone spectrum rendered as a cosmic radial instrument, peak envelope, waveform, and living spectrogram.</p>
+            <div class="start-actions">
+                <button id="start-mic" type="button">ENABLE MICROPHONE</button>
+                <button id="start-demo" class="demo" type="button">RUN DEMO SIGNAL</button>
+            </div>
+            <p id="secure-warning">Safari requires HTTPS for microphone access. Open the <a href="https://tinyclaws-mini-1.tail331b3.ts.net:8443/fft.html">secure FFT page</a>.</p>
+        </div>
+    </div>
+<script>
+'use strict';
+const canvas = document.getElementById('fft-canvas');
+const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+const startScreen = document.getElementById('start');
+const FFT_SIZES = [512, 1024, 2048, 4096];
+const MIN_FREQ = 20;
+const MAX_FREQ = 20000;
+let fftSize = 2048;
+let audioContext = null;
+let analyser = null;
+let sourceStream = null;
+let frequencyData = new Uint8Array(fftSize / 2);
+let timeData = new Uint8Array(fftSize);
+let mode = 'idle';
+let frozen = false;
+let lastFrame = performance.now();
+let lastMetrics = 0;
+let historyTick = 0;
+let width = 1;
+let height = 1;
+let dpr = 1;
+let bands = new Float32Array(192);
+let peakHolds = new Float32Array(192);
+
+const historyCanvas = document.createElement('canvas');
+const historyCtx = historyCanvas.getContext('2d', { alpha: false });
+historyCanvas.width = 360;
+historyCanvas.height = 150;
+historyCtx.fillStyle = '#02040a';
+historyCtx.fillRect(0, 0, historyCanvas.width, historyCanvas.height);
+
+const stars = Array.from({ length: 130 }, (_, i) => ({
+    x: ((i * 0.61803398875) % 1),
+    y: ((i * 0.41421356237 + 0.17) % 1),
+    a: 0.12 + ((i * 37) % 61) / 100,
+    r: 0.35 + ((i * 17) % 9) / 10,
+}));
+
+function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = Math.max(1, Math.round(width * dpr));
+    canvas.height = Math.max(1, Math.round(height * dpr));
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const bandCount = width < 600 ? 112 : 192;
+    if (bands.length !== bandCount) {
+        bands = new Float32Array(bandCount);
+        peakHolds = new Float32Array(bandCount);
+    }
+}
+window.addEventListener('resize', resize);
+resize();
+
+function configureAnalyser() {
+    if (!analyser) return;
+    analyser.fftSize = fftSize;
+    analyser.minDecibels = -92;
+    analyser.maxDecibels = -12;
+    analyser.smoothingTimeConstant = 0.76;
+    frequencyData = new Uint8Array(analyser.frequencyBinCount);
+    timeData = new Uint8Array(analyser.fftSize);
+    document.getElementById('fft-size').textContent = `FFT ${fftSize}`;
+}
+
+async function startMicrophone() {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+        document.getElementById('secure-warning').style.display = 'block';
+        return;
+    }
+    try {
+        audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+        if (audioContext.state === 'suspended') await audioContext.resume();
+        if (!sourceStream) {
+            sourceStream = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+                video: false,
+            });
+            const source = audioContext.createMediaStreamSource(sourceStream);
+            analyser = audioContext.createAnalyser();
+            source.connect(analyser);
+        }
+        configureAnalyser();
+        mode = 'mic';
+        startScreen.classList.add('hidden');
+        document.getElementById('source').textContent = 'SOURCE MIC';
+    } catch (error) {
+        console.warn('Microphone unavailable:', error);
+        document.getElementById('secure-warning').textContent = 'Microphone permission was unavailable. Check Safari Website Settings or run the demo signal.';
+        document.getElementById('secure-warning').style.display = 'block';
+    }
+}
+
+function startDemo() {
+    mode = 'demo';
+    startScreen.classList.add('hidden');
+    document.getElementById('source').textContent = 'SOURCE DEMO';
+}
+
+function synthesizeDemo(now) {
+    const t = now * 0.001;
+    const nyquist = 24000;
+    for (let i = 0; i < frequencyData.length; i++) {
+        const f = i / Math.max(1, frequencyData.length - 1) * nyquist;
+        const logf = Math.log2(Math.max(20, f) / 20);
+        const bass = Math.exp(-Math.pow((f - (72 + 18 * Math.sin(t * 0.7))) / 42, 2));
+        const voice = Math.exp(-Math.pow((f - (320 + 90 * Math.sin(t * 0.41))) / 150, 2));
+        const harmonic = Math.exp(-Math.pow((f - (1550 + 500 * Math.sin(t * 0.23))) / 620, 2));
+        const air = Math.exp(-Math.pow((f - 6200) / 3000, 2)) * (0.25 + 0.2 * Math.sin(t * 3.1 + logf));
+        const ripple = 0.08 + 0.06 * Math.sin(logf * 8.2 - t * 2.4);
+        frequencyData[i] = Math.max(0, Math.min(255, 255 * (bass * 0.86 + voice * 0.58 + harmonic * 0.42 + air + ripple)));
+    }
+    for (let i = 0; i < timeData.length; i++) {
+        const p = i / timeData.length;
+        const wave = Math.sin(p * Math.PI * 12 + t * 4.2) * 0.45 + Math.sin(p * Math.PI * 26 - t * 2.1) * 0.16;
+        timeData[i] = 128 + wave * 105;
+    }
+}
+
+function sampleLogFrequency(frequency) {
+    const sampleRate = audioContext?.sampleRate || 48000;
+    const position = frequency / (sampleRate * 0.5) * (frequencyData.length - 1);
+    const lo = Math.max(0, Math.min(frequencyData.length - 1, Math.floor(position)));
+    const hi = Math.min(frequencyData.length - 1, lo + 1);
+    const mix = position - lo;
+    return ((frequencyData[lo] * (1 - mix) + frequencyData[hi] * mix) / 255);
+}
+
+function updateBands(deltaSeconds) {
+    const ratio = MAX_FREQ / MIN_FREQ;
+    for (let i = 0; i < bands.length; i++) {
+        const f = MIN_FREQ * Math.pow(ratio, i / Math.max(1, bands.length - 1));
+        const raw = sampleLogFrequency(f);
+        bands[i] += (raw - bands[i]) * (raw > bands[i] ? 0.52 : 0.14);
+        peakHolds[i] = Math.max(bands[i], peakHolds[i] - deltaSeconds * 0.19);
+    }
+}
+
+function spectralColor(value, alpha = 1) {
+    const v = Math.max(0, Math.min(1, value));
+    const r = Math.round(55 + 200 * Math.pow(v, 1.7));
+    const g = Math.round(105 + 125 * Math.sin(v * Math.PI));
+    const b = Math.round(190 + 65 * (1 - v * 0.4));
+    return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function updateHistory() {
+    historyCtx.drawImage(historyCanvas, 1, 0, historyCanvas.width - 1, historyCanvas.height, 0, 0, historyCanvas.width - 1, historyCanvas.height);
+    for (let y = 0; y < historyCanvas.height; y++) {
+        const index = Math.round((1 - y / (historyCanvas.height - 1)) * (bands.length - 1));
+        const value = bands[index];
+        historyCtx.fillStyle = value < 0.08 ? '#02040a' : spectralColor(value, Math.min(1, value * 1.6));
+        historyCtx.fillRect(historyCanvas.width - 1, y, 1, 1);
+    }
+}
+
+function drawBackground(now) {
+    ctx.fillStyle = '#02040a';
+    ctx.fillRect(0, 0, width, height);
+    const glow = ctx.createRadialGradient(width * 0.5, height * 0.42, 0, width * 0.5, height * 0.42, Math.max(width, height) * 0.65);
+    glow.addColorStop(0, 'rgba(25,30,74,0.30)');
+    glow.addColorStop(0.45, 'rgba(6,12,31,0.18)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#9bdfff';
+    for (let i = 0; i < stars.length; i++) {
+        const star = stars[i];
+        const flicker = 0.55 + 0.45 * Math.sin(now * 0.0006 + i * 2.13);
+        ctx.globalAlpha = star.a * flicker;
+        ctx.fillRect(star.x * width, star.y * height, star.r, star.r);
+    }
+    ctx.globalAlpha = 1;
+}
+
+function drawSpectrogram() {
+    const y = height * 0.68;
+    const h = height * 0.25;
+    ctx.save();
+    ctx.globalAlpha = 0.32;
+    ctx.drawImage(historyCanvas, width * 0.05, y, width * 0.9, h);
+    const fade = ctx.createLinearGradient(0, y, 0, y + h);
+    fade.addColorStop(0, 'rgba(2,4,10,0)');
+    fade.addColorStop(1, 'rgba(2,4,10,.72)');
+    ctx.fillStyle = fade;
+    ctx.fillRect(width * 0.05, y, width * 0.9, h);
+    ctx.restore();
+}
+
+function drawWaveform() {
+    if (!timeData.length) return;
+    ctx.save();
+    ctx.beginPath();
+    const y0 = height * 0.18;
+    const amplitude = Math.min(48, height * 0.055);
+    for (let x = 0; x <= width; x += 2) {
+        const index = Math.min(timeData.length - 1, Math.floor(x / width * timeData.length));
+        const y = y0 + (timeData[index] / 255 - 0.5) * amplitude;
+        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = 'rgba(105,223,255,.24)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawRadialSpectrum(now) {
+    const cx = width * 0.5;
+    const cy = height * 0.43;
+    const base = Math.min(width, height) * (width < 600 ? 0.17 : 0.19);
+    const maxLength = Math.min(width, height) * 0.21;
+    const bass = (bands[0] + bands[Math.min(10, bands.length - 1)]) * 0.5;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < bands.length; i++) {
+        const mirror = i < bands.length / 2 ? i * 2 : (bands.length - 1 - i) * 2;
+        const value = bands[Math.min(bands.length - 1, mirror)];
+        const peak = peakHolds[Math.min(peakHolds.length - 1, mirror)];
+        const angle = i / bands.length * Math.PI * 2 - Math.PI * 0.5;
+        const inner = base + 3 * Math.sin(now * 0.0007 + i * 0.19);
+        const outer = inner + 4 + value * maxLength;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        ctx.beginPath();
+        ctx.moveTo(cx + cos * inner, cy + sin * inner);
+        ctx.lineTo(cx + cos * outer, cy + sin * outer);
+        ctx.strokeStyle = spectralColor(value, 0.2 + value * 0.78);
+        ctx.lineWidth = width < 600 ? 1 : 1.25;
+        ctx.stroke();
+        const peakRadius = inner + 4 + peak * maxLength;
+        ctx.fillStyle = `rgba(220,250,255,${peak * 0.75})`;
+        ctx.fillRect(cx + cos * peakRadius - 0.6, cy + sin * peakRadius - 0.6, 1.2, 1.2);
+    }
+
+    const core = ctx.createRadialGradient(cx, cy, base * 0.1, cx, cy, base * (1.05 + bass * 0.08));
+    core.addColorStop(0, `rgba(109,227,255,${0.08 + bass * 0.16})`);
+    core.addColorStop(0.64, 'rgba(82,72,180,.05)');
+    core.addColorStop(0.96, 'rgba(97,230,255,.14)');
+    core.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.arc(cx, cy, base * (1.05 + bass * 0.08), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawLogSpectrum() {
+    const left = width * 0.055;
+    const right = width * 0.945;
+    const baseline = height * 0.9;
+    const maxHeight = height * 0.17;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(left, baseline);
+    for (let i = 0; i < bands.length; i++) {
+        const x = left + i / (bands.length - 1) * (right - left);
+        const y = baseline - bands[i] * maxHeight;
+        ctx.lineTo(x, y);
+    }
+    ctx.lineTo(right, baseline);
+    const fill = ctx.createLinearGradient(0, baseline - maxHeight, 0, baseline);
+    fill.addColorStop(0, 'rgba(255,103,174,.2)');
+    fill.addColorStop(0.45, 'rgba(97,230,255,.15)');
+    fill.addColorStop(1, 'rgba(26,58,100,0)');
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(116,231,255,.62)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    const labels = [[20,'20'],[100,'100'],[1000,'1k'],[10000,'10k'],[20000,'20k']];
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(102,132,160,.65)';
+    for (const [frequency, label] of labels) {
+        const x = left + Math.log(frequency / MIN_FREQ) / Math.log(MAX_FREQ / MIN_FREQ) * (right - left);
+        ctx.fillText(label, x, baseline + 15);
+    }
+    ctx.restore();
+}
+
+function calculateMetrics() {
+    const sampleRate = audioContext?.sampleRate || 48000;
+    let peakValue = -1;
+    let peakIndex = 0;
+    let weighted = 0;
+    let total = 0;
+    for (let i = 1; i < frequencyData.length; i++) {
+        const value = frequencyData[i] / 255;
+        if (value > peakValue) { peakValue = value; peakIndex = i; }
+        weighted += value * i;
+        total += value;
+    }
+    let rms = 0;
+    for (let i = 0; i < timeData.length; i++) {
+        const value = timeData[i] / 128 - 1;
+        rms += value * value;
+    }
+    rms = Math.sqrt(rms / Math.max(1, timeData.length));
+    const hzPerBin = sampleRate / fftSize;
+    const peakHz = peakIndex * hzPerBin;
+    const centroidHz = total > 0 ? weighted / total * hzPerBin : 0;
+    document.getElementById('peak').textContent = formatFrequency(peakHz);
+    document.getElementById('centroid').textContent = formatFrequency(centroidHz);
+    document.getElementById('energy').textContent = `${Math.round(rms * 100)}%`;
+    document.getElementById('mode').textContent = mode.toUpperCase();
+}
+
+function formatFrequency(value) {
+    if (!Number.isFinite(value) || value <= 0) return '—';
+    return value >= 1000 ? `${(value / 1000).toFixed(value >= 10000 ? 1 : 2)} kHz` : `${Math.round(value)} Hz`;
+}
+
+function render(now) {
+    const deltaSeconds = Math.min(0.1, (now - lastFrame) / 1000);
+    lastFrame = now;
+    if (!frozen) {
+        if (mode === 'mic' && analyser) {
+            analyser.getByteFrequencyData(frequencyData);
+            analyser.getByteTimeDomainData(timeData);
+        } else if (mode === 'demo') {
+            synthesizeDemo(now);
+        }
+        if (mode !== 'idle') {
+            updateBands(deltaSeconds);
+            if (++historyTick % 2 === 0) updateHistory();
+        }
+    }
+    drawBackground(now);
+    drawSpectrogram();
+    drawWaveform();
+    drawRadialSpectrum(now);
+    drawLogSpectrum();
+    if (now - lastMetrics > 120) {
+        calculateMetrics();
+        lastMetrics = now;
+    }
+    requestAnimationFrame(render);
+}
+
+function cycleFftSize() {
+    fftSize = FFT_SIZES[(FFT_SIZES.indexOf(fftSize) + 1) % FFT_SIZES.length];
+    if (analyser) configureAnalyser();
+    else {
+        frequencyData = new Uint8Array(fftSize / 2);
+        timeData = new Uint8Array(fftSize);
+        document.getElementById('fft-size').textContent = `FFT ${fftSize}`;
+    }
+}
+
+function toggleFreeze() {
+    frozen = !frozen;
+    document.getElementById('freeze').classList.toggle('active', frozen);
+    document.getElementById('freeze').textContent = frozen ? 'RESUME' : 'FREEZE';
+}
+
+async function toggleFullscreen() {
+    if (document.fullscreenElement) return document.exitFullscreen?.();
+    try { await (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen)?.call(document.documentElement); }
+    catch (error) { console.info('Fullscreen unavailable:', error); }
+}
+
+document.getElementById('start-mic').addEventListener('click', startMicrophone);
+document.getElementById('start-demo').addEventListener('click', startDemo);
+document.getElementById('fft-size').addEventListener('click', cycleFftSize);
+document.getElementById('freeze').addEventListener('click', toggleFreeze);
+document.getElementById('fullscreen').addEventListener('click', toggleFullscreen);
+document.getElementById('source').addEventListener('click', () => mode === 'mic' ? startDemo() : startMicrophone());
+canvas.addEventListener('click', () => document.body.classList.toggle('clean-ui'));
+document.addEventListener('keydown', event => {
+    if (event.code === 'Space') { event.preventDefault(); toggleFreeze(); }
+    if (event.key === 'f' || event.key === 'F') toggleFullscreen();
+});
+
+if (!window.isSecureContext) document.getElementById('secure-warning').style.display = 'block';
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

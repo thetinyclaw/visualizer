@@ -13,6 +13,7 @@ ledger = (ROOT / "EFFECTS.md").read_text()
 pipeline = (ROOT / "EFFECT_PIPELINE.md").read_text()
 benchmark = (ROOT / "benchmark.html").read_text()
 agents = (ROOT / "AGENTS.md").read_text()
+fft = (ROOT / "fft.html").read_text()
 
 errors = []
 
@@ -54,9 +55,14 @@ require("for (float b = 0.0; b < 64.0; b++)" not in html, "legacy 256-segment Br
 require("float branchLattice" in html, "analytic Branches lattice missing")
 require("for (float i = 0.0; i < 100.0; i++)" not in html, "legacy 100-star Galaxy loop returned")
 require("vec2 starCell = floor(starUv)" in html, "cell-local Galaxy stars missing")
-require("float dist2 = dot(diff, diff);" in html, "Voronoi squared-distance comparison missing")
+require("float rawDist2 = dot(diff, diff);" in html, "Voronoi squared-distance comparison missing")
 require("float minDist = sqrt(minDist2);" in html, "Voronoi final nearest-distance recovery missing")
 require("float dist = length(diff);" not in html, "Voronoi returned to nine square roots per fragment")
+require("float winningBandAmplitude" in html, "Voronoi per-frequency cell ownership missing")
+require("float frequencyCellWeight = mix(2.20, 0.24, bandAmplitude);" in html,
+        "Voronoi dramatic frequency-weighted cell sizing missing")
+require("uv * (8.0 + bass * 4.0)" not in html,
+        "Voronoi returned to uniform bass-driven grid scaling")
 ribbons_match = re.search(r"vec3 ribbons\(vec2 uv, float t\) \{(.*?)\n\}", html, re.S)
 ribbons = ribbons_match.group(1) if ribbons_match else ""
 require(ribbons_match is not None, "Ribbons shader function missing")
@@ -69,6 +75,7 @@ require("BENCHMARK_SAMPLE_FRAMES" in html, "benchmark frame sampler missing")
 require("Math.max(120, Math.min(600, requestedBenchmarkFrames))" in html,
         "single-pattern benchmark allows undersized acceptance samples")
 require('id="btn-tv"' in html, "TV Mode control missing")
+require('id="btn-fft" href="fft.html"' in html, "main visualizer lacks FFT Observatory navigation")
 require('<meta name="mobile-web-app-capable" content="yes">' in html,
         "standards-based mobile web-app capability metadata missing")
 require("Screen Mirroring" in html, "AirPlay screen-mirroring guidance missing")
@@ -98,6 +105,23 @@ require("devicePixelRatio || 1, 2" in html, "DPR cap missing")
 require("if (transition > 0.0)" in html, "transition cost guard missing")
 require("grainHash(gl_FragCoord.xy + time)" in html,
         "post-process grain returned to the heavier structural hash")
+require('id="start-mic"' in fft and 'id="start-demo"' in fft,
+        "FFT observatory lacks explicit user-gesture source choices")
+require("window.isSecureContext" in fft and "navigator.mediaDevices?.getUserMedia" in fft,
+        "FFT microphone path lacks secure-context/media-device guards")
+require("Math.pow(ratio, i / Math.max(1, bands.length - 1))" in fft,
+        "FFT observatory lacks logarithmic frequency bands")
+require("raw > bands[i] ? 0.52 : 0.14" in fft,
+        "FFT observatory lacks asymmetric attack/release smoothing")
+require("peakHolds[i] - deltaSeconds * 0.19" in fft,
+        "FFT observatory lacks decaying peak envelopes")
+require("if (++historyTick % 2 === 0) updateHistory();" in fft,
+        "FFT spectrogram history is not cadence-limited")
+require("Math.min(window.devicePixelRatio || 1, 2)" in fft,
+        "FFT observatory lacks native-density DPR handling")
+require("mode = 'mic'" in fft and "mode = 'demo'" in fft and "let mode = 'idle'" in fft,
+        "FFT source states are not explicitly distinct")
+require(fft.count("<script") == fft.count("</script>"), "FFT observatory has unbalanced script tags")
 
 if errors:
     print("visualizer verification FAILED")

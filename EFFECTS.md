@@ -45,9 +45,9 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 
 ### Voronoi
 - **Composition:** animated stained-glass cells
-- **Primitive:** nearest/second-nearest Voronoi distance
-- **Motion:** oscillating cell sites
-- **Audio:** bass changes scale; mids/treble illuminate boundaries and nuclei
+- **Primitive:** frequency-affinity weighted nearest/second-nearest Voronoi distance
+- **Motion:** oscillating cell sites accelerate independently with their assigned band
+- **Audio:** stable bass/mid/treble ownership changes individual cell area and motion; louder owned cells widen boundaries and nuclei without changing global grid density
 - **Material:** stained glass / living cells
 - **Cost:** squared-distance ordering across the 3×3 neighborhood with only two final square roots for shading
 
