@@ -53,6 +53,11 @@ require("vec2 starCell = floor(starUv)" in html, "cell-local Galaxy stars missin
 require("float dist2 = dot(diff, diff);" in html, "Voronoi squared-distance comparison missing")
 require("float minDist = sqrt(minDist2);" in html, "Voronoi final nearest-distance recovery missing")
 require("float dist = length(diff);" not in html, "Voronoi returned to nine square roots per fragment")
+ribbons_match = re.search(r"vec3 ribbons\(vec2 uv, float t\) \{(.*?)\n\}", html, re.S)
+ribbons = ribbons_match.group(1) if ribbons_match else ""
+require(ribbons_match is not None, "Ribbons shader function missing")
+require("exp(" not in ribbons, "Ribbons returned to per-layer exponential glow")
+require("float invRibbonCount" in ribbons, "Ribbons does not hoist its invariant layer division")
 require("outside = length(max(d, 0.0))" not in html, "RGB rectangles returned to per-mask square roots")
 require("window.__VISUALIZER_BENCHMARK__ = result" in html, "benchmark telemetry export missing")
 require("effectiveDprX: canvas.width / window.innerWidth" in html, "benchmark native-density telemetry missing")

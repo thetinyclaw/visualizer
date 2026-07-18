@@ -657,34 +657,37 @@ vec3 voronoi(vec2 uv, float t) {
 // ─────────────────────────────────────────────────────────────────
 vec3 ribbons(vec2 uv, float t) {
     vec3 col = color4;
-    
-    // Use constant loop bound for GLSL compatibility (max 10 ribbons)
+    float ribbonCount = waveCount + 3.0;
+    float invRibbonCount = 1.0 / ribbonCount;
+    float phaseA = uv.x * dotWaveFreq + t * flowSpeed + seed;
+    float phaseB = uv.x * dotWaveFreq * 2.3 + t * flowSpeed * 1.5 + seed;
+    vec3 xColor = mix(color1, color2, (uv.x + 1.0) * 0.5);
+
+    // Constant bound preserves GLSL compatibility; loop-invariant division,
+    // phases, and x-gradient stay outside the per-ribbon hot path.
     for (float i = 0.0; i < 10.0; i++) {
-        if (i >= waveCount + 3.0) break;
-        float offset = (i / (waveCount + 3.0) - 0.5) * 2.0;
-        float phase = seed + i * 1.5;
-        
-        // Wave function
-        float wave = offset;
-        wave += sin(uv.x * dotWaveFreq + t * flowSpeed + phase) * dotWaveAmp;
-        wave += sin(uv.x * dotWaveFreq * 2.3 + t * flowSpeed * 1.5 + phase) * dotWaveAmp * 0.5;
+        if (i >= ribbonCount) break;
+        float layer = i * invRibbonCount;
+        float phaseOffset = i * 1.5;
+
+        float wave = (layer - 0.5) * 2.0;
+        wave += sin(phaseA + phaseOffset) * dotWaveAmp;
+        wave += sin(phaseB + phaseOffset) * dotWaveAmp * 0.5;
         wave *= 1.0 + bass * 0.3;
-        
-        // Distance to wave
+
         float dist = abs(uv.y - wave);
         float ribbon = smoothstep(waveThickness, waveThickness * 0.3, dist);
-        
-        // Color gradient along ribbon
-        vec3 ribbonColor = mix(color1, color2, (uv.x + 1.0) * 0.5);
-        ribbonColor = mix(ribbonColor, color3, i / (waveCount + 3.0));
-        
-        // Glow
-        float glow = exp(-dist * 15.0) * 0.3;
-        
+        vec3 ribbonColor = mix(xColor, color3, layer);
+
+        // A compact cubic halo closely tracks the old exponential near each
+        // core, then reaches zero to avoid an expensive transcendental per layer.
+        float glowBase = max(0.0, 1.0 - dist * 4.0);
+        float glow = glowBase * glowBase * glowBase * 0.3;
+
         col = mix(col, ribbonColor, ribbon * 0.7);
         col += ribbonColor * glow * (0.5 + treble * 0.5);
     }
-    
+
     return col;
 }
 

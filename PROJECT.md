@@ -57,6 +57,11 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Merged duplicate five-harmonic surface/normal loops and reused each harmonic phase without changing the established geometry or audio mapping.
 - Same-browser SwiftShader `756×469`, seed `491009`, 120-frame sample: `14.75 → 16.44 FPS`; p95 improved from `119.7 → 84.2 ms` at effective DPR `1.0`.
 
+## Ribbons optimization (2026-07-18)
+- Hoisted layer-invariant phase, gradient, and division work out of the ribbon loop and replaced each layer's exponential halo with a compact cubic falloff.
+- Same-browser SwiftShader `756×469`, seed `491009`, 120-frame sample: `15.83 → 16.26 FPS`; p95 improved from `100.6 → 91.1 ms` at effective DPR `1.0`.
+- Deterministic screenshot metrics retained mean color and bright coverage while the finite halo made the negative space slightly crisper.
+
 ## Design Concepts
 - **RGB Subpixels:** zoomed-in TV-pixel entities made from adjacent red, green, and blue rectangles, with scanlines, glitter, chromatic edge glow, prism/reflection streaks, phosphor smear, imperfect glass warping, and aging/dead-pixel behavior.
 - **Stipple Family Pages:** standalone raw-WebGL pages exploring the original stipple-wave language as topographic contour dots, glass/reef caustics, and ink-dune paper grain.

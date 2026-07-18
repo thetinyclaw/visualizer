@@ -57,6 +57,7 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Motion:** traveling waves
 - **Audio:** bass deforms waves; treble intensifies glow
 - **Material:** luminous fabric
+- **Cost:** loop-invariant phases, gradient, and layer division are hoisted; compact cubic halos replace one exponential per ribbon
 
 ### Galaxy
 - **Composition:** centered three-arm disk with a dense nucleus, dust lanes, and field-wide stars
