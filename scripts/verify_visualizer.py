@@ -53,6 +53,8 @@ require("BENCHMARK_SAMPLE_FRAMES" in html, "benchmark frame sampler missing")
 require("Math.max(120, Math.min(600, requestedBenchmarkFrames))" in html,
         "single-pattern benchmark allows undersized acceptance samples")
 require('id="btn-tv"' in html, "TV Mode control missing")
+require('<meta name="mobile-web-app-capable" content="yes">' in html,
+        "standards-based mobile web-app capability metadata missing")
 require("Screen Mirroring" in html, "AirPlay screen-mirroring guidance missing")
 require("async function setTvMode" in html, "TV Mode state transition missing")
 require("navigator.wakeLock.request('screen')" in html, "TV Mode wake-lock request missing")
