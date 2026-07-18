@@ -215,6 +215,7 @@ const fftUniformA = fftBins.subarray(0, 4);
 const fftUniformB = fftBins.subarray(4, 8);
 const fftUniformC = fftBins.subarray(8, 12);
 const fftUniformD = fftBins.subarray(12, 16);
+const hiveFluxPrevious = new Float32Array(16);
 let lastAudioUpdate = performance.now();
 
 function averageBins(start, end) {
@@ -316,6 +317,8 @@ uniform vec4 fftBinsB;
 uniform vec4 fftBinsC;
 uniform vec4 fftBinsD;
 uniform float hiveRotation;
+uniform float hiveRadiusDrive;
+uniform sampler2D hiveBeamMap;
 
 // Palette uniforms
 uniform vec3 color1;
@@ -1106,7 +1109,7 @@ vec3 infiniteHexsphere(vec2 uv, float t) {
     float angle = atan(uv.y, uv.x);
     float angularKey = fract(angle / TAU + 0.5);
     float angularBand = fftBand(angularKey);
-    const float ballRadius = 0.40; // exactly 80% of viewport height
+    float ballRadius = 0.34 + hiveRadiusDrive * 0.12;
     float tilingScale = 5.65 - bass * 1.45 + treble * 0.48;
     float latitudeDrift = 0.16 * sin(hiveRotation * 0.37 + seed);
 
@@ -1117,29 +1120,21 @@ vec3 infiniteHexsphere(vec2 uv, float t) {
     float surfaceZ = sqrt(max(0.0001, 1.0 - sphereRadius2));
     float sphereMask = 1.0 - smoothstep(0.985, 1.015, sphereRadius2);
     vec3 col = color4 * (0.045 + angularBand * 0.020);
+    vec4 beamSource = texture2D(hiveBeamMap, vec2(angularKey, 0.5));
+    float sourceGate = beamSource.r;
+    float sourceDepth = mix(0.28, 0.86, beamSource.g);
+    vec2 sourceIdentity = beamSource.ba;
+    vec3 sourceTint = mix(vec3(0.94, 0.97, 1.0), mix(color2, color3, sourceIdentity.x), 0.14);
 
-    // Sample the actual tiling near the circumference. Only directions that
-    // intersect a live shell gap are allowed to emit an external radial beam.
+    // Trace each radial shaft back to an actual front-facing gap. A continuous
+    // angular depth field distributes emitters across inner-to-outer shell bands.
     if (radius > ballRadius * 0.96) {
-        const float edgeRadius = 0.965;
-        vec2 edgeXY = vec2(cos(angle), sin(angle)) * edgeRadius;
-        float edgeZ = sqrt(1.0 - edgeRadius * edgeRadius);
-        float edgeLongitude = atan(edgeXY.x, edgeZ) + hiveRotation;
-        float edgeLatitude = asin(clamp(edgeXY.y, -0.999, 0.999)) + latitudeDrift;
-        vec4 edgeCell = spectralHexCell(vec2(edgeLongitude, edgeLatitude) * tilingScale);
-        float edgeKey = hash(edgeCell.zw + seed * 4.19);
-        float edgeBand = fftBand(edgeKey);
-        float edgeMetric = perfectTiledHexMetric(edgeCell.xy);
-        float edgePanelRadius = 0.478 - bass * 0.026 - edgeBand * 0.050 - treble * 0.010;
-        float edgeGap = smoothstep(edgePanelRadius - 0.003, 0.498, edgeMetric);
-        float sourceGate = smoothstep(0.18, 0.78, edgeGap);
-        sourceGate *= sourceGate;
-        float beamEnvelope = smoothstep(ballRadius * 0.985, ballRadius * 1.035, radius) *
+        float beamStart = ballRadius * sourceDepth;
+        float beamEnvelope = smoothstep(beamStart, beamStart + ballRadius * 0.065, radius) *
             smoothstep(1.42, ballRadius * 1.01, radius);
-        float beamBreath = 0.76 + 0.24 * sin(radius * 13.0 - t * 0.24 + edgeBand * 2.2);
-        float beams = sourceGate * beamEnvelope * beamBreath * (0.50 + edgeBand * 0.72);
-        vec3 beamTint = mix(vec3(0.94, 0.97, 1.0), mix(color2, color3, edgeKey), 0.14);
-        col += beamTint * beams * (0.34 + angularBand * 0.58);
+        float beamBreath = 0.76 + 0.24 * sin(radius * 13.0 - t * 0.24 + sourceIdentity.y * 2.2);
+        float beams = sourceGate * beamEnvelope * beamBreath * (0.50 + sourceIdentity.y * 0.72);
+        col += sourceTint * beams * (0.34 + angularBand * 0.58);
     }
 
     // Perfect two-lattice hex tiling repeats without a finite boundary.
@@ -1152,8 +1147,9 @@ vec3 infiniteHexsphere(vec2 uv, float t) {
         float cellKey = hash(cellId + seed * 4.19);
         float cellBand = fftBand(cellKey);
         float hexMetric = perfectTiledHexMetric(cellLocal);
-        float panelRadius = 0.478 - bass * 0.026 - cellBand * 0.050 - treble * 0.010;
-        float seamWidth = 0.020 + bass * 0.012 + cellBand * 0.024;
+        float gapDrive = 4.0 * (bass * 0.026 + cellBand * 0.050 + treble * 0.010);
+        float panelRadius = clamp(0.478 - gapDrive, 0.18, 0.472);
+        float seamWidth = 0.014 + gapDrive * 0.22;
         float panel = (1.0 - smoothstep(panelRadius, panelRadius + 0.010, hexMetric)) * sphereMask;
         float seam = (1.0 - smoothstep(0.005, seamWidth, abs(hexMetric - panelRadius))) * sphereMask;
         float gap = smoothstep(panelRadius - 0.003, 0.498, hexMetric) * sphereMask;
@@ -1168,6 +1164,13 @@ vec3 infiniteHexsphere(vec2 uv, float t) {
         col = mix(col, panelColor, panel * 0.975);
         float rim = smoothstep(0.72, 1.0, sphereRadius2) * sphereMask;
         col += seamTint * seam * rim * 0.16;
+        float normalizedRadius = sqrt(sphereRadius2);
+        float sourceRing = 1.0 - smoothstep(0.015, 0.065, abs(normalizedRadius - sourceDepth));
+        float frontSourceFlare = sourceGate * gap * sourceRing * (0.82 + cellBand * 0.58);
+        float frontShaft = sourceGate *
+            smoothstep(sourceDepth, sourceDepth + 0.035, normalizedRadius) *
+            smoothstep(1.01, sourceDepth + 0.060, normalizedRadius) * sphereMask;
+        col += sourceTint * (frontSourceFlare * 1.55 + frontShaft * 0.82);
     }
     return col;
 }
@@ -1392,6 +1395,8 @@ const uni = {
     fftBinsC: gl.getUniformLocation(prog, 'fftBinsC'),
     fftBinsD: gl.getUniformLocation(prog, 'fftBinsD'),
     hiveRotation: gl.getUniformLocation(prog, 'hiveRotation'),
+    hiveRadiusDrive: gl.getUniformLocation(prog, 'hiveRadiusDrive'),
+    hiveBeamMap: gl.getUniformLocation(prog, 'hiveBeamMap'),
     color1: gl.getUniformLocation(prog, 'color1'),
     color2: gl.getUniformLocation(prog, 'color2'),
     color3: gl.getUniformLocation(prog, 'color3'),
@@ -1409,6 +1414,18 @@ const uni = {
     zoomPulse: gl.getUniformLocation(prog, 'zoomPulse'),
 };
 
+const HIVE_BEAM_MAP_SIZE = 256;
+const hiveBeamMapData = new Uint8Array(HIVE_BEAM_MAP_SIZE * 4);
+const hiveBeamTexture = gl.createTexture();
+gl.activeTexture(gl.TEXTURE0);
+gl.bindTexture(gl.TEXTURE_2D, hiveBeamTexture);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, HIVE_BEAM_MAP_SIZE, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, hiveBeamMapData);
+gl.uniform1i(uni.hiveBeamMap, 0);
+
 // ─────────────────────────────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────────────────────────────
@@ -1420,6 +1437,8 @@ let startTime = performance.now();
 let lastInfoUpdate = 0;
 let lastRenderFrame = startTime;
 let hiveRotationPhase = 0;
+let hiveRadiusPulse = 0;
+let hiveFluxReady = false;
 const PATTERN_COUNT = 13;
 const PATTERN_NAMES = [
     'Stipple Waves', 'Neurons', 'Flow Field', 'Branches',
@@ -1435,6 +1454,77 @@ let benchmarkLastFrame = 0;
 let benchmarkWarmupFrames = 0;
 let benchmarkSamples = [];
 let benchmarkReported = false;
+
+function fractJs(value) {
+    return value - Math.floor(value);
+}
+
+function modJs(value, divisor) {
+    return value - divisor * Math.floor(value / divisor);
+}
+
+function smoothstepJs(edge0, edge1, value) {
+    const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+    return t * t * (3 - 2 * t);
+}
+
+function hiveHash(x, y) {
+    let px = fractJs(x * 0.1031);
+    let py = fractJs(y * 0.1031);
+    let pz = fractJs(x * 0.1031);
+    const coupled = px * (py + 33.33) + py * (pz + 33.33) + pz * (px + 33.33);
+    px += coupled;
+    py += coupled;
+    pz += coupled;
+    return fractJs((px + py) * pz);
+}
+
+function sampleHiveCell(px, py) {
+    const halfY = 0.8660254;
+    const localAx = modJs(px + 0.5, 1) - 0.5;
+    const localAy = modJs(py + halfY, 1.7320508) - halfY;
+    const localBx = modJs(px, 1) - 0.5;
+    const localBy = modJs(py, 1.7320508) - halfY;
+    if (localAx * localAx + localAy * localAy < localBx * localBx + localBy * localBy) {
+        return [localAx, localAy, Math.floor(px + 0.5) * 2, Math.floor((py + halfY) / 1.7320508) * 2];
+    }
+    return [localBx, localBy, Math.floor(px) * 2 + 1, Math.floor(py / 1.7320508) * 2 + 1];
+}
+
+function updateHiveBeamMap() {
+    const tilingScale = 5.65 - smoothBass * 1.45 + smoothTreble * 0.48;
+    const latitudeDrift = 0.16 * Math.sin(hiveRotationPhase * 0.37 + SEED);
+    for (let i = 0; i < HIVE_BEAM_MAP_SIZE; i++) {
+        const angularKey = (i + 0.5) / HIVE_BEAM_MAP_SIZE;
+        const angle = angularKey * Math.PI * 2 - Math.PI;
+        const depthWave = 0.5 + 0.5 * Math.sin(angle * 7 + SEED + hiveRotationPhase * 0.13);
+        const sourceDepth = 0.28 + depthWave * 0.58;
+        const sx = Math.cos(angle) * sourceDepth;
+        const sy = Math.sin(angle) * sourceDepth;
+        const sz = Math.sqrt(Math.max(0.0001, 1 - sx * sx - sy * sy));
+        const longitude = Math.atan2(sx, sz) + hiveRotationPhase;
+        const latitude = Math.asin(Math.max(-0.999, Math.min(0.999, sy))) + latitudeDrift;
+        const cell = sampleHiveCell(longitude * tilingScale, latitude * tilingScale);
+        const cellKey = hiveHash(cell[2] + SEED * 4.19, cell[3] + SEED * 4.19);
+        const cellBand = fftBins[Math.min(15, Math.floor(Math.max(0, Math.min(0.9999, cellKey)) * 16))];
+        const gapDrive = 4 * (smoothBass * 0.026 + cellBand * 0.050 + smoothTreble * 0.010);
+        const panelRadius = Math.max(0.18, Math.min(0.472, 0.478 - gapDrive));
+        const ax = Math.abs(cell[0]);
+        const ay = Math.abs(cell[1]);
+        const metric = Math.max(ax, ax * 0.5 + ay * 0.8660254);
+        const gap = smoothstepJs(panelRadius - 0.003, 0.498, metric);
+        let gate = smoothstepJs(0.12, 0.72, gap);
+        gate *= gate;
+        const offset = i * 4;
+        hiveBeamMapData[offset] = Math.round(gate * 255);
+        hiveBeamMapData[offset + 1] = Math.round(depthWave * 255);
+        hiveBeamMapData[offset + 2] = Math.round(cellKey * 255);
+        hiveBeamMapData[offset + 3] = Math.round(cellBand * 255);
+    }
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, hiveBeamTexture);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, HIVE_BEAM_MAP_SIZE, 1, gl.RGBA, gl.UNSIGNED_BYTE, hiveBeamMapData);
+}
 
 function recordBenchmarkFrame(now) {
     if (!BENCHMARK_MODE || benchmarkReported) return;
@@ -1606,8 +1696,19 @@ function render() {
     const frameSeconds = Math.min(0.1, Math.max(0.0, (now - lastRenderFrame) / 1000));
     lastRenderFrame = now;
     updateAudio(now);
-    const hiveRotationRate = 0.035 + fftBins[2] * 0.13 + fftBins[7] * 0.075 + fftBins[12] * 0.035;
+    let positiveSpectralFlux = 0;
+    for (let i = 0; i < fftBins.length; i++) {
+        if (hiveFluxReady) positiveSpectralFlux += Math.max(0, fftBins[i] - hiveFluxPrevious[i]);
+        hiveFluxPrevious[i] = fftBins[i];
+    }
+    hiveFluxReady = true;
+    const hiveRadiusTarget = Math.min(1, positiveSpectralFlux * 2.2);
+    const hiveRadiusTau = hiveRadiusTarget > hiveRadiusPulse ? 0.055 : 0.55;
+    const hiveRadiusBlend = 1 - Math.exp(-frameSeconds / hiveRadiusTau);
+    hiveRadiusPulse += (hiveRadiusTarget - hiveRadiusPulse) * hiveRadiusBlend;
+    const hiveRotationRate = 0.085;
     hiveRotationPhase += frameSeconds * hiveRotationRate;
+    updateHiveBeamMap();
     
     const time = (now - startTime) / 1000;
     const elapsed = now - patternTime;
@@ -1635,6 +1736,7 @@ function render() {
     gl.uniform4fv(uni.fftBinsC, fftUniformC);
     gl.uniform4fv(uni.fftBinsD, fftUniformD);
     gl.uniform1f(uni.hiveRotation, hiveRotationPhase);
+    gl.uniform1f(uni.hiveRadiusDrive, hiveRadiusPulse);
     
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     recordBenchmarkFrame(now);

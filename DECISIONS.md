@@ -30,3 +30,9 @@ Decision: Compute longitude on the fixed front hemisphere, add an unbounded rota
 Reason: The sphere silhouette must remain continuous while beams visibly originate from shell openings.
 Tradeoff: Circumference gap sampling adds a second analytic hex lookup per fragment, so native-density performance must be re-benchmarked.
 
+## 2026-07-18 — Separate Hexsphere audio qualities by behavior
+Context: Circumference-only emitters do not read as light escaping front-facing gaps, and coupling all movement to energy makes the object pulse generically.
+Decision: Gate rays from multiple front-surface gap samples, amplify gap displacement to 400%, keep angular velocity constant, and drive whole-ball radius from positive spectral flux/onsets rather than sustained energy.
+Reason: Gap breathing, ball rotation, and radius motion should communicate distinct musical qualities.
+Tradeoff: Multi-depth front-gap sampling costs additional analytic lattice evaluations and requires spatial partitioning and re-benchmarking.
+

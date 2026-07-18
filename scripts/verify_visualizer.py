@@ -70,8 +70,8 @@ require("float centralPressure" in spectral_hive and "float trappedLight" in spe
 infinite_hive_match = re.search(r"vec3 infiniteHexsphere\(vec2 uv, float t\) \{(.*?)\n\}", html, re.S)
 infinite_hive = infinite_hive_match.group(1) if infinite_hive_match else ""
 require(infinite_hive_match is not None, "Infinite Hexsphere function body missing")
-require("const float ballRadius = 0.40;" in infinite_hive,
-        "Infinite Hexsphere is not exactly 80 percent of viewport height")
+require("float ballRadius = 0.34 + hiveRadiusDrive * 0.12;" in infinite_hive,
+        "Infinite Hexsphere radius is not significantly flux-driven")
 require("perfectTiledHexMetric(cellLocal)" in infinite_hive,
         "Infinite Hexsphere lacks lattice-matched perfect tiling")
 require("float tilingScale = 5.65 - bass * 1.45 + treble * 0.48;" in infinite_hive,
@@ -79,19 +79,21 @@ require("float tilingScale = 5.65 - bass * 1.45 + treble * 0.48;" in infinite_hi
 require("float longitude = atan(sphereXY.x, surfaceZ) + hiveRotation;" in infinite_hive and
         "spinCos" not in infinite_hive and "surfaceNormal" not in infinite_hive,
         "Infinite Hexsphere can expose its longitude wrap on the visible hemisphere")
-require("float panelRadius = 0.478 - bass * 0.026 - cellBand * 0.050 - treble * 0.010;" in infinite_hive and
-        "float seamWidth = 0.020 + bass * 0.012 + cellBand * 0.024;" in infinite_hive,
-        "Infinite Hexsphere gaps are not dynamically FFT-driven")
-require("vec4 edgeCell = spectralHexCell" in infinite_hive and
-        "float sourceGate = smoothstep" in infinite_hive and
-        "float beams = sourceGate * beamEnvelope" in infinite_hive,
-        "Infinite Hexsphere beams are not causally sampled from circumference gaps")
-require("if (radius > ballRadius * 0.96)" in infinite_hive and
-        "if (sphereRadius2 < 1.03)" in infinite_hive,
-        "Infinite Hexsphere lost interior/exterior shader partitioning")
-require("uniform float hiveRotation;" in html and "const hiveRotationRate = 0.035 + fftBins[2]" in html and
+require("float gapDrive = 4.0 * (bass * 0.026 + cellBand * 0.050 + treble * 0.010);" in infinite_hive and
+        "float seamWidth = 0.014 + gapDrive * 0.22;" in infinite_hive,
+        "Infinite Hexsphere gaps do not use 400 percent FFT displacement")
+require("texture2D(hiveBeamMap" in infinite_hive and "float frontSourceFlare" in infinite_hive and
+        "float frontShaft" in infinite_hive and "float beams = sourceGate * beamEnvelope" in infinite_hive,
+        "Infinite Hexsphere beams are not causally joined to front-gap sources")
+require("const HIVE_BEAM_MAP_SIZE = 256;" in html and "function updateHiveBeamMap()" in html and
+        "gl.texSubImage2D" in html,
+        "Infinite Hexsphere front-gap source map is missing")
+require("uniform float hiveRotation;" in html and "const hiveRotationRate = 0.085;" in html and
         "hiveRotationPhase += frameSeconds * hiveRotationRate;" in html,
-        "Infinite Hexsphere lacks smoothly integrated FFT rotation speed")
+        "Infinite Hexsphere rotation is not constant")
+require("uniform float hiveRadiusDrive;" in html and "positiveSpectralFlux" in html and
+        "const hiveRadiusTau = hiveRadiusTarget > hiveRadiusPulse ? 0.055 : 0.55;" in html,
+        "Infinite Hexsphere radius is not driven by onset-sensitive spectral flux")
 require("target.searchParams.set('pattern','11')" in hive_aperture_page and
         "target.searchParams.set('pattern','10')" in hive_shell_page and
         "target.searchParams.set('pattern','12')" in hive_infinite_page,
