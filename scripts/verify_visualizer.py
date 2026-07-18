@@ -14,6 +14,8 @@ pipeline = (ROOT / "EFFECT_PIPELINE.md").read_text()
 benchmark = (ROOT / "benchmark.html").read_text()
 agents = (ROOT / "AGENTS.md").read_text()
 fft = (ROOT / "fft.html").read_text()
+filament_vortex = (ROOT / "candidates" / "filament-vortex.html").read_text()
+filament_vortex_doc = (ROOT / "candidates" / "filament-vortex.md").read_text()
 hive_aperture_page = (ROOT / "hive-aperture.html").read_text()
 hive_shell_page = (ROOT / "hive-shell.html").read_text()
 hive_infinite_page = (ROOT / "hive-infinite.html").read_text()
@@ -232,6 +234,23 @@ require("Math.min(window.devicePixelRatio || 1, 2)" in fft,
 require("mode = 'mic'" in fft and "mode = 'demo'" in fft and "let mode = 'idle'" in fft,
         "FFT source states are not explicitly distinct")
 require(fft.count("<script") == fft.count("</script>"), "FFT observatory has unbalanced script tags")
+require("FILAMENT VORTEX" in filament_vortex and "function updateMicSpectrum()" in filament_vortex,
+        "Filament Vortex candidate route or microphone analysis missing")
+require("const FFT_BANDS = 16;" in filament_vortex and "uniform vec4 fftBinsA;" in filament_vortex and
+        "uniform vec4 fftBinsD;" in filament_vortex and "float fftBand(float key)" in filament_vortex,
+        "Filament Vortex does not expose the 16-band four-vec4 FFT shader bus")
+require("float aperture = 0.052 + bass * 0.058" in filament_vortex and
+        "float curl = baseTwist + lowMid * 2.1 - treble * 0.72;" in filament_vortex and
+        "float filamentWidth = mix" in filament_vortex,
+        "Filament Vortex audio is not structurally mapped to aperture/curl/filament width")
+require("Math.max(1, Math.min(window.devicePixelRatio || 1, 2))" in filament_vortex and
+        "effectiveDprX: canvas.width / window.innerWidth" in filament_vortex,
+        "Filament Vortex lacks native-density backing and benchmark telemetry")
+require("window.__VISUALIZER_BENCHMARK__ = result" in filament_vortex and "Math.max(120" in filament_vortex,
+        "Filament Vortex benchmark export or 120-frame minimum missing")
+require("supplied image" in filament_vortex_doc and "no pixels" in filament_vortex_doc and
+        "candidates/filament-vortex.html?benchmark=1" in readme,
+        "Filament Vortex documentation or README route missing")
 
 if errors:
     print("visualizer verification FAILED")

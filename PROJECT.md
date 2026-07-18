@@ -23,6 +23,7 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - [x] Refresh render-loop performance and layout (Ponytail pass, 2026-07-05)
 - [x] Establish recurring creative evolution contract, novelty gate, effect ledger, and structural verifier (2026-07-17)
 - [x] Add standalone FFT Observatory with honest microphone/demo states and logarithmic spectral analysis (2026-07-18)
+- [x] Add standalone Filament Vortex candidate route with 16-band FFT topology controls (2026-07-18)
 
 ## Recent Refresh (2026-07-05)
 - Capped high-DPI render buffer to reduce fill-rate cost on Retina/TV displays.
@@ -94,11 +95,17 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Replaced circumference-only emitters with a 256-angle front-gap source map shared by visible shell flares and outgoing rays; increased gap displacement to 400%, made rotation constant, and assigned whole-ball radius to positive spectral flux/onsets.
 - Replaced discrete source flares with allocation-free ten-depth seam integration so the complete gap network behaves as line emitters; measured `18.68 FPS` at native `1280×633`, DPR `1.0`.
 
+## Filament Vortex candidate (2026-07-18)
+- Added `candidates/filament-vortex.html`, a standalone full-frame WebGL route inspired by the supplied image's vortex topology/material/motion only, not its pixels.
+- Uses a 16-band FFT bus: bass opens the dark aperture, mids change spiral curl/advection, treble splits fine hair lanes, and angular sectors own stable bands for local filament width.
+- Exports `window.__VISUALIZER_BENCHMARK__` with native-density telemetry for `?benchmark=1&seed=491009&frames=120`.
+
 ## Design Concepts
 - **RGB Subpixels:** scattered multi-scale RGB clusters with tightly overlapping channels, randomized placement, FFT-owned motion/scale, chromatic spill, and luminous edge contours.
 - **Stipple Family Pages:** standalone raw-WebGL pages exploring the original stipple-wave language as topographic contour dots, glass/reef caustics, and ink-dune paper grain.
 - **Cosmic Mycelium:** a living radial aperture with domain-warped fungal filaments, phase-slipping revelation rings, gravitational lensing, and audio-structured stellar spores.
 - **Spectral Hive:** a rotating three-layer spherical hex shell containing a central light source that escapes through FFT-owned seams and volumetric shafts.
+- **Filament Vortex candidate:** dense log-polar pearl filaments pulled into a seeded dark aperture, with structural 16-band FFT curl/throat/lane modulation.
 
 ## Continuous evolution
 - `CREATIVE_ENGINE.md` defines the concept grammar, three-candidate tournament, novelty gate, performance doctrine, and acceptance loop.

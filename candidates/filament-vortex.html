@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#02030a">
+<title>Filament Vortex Candidate</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #010208; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  canvas { display: block; width: 100vw; height: 100vh; background: radial-gradient(circle at 48% 48%, #090b18 0%, #010208 70%); }
+  #overlay { position: fixed; inset: 0; display: grid; place-items: center; z-index: 10; background: rgba(0,0,0,0.78); color: #dce7ff; cursor: pointer; text-align: center; transition: opacity 420ms ease; }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+  .panel { border: 1px solid rgba(160,190,255,0.26); border-radius: 18px; padding: 28px 32px; background: rgba(4,8,18,0.76); box-shadow: 0 24px 90px rgba(0,0,0,0.7); max-width: min(580px, calc(100vw - 32px)); }
+  h1 { margin: 0 0 12px; letter-spacing: 0.18em; font-size: clamp(26px, 6vw, 54px); font-weight: 800; color: #eef4ff; text-shadow: 0 0 22px rgba(176,198,255,0.42); }
+  p { margin: 8px 0; color: #8794b8; line-height: 1.45; }
+  .actions { margin-top: 18px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  button { appearance: none; border: 1px solid rgba(168,199,255,0.4); background: rgba(42,68,120,0.32); color: #dce7ff; padding: 10px 14px; border-radius: 999px; font: inherit; cursor: pointer; }
+  button:hover { border-color: rgba(220,234,255,0.75); }
+  #hud { position: fixed; left: 12px; bottom: 10px; z-index: 5; color: rgba(193,210,255,0.42); font-size: 11px; white-space: pre; pointer-events: none; }
+  #links { position: fixed; right: 12px; top: 10px; z-index: 5; color: rgba(193,210,255,0.48); font-size: 11px; }
+  #links a { color: inherit; text-decoration: none; margin-left: 12px; }
+</style>
+</head>
+<body>
+<canvas id="canvas" aria-label="Microphone-reactive filament vortex WebGL canvas"></canvas>
+<div id="links"><a href="../index.html">[main]</a><a href="filament-vortex.html?benchmark=1&seed=491009&frames=120">[benchmark]</a></div>
+<div id="hud">idle</div>
+<div id="overlay" role="button" tabindex="0" aria-label="Start visualizer">
+  <div class="panel">
+    <h1>FILAMENT VORTEX</h1>
+    <p>Dense native-density WebGL strands orbit a living aperture. Microphone FFT changes curl topology, filament spacing, and vortex throat size.</p>
+    <p id="seedLine"></p>
+    <div class="actions"><button id="startMic" type="button">start mic</button><button id="startDemo" type="button">demo mode</button></div>
+  </div>
+</div>
+<script>
+(() => {
+'use strict';
+const canvas = document.getElementById('canvas');
+const overlay = document.getElementById('overlay');
+const hud = document.getElementById('hud');
+const seedLine = document.getElementById('seedLine');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance' }) ||
+           canvas.getContext('webgl', { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+if (!gl) throw new Error('WebGL unavailable');
+
+const QUERY = new URLSearchParams(location.search);
+const requestedSeed = Number.parseInt(QUERY.get('seed'), 10);
+const SEED = Number.isInteger(requestedSeed) ? requestedSeed : (Math.random() * 999999) | 0;
+const BENCHMARK_MODE = QUERY.has('benchmark');
+const requestedFrames = Number.parseInt(QUERY.get('frames'), 10);
+const SAMPLE_FRAMES = Number.isInteger(requestedFrames) ? Math.max(120, Math.min(600, requestedFrames)) : 120;
+const WARMUP_FRAMES = 30;
+seedLine.textContent = `seed: ${SEED}`;
+
+function mulberry32(a) { return function() { let t = a += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const rng = mulberry32(SEED);
+const params = {
+  centerX: (rng() - 0.5) * 0.16,
+  centerY: (rng() - 0.5) * 0.10,
+  twist: 2.65 + rng() * 0.8,
+  laneSkew: 0.65 + rng() * 0.55,
+  material: rng()
+};
+
+function resize() {
+  const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+window.addEventListener('resize', resize, { passive: true });
+resize();
+
+const vertSrc = `attribute vec2 position; void main(){ gl_Position = vec4(position, 0.0, 1.0); }`;
+const fragSrc = `
+precision highp float;
+uniform vec2 resolution;
+uniform float time;
+uniform float seed;
+uniform float centerX;
+uniform float centerY;
+uniform float baseTwist;
+uniform float laneSkew;
+uniform float material;
+uniform vec4 fftBinsA;
+uniform vec4 fftBinsB;
+uniform vec4 fftBinsC;
+uniform vec4 fftBinsD;
+#define TAU 6.28318530718
+
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+float fftBand(float key) {
+  float index = floor(clamp(key, 0.0, 0.9999) * 16.0);
+  if (index < 1.0) return fftBinsA.x;
+  if (index < 2.0) return fftBinsA.y;
+  if (index < 3.0) return fftBinsA.z;
+  if (index < 4.0) return fftBinsA.w;
+  if (index < 5.0) return fftBinsB.x;
+  if (index < 6.0) return fftBinsB.y;
+  if (index < 7.0) return fftBinsB.z;
+  if (index < 8.0) return fftBinsB.w;
+  if (index < 9.0) return fftBinsC.x;
+  if (index < 10.0) return fftBinsC.y;
+  if (index < 11.0) return fftBinsC.z;
+  if (index < 12.0) return fftBinsC.w;
+  if (index < 13.0) return fftBinsD.x;
+  if (index < 14.0) return fftBinsD.y;
+  if (index < 15.0) return fftBinsD.z;
+  return fftBinsD.w;
+}
+float aaLine(float v, float width) {
+  float d = abs(fract(v) - 0.5);
+  float px = max(1.35 / min(resolution.x, resolution.y), 0.0012);
+  return 1.0 - smoothstep(width, width + px, d);
+}
+
+vec3 filamentVortex(vec2 uv, float t) {
+  vec2 c = vec2(centerX, centerY);
+  vec2 p = uv - c;
+  float r = length(p) + 0.0007;
+  float a = atan(p.y, p.x);
+
+  float bass = (fftBinsA.x + fftBinsA.y + fftBinsA.z) * 0.3333;
+  float lowMid = (fftBinsB.x + fftBinsB.y + fftBinsB.z + fftBinsB.w) * 0.25;
+  float highMid = (fftBinsC.x + fftBinsC.y + fftBinsC.z + fftBinsC.w) * 0.25;
+  float treble = (fftBinsD.x + fftBinsD.y + fftBinsD.z + fftBinsD.w) * 0.25;
+
+  // Audio changes topology: bass opens the throat, mids curl the flow, treble adds lane splitting.
+  float aperture = 0.052 + bass * 0.058 + fftBinsA.w * 0.022;
+  float throat = smoothstep(aperture * 1.05, aperture * 0.42, r);
+  float rim = 1.0 - smoothstep(0.010, 0.044 + bass * 0.030, abs(r - aperture));
+
+  float logR = log(r + 0.028);
+  float curl = baseTwist + lowMid * 2.1 - treble * 0.72;
+  float angularFlow = a + logR * curl;
+  angularFlow += 0.23 * sin(a * 3.0 - logR * 3.7 + t * (0.18 + highMid * 0.75));
+  angularFlow += 0.09 * sin(a * 8.0 + r * 9.0 - t * (0.42 + treble));
+
+  float inward = 1.0 / (r + 0.12);
+  float radialAdvection = r * (9.6 + bass * 2.4) - t * (0.33 + lowMid * 0.72) + 0.45 * sin(angularFlow * 2.0 + t * 0.21);
+  float laneCountA = 46.0 + floor(material * 14.0) + treble * 10.0;
+  float laneCountB = 74.0 + floor(seed - floor(seed / 17.0) * 17.0);
+  float bandKey = fract(angularFlow / TAU + 0.5 + seed * 0.000019);
+  float owned = fftBand(bandKey);
+  float filamentWidth = mix(0.032, 0.083, clamp(owned + treble * 0.45, 0.0, 1.0));
+
+  float primary = aaLine(angularFlow / TAU * laneCountA + radialAdvection * 0.055, filamentWidth);
+  float secondary = aaLine(angularFlow / TAU * laneCountB - radialAdvection * (0.12 + highMid * 0.10), 0.020 + owned * 0.028);
+  float hair = aaLine((angularFlow + sin(radialAdvection) * 0.08) / TAU * 148.0 + radialAdvection * 0.22, 0.012 + treble * 0.018);
+
+  float radialGate = smoothstep(aperture * 0.30, 0.84 + bass * 0.10, r) * (1.0 - smoothstep(1.02, 1.50, r));
+  float vortexGain = pow(clamp(inward * 0.58, 0.0, 1.0), 0.47);
+  float fibers = (primary * 0.74 + secondary * 0.40 + hair * 0.28) * radialGate;
+  fibers *= 0.56 + 0.55 * vortexGain;
+
+  // Seeded clumps prevent stock-radial uniformity while preserving full-frame density.
+  vec2 cell = floor(vec2(angularFlow / TAU * 31.0, log(r + 0.05) * 18.0 + t * 0.08));
+  float grain = hash(cell + seed * 0.113);
+  float clump = 0.72 + 0.36 * smoothstep(0.18, 0.96, grain + owned * 0.25);
+  fibers *= clump;
+
+  float dust = hash(gl_FragCoord.xy + floor(t * 20.0) + seed) - 0.5;
+  float farHaze = smoothstep(1.35, 0.22, r) * (0.08 + highMid * 0.16);
+  vec3 cold = mix(vec3(0.48,0.56,0.68), vec3(0.72,0.78,1.0), owned + treble * 0.35);
+  vec3 pearl = vec3(0.92, 0.96, 1.0);
+  vec3 violet = vec3(0.22, 0.19, 0.38) * (0.4 + lowMid);
+  vec3 col = vec3(0.004, 0.006, 0.015);
+  col += violet * farHaze;
+  col += cold * fibers * (0.62 + owned * 0.92);
+  col += pearl * fibers * fibers * (0.72 + treble * 0.75);
+  col += vec3(0.66,0.70,1.0) * rim * (0.50 + bass * 0.85);
+  col *= 1.0 - throat * (0.92 + bass * 0.05);
+  col += vec3(dust * 0.022);
+
+  // Soft lensing shadow at the aperture makes the center read as an opening rather than a bright blob.
+  float lens = smoothstep(aperture * 1.65, aperture * 0.52, r);
+  col = mix(col, vec3(0.0, 0.0, 0.004), lens * (0.80 + bass * 0.10));
+  return col;
+}
+
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * resolution.xy) / min(resolution.x, resolution.y);
+  gl_FragColor = vec4(filamentVortex(uv, time), 1.0);
+}`;
+
+function compile(type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    throw new Error(gl.getShaderInfoLog(shader));
+  }
+  return shader;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+const prog = program(vertSrc, fragSrc);
+gl.useProgram(prog);
+const buffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+const pos = gl.getAttribLocation(prog, 'position');
+gl.enableVertexAttribArray(pos);
+gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+const uni = Object.fromEntries(['resolution','time','seed','centerX','centerY','baseTwist','laneSkew','material','fftBinsA','fftBinsB','fftBinsC','fftBinsD'].map(k => [k, gl.getUniformLocation(prog, k)]));
+gl.uniform1f(uni.seed, SEED);
+gl.uniform1f(uni.centerX, params.centerX);
+gl.uniform1f(uni.centerY, params.centerY);
+gl.uniform1f(uni.baseTwist, params.twist);
+gl.uniform1f(uni.laneSkew, params.laneSkew);
+gl.uniform1f(uni.material, params.material);
+
+const FFT_BANDS = 16;
+const fftBins = new Float32Array(FFT_BANDS);
+const fftTargets = new Float32Array(FFT_BANDS);
+const fftUniformA = new Float32Array(4);
+const fftUniformB = new Float32Array(4);
+const fftUniformC = new Float32Array(4);
+const fftUniformD = new Float32Array(4);
+const FFT_ATTACK_MS = [150,140,130,120,110,100,90,82,76,70,64,58,52,48,44,40];
+const FFT_RELEASE_MS = [620,590,560,530,500,460,420,380,340,300,260,230,205,185,165,150];
+const FFT_EDGES = new Float32Array(FFT_BANDS + 1);
+for (let i = 0; i <= FFT_BANDS; i++) FFT_EDGES[i] = 20 * Math.pow(20000 / 20, i / FFT_BANDS);
+let audioCtx = null, analyser = null, freqData = null, sourceNode = null;
+let mode = 'idle';
+let started = false;
+let lastTime = performance.now();
+
+async function startMic() {
+  try {
+    if (!window.isSecureContext && !['localhost','127.0.0.1'].includes(location.hostname)) throw new Error('microphone requires HTTPS secure context');
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('mediaDevices.getUserMedia unavailable');
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }, video: false });
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0;
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+    sourceNode = audioCtx.createMediaStreamSource(stream);
+    sourceNode.connect(analyser);
+    mode = 'mic';
+    begin();
+  } catch (err) {
+    mode = 'demo';
+    hud.textContent = `mic unavailable: ${err.message}\nusing deterministic demo spectrum`;
+    begin();
+  }
+}
+function startDemo() { mode = 'demo'; begin(); }
+function begin() { if (started) return; started = true; overlay.classList.add('hidden'); requestAnimationFrame(render); }
+
+document.getElementById('startMic').addEventListener('click', (e) => { e.stopPropagation(); startMic(); });
+document.getElementById('startDemo').addEventListener('click', (e) => { e.stopPropagation(); startDemo(); });
+overlay.addEventListener('click', startMic);
+overlay.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') startMic(); });
+
+function updateDemoSpectrum(now) {
+  const t = now * 0.001;
+  for (let i = 0; i < FFT_BANDS; i++) {
+    const x = i / Math.max(1, FFT_BANDS - 1);
+    const bassPulse = Math.exp(-Math.pow((x - (0.10 + 0.035 * Math.sin(t * 0.7))) / 0.13, 2.0)) * (0.35 + 0.32 * Math.sin(t * 1.7 + seedLine.textContent.length));
+    const sweep = Math.exp(-Math.pow((x - (0.48 + 0.34 * Math.sin(t * 0.37 + SEED * 0.0001))) / 0.16, 2.0));
+    const shimmer = (0.5 + 0.5 * Math.sin(t * (2.4 + i * 0.17) + i * 1.91 + SEED * 0.001)) * Math.pow(x, 1.4);
+    fftTargets[i] = Math.max(0, Math.min(1, 0.05 + bassPulse + sweep * 0.38 + shimmer * 0.23));
+  }
+}
+function updateMicSpectrum() {
+  analyser.getByteFrequencyData(freqData);
+  const nyquist = (audioCtx.sampleRate || 48000) * 0.5;
+  for (let i = 0; i < FFT_BANDS; i++) {
+    const lo = FFT_EDGES[i], hi = FFT_EDGES[i + 1];
+    const start = Math.max(1, Math.floor(lo / nyquist * freqData.length));
+    const end = Math.max(start + 1, Math.ceil(hi / nyquist * freqData.length));
+    let sum = 0, count = 0;
+    for (let b = start; b < Math.min(end, freqData.length); b++) {
+      const v = freqData[b] / 255;
+      sum += v * v;
+      count++;
+    }
+    fftTargets[i] = Math.min(1, Math.sqrt(sum / Math.max(1, count)) * 1.75);
+  }
+}
+function smoothSpectrum(dtMs) {
+  for (let i = 0; i < FFT_BANDS; i++) {
+    const tau = fftTargets[i] > fftBins[i] ? FFT_ATTACK_MS[i] : FFT_RELEASE_MS[i];
+    const alpha = 1 - Math.exp(-dtMs / tau);
+    fftBins[i] += (fftTargets[i] - fftBins[i]) * alpha;
+  }
+  fftUniformA.set(fftBins.subarray(0, 4)); fftUniformB.set(fftBins.subarray(4, 8)); fftUniformC.set(fftBins.subarray(8, 12)); fftUniformD.set(fftBins.subarray(12, 16));
+}
+
+let warmup = 0;
+const samples = [];
+let benchmarkReported = false;
+function render(now) {
+  const dt = Math.min(64, Math.max(0.1, now - lastTime));
+  lastTime = now;
+  if (mode === 'mic' && analyser) updateMicSpectrum(); else updateDemoSpectrum(now);
+  smoothSpectrum(dt);
+  gl.uniform2f(uni.resolution, canvas.width, canvas.height);
+  gl.uniform1f(uni.time, now * 0.001);
+  gl.uniform4fv(uni.fftBinsA, fftUniformA);
+  gl.uniform4fv(uni.fftBinsB, fftUniformB);
+  gl.uniform4fv(uni.fftBinsC, fftUniformC);
+  gl.uniform4fv(uni.fftBinsD, fftUniformD);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  if (BENCHMARK_MODE && !benchmarkReported) {
+    if (warmup < WARMUP_FRAMES) warmup++;
+    else {
+      samples.push(dt);
+      if (samples.length >= SAMPLE_FRAMES) {
+        const sorted = [...samples].sort((a, b) => a - b);
+        const averageFrameMs = samples.reduce((a, b) => a + b, 0) / samples.length;
+        const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+        const renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+        const result = {
+          effect: 'Filament Vortex', route: 'candidates/filament-vortex.html', patternName: 'Filament Vortex', pattern: 'candidate', seed: SEED,
+          sampleFrames: SAMPLE_FRAMES, warmupFrames: WARMUP_FRAMES, averageFps: 1000 / averageFrameMs, averageFrameMs,
+          p95FrameMs: sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))], worstFrameMs: sorted[sorted.length - 1],
+          canvasWidth: canvas.width, canvasHeight: canvas.height, cssWidth: window.innerWidth, cssHeight: window.innerHeight,
+          effectiveDprX: canvas.width / window.innerWidth, effectiveDprY: canvas.height / window.innerHeight,
+          renderer, userAgent: navigator.userAgent, mode, timestamp: new Date().toISOString()
+        };
+        benchmarkReported = true;
+        window.__VISUALIZER_BENCHMARK__ = result;
+        console.log('VISUALIZER_BENCHMARK', JSON.stringify(result));
+      }
+    }
+  }
+  if (!BENCHMARK_MODE && Math.floor(now / 250) !== Math.floor((now - dt) / 250)) {
+    const peak = fftBins.reduce((best, v, i) => v > fftBins[best] ? i : best, 0);
+    hud.textContent = `${mode} | seed ${SEED} | peak band ${peak}\nDPR ${(canvas.width / window.innerWidth).toFixed(2)} | ${canvas.width}×${canvas.height}`;
+  }
+  requestAnimationFrame(render);
+}
+
+if (BENCHMARK_MODE) { mode = 'demo'; begin(); }
+})();
+</script>
+</body>
+</html>

@@ -47,6 +47,8 @@ Safari does not expose an AirPlay picker for a WebGL canvas, so the television i
 
 For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Example: `index.html?pattern=8&seed=491009` opens and locks a repeatable **Cosmic Mycelium** scene without auto-transitioning.
 
+Standalone candidates live under `candidates/`. The filament-vortex prototype is available at `candidates/filament-vortex.html?seed=491009` and exports comparable benchmark telemetry at `candidates/filament-vortex.html?benchmark=1&seed=491009&frames=120`.
+
 ## Current status
 
 - Static WebGL/GLSL app
@@ -66,6 +68,7 @@ For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Exampl
   - `stipple-glass-reef.html` — caustic/glass/glitter stipple waves
   - `stipple-ink-dunes.html` — desert ink/paper-grain stipple waves
 - Cross-browser shader error reporting
+- Candidate route `candidates/filament-vortex.html`: a dense microphone/demo reactive filament aperture inspired by the supplied vortex reference at the level of topology/material/motion only
 - Low-ALU interleaved-gradient film grain preserves texture without reusing the heavier structural noise hash on every pixel
 - Mic mode with Web Audio API
 - Shared 16-bin 20 Hz–20 kHz FFT bus: 4096-sample analysis, bandwidth-neutral RMS power, frequency-dependent attack/release envelopes, and four reusable `vec4` shader uniforms

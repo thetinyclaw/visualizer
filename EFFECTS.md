@@ -109,3 +109,12 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Material:** near-black shell plates, continuous cold seam-line emitters, and volumetric shafts driven by integrated line energy
 - **Novelty boundary:** no independent background ray lattice, random tile placement, visible longitude reset, or shared generic pulse across gap/radius/rotation is permitted
 - **Cost:** an allocation-free 256-angle CPU map integrates ten front-surface seam depths per angle; the shader uses one filtered lookup for the outgoing field
+
+### Filament Vortex Candidate
+- **Composition:** full-frame pearl/cold-plasma hair filaments spiraling into a seeded dark aperture
+- **Primitive:** log-polar analytic stripe fields, radial advection, antialiased lane distances, seeded clump cells
+- **Motion:** inward spiral drift with organic phase perturbations around a stable vortex throat
+- **Audio:** 16 logarithmic FFT bands structurally control aperture size, curl strength, radial advection, filament width, and treble hair splitting; brightness is secondary
+- **Material:** crisp white-blue metallic fibers over a blue-black cosmic void with a restrained violet throat rim
+- **Novelty boundary:** preserves only high-level topology/material/motion from the supplied image; no pixels, tracing, source texture, or monochrome frame reproduction
+- **Cost:** three analytic lane families plus one seeded clump hash; no particle integration, raymarch, texture dependency, or sub-native backing resolution
