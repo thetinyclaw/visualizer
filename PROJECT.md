@@ -92,6 +92,7 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Anchored its longitude discontinuity behind the visible hemisphere, made panel gaps dynamically FFT-driven, and replaced the independent background ray lattice with rays gated by actual circumference-gap samples.
 - Spatially partitioned shell and edge-emitter evaluation, raising the corrected native-density benchmark from `14.54` to `19.05 FPS` at `1280×633`, DPR `1.0`.
 - Replaced circumference-only emitters with a 256-angle front-gap source map shared by visible shell flares and outgoing rays; increased gap displacement to 400%, made rotation constant, and assigned whole-ball radius to positive spectral flux/onsets.
+- Replaced discrete source flares with allocation-free ten-depth seam integration so the complete gap network behaves as line emitters; measured `18.68 FPS` at native `1280×633`, DPR `1.0`.
 
 ## Design Concepts
 - **RGB Subpixels:** scattered multi-scale RGB clusters with tightly overlapping channels, randomized placement, FFT-owned motion/scale, chromatic spill, and luminous edge contours.

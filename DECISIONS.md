@@ -36,3 +36,9 @@ Decision: Gate rays from multiple front-surface gap samples, amplify gap displac
 Reason: Gap breathing, ball rotation, and radius motion should communicate distinct musical qualities.
 Tradeoff: Multi-depth front-gap sampling costs additional analytic lattice evaluations and requires spatial partitioning and re-benchmarking.
 
+## 2026-07-18 — Treat the complete gap network as line emitters
+Context: Selecting individual front-gap intersections produces dot sources and column-like rays instead of illuminated seams.
+Decision: Integrate narrow seam energy across multiple front-surface depths for every angle, render all visible gaps as continuous luminous lines, and remove discrete source flares.
+Reason: The light source is behind the shell, so every open seam should emit as a line rather than isolated points.
+Tradeoff: The CPU beam map performs more bounded samples per angle, offset by allocation-free scratch storage and one shader texture lookup.
+

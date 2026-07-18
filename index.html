@@ -1122,18 +1122,18 @@ vec3 infiniteHexsphere(vec2 uv, float t) {
     vec3 col = color4 * (0.045 + angularBand * 0.020);
     vec4 beamSource = texture2D(hiveBeamMap, vec2(angularKey, 0.5));
     float sourceGate = beamSource.r;
-    float sourceDepth = mix(0.28, 0.86, beamSource.g);
+    float sourceLineEnergy = beamSource.g;
     vec2 sourceIdentity = beamSource.ba;
     vec3 sourceTint = mix(vec3(0.94, 0.97, 1.0), mix(color2, color3, sourceIdentity.x), 0.14);
 
-    // Trace each radial shaft back to an actual front-facing gap. A continuous
-    // angular depth field distributes emitters across inner-to-outer shell bands.
+    // The CPU map integrates line energy across the entire front gap network.
+    // External shafts therefore represent luminous seam lines, not point sources.
     if (radius > ballRadius * 0.96) {
-        float beamStart = ballRadius * sourceDepth;
-        float beamEnvelope = smoothstep(beamStart, beamStart + ballRadius * 0.065, radius) *
+        float beamEnvelope = smoothstep(ballRadius * 0.96, ballRadius * 1.04, radius) *
             smoothstep(1.42, ballRadius * 1.01, radius);
         float beamBreath = 0.76 + 0.24 * sin(radius * 13.0 - t * 0.24 + sourceIdentity.y * 2.2);
-        float beams = sourceGate * beamEnvelope * beamBreath * (0.50 + sourceIdentity.y * 0.72);
+        float beams = sourceGate * beamEnvelope * beamBreath *
+            (0.34 + sourceLineEnergy * 0.82 + sourceIdentity.y * 0.38);
         col += sourceTint * beams * (0.34 + angularBand * 0.58);
     }
 
@@ -1164,13 +1164,8 @@ vec3 infiniteHexsphere(vec2 uv, float t) {
         col = mix(col, panelColor, panel * 0.975);
         float rim = smoothstep(0.72, 1.0, sphereRadius2) * sphereMask;
         col += seamTint * seam * rim * 0.16;
-        float normalizedRadius = sqrt(sphereRadius2);
-        float sourceRing = 1.0 - smoothstep(0.015, 0.065, abs(normalizedRadius - sourceDepth));
-        float frontSourceFlare = sourceGate * gap * sourceRing * (0.82 + cellBand * 0.58);
-        float frontShaft = sourceGate *
-            smoothstep(sourceDepth, sourceDepth + 0.035, normalizedRadius) *
-            smoothstep(1.01, sourceDepth + 0.060, normalizedRadius) * sphereMask;
-        col += sourceTint * (frontSourceFlare * 1.55 + frontShaft * 0.82);
+        float lineEmitter = max(seam, gap * 0.34) * sourcePressure;
+        col += seamTint * lineEmitter * (0.72 + cellBand * 0.46);
     }
     return col;
 }
@@ -1479,47 +1474,72 @@ function hiveHash(x, y) {
     return fractJs((px + py) * pz);
 }
 
-function sampleHiveCell(px, py) {
+const hiveCellScratch = new Float64Array(4);
+
+function sampleHiveCell(px, py, output) {
     const halfY = 0.8660254;
     const localAx = modJs(px + 0.5, 1) - 0.5;
     const localAy = modJs(py + halfY, 1.7320508) - halfY;
     const localBx = modJs(px, 1) - 0.5;
     const localBy = modJs(py, 1.7320508) - halfY;
     if (localAx * localAx + localAy * localAy < localBx * localBx + localBy * localBy) {
-        return [localAx, localAy, Math.floor(px + 0.5) * 2, Math.floor((py + halfY) / 1.7320508) * 2];
+        output[0] = localAx;
+        output[1] = localAy;
+        output[2] = Math.floor(px + 0.5) * 2;
+        output[3] = Math.floor((py + halfY) / 1.7320508) * 2;
+        return;
     }
-    return [localBx, localBy, Math.floor(px) * 2 + 1, Math.floor(py / 1.7320508) * 2 + 1];
+    output[0] = localBx;
+    output[1] = localBy;
+    output[2] = Math.floor(px) * 2 + 1;
+    output[3] = Math.floor(py / 1.7320508) * 2 + 1;
 }
 
 function updateHiveBeamMap() {
     const tilingScale = 5.65 - smoothBass * 1.45 + smoothTreble * 0.48;
     const latitudeDrift = 0.16 * Math.sin(hiveRotationPhase * 0.37 + SEED);
+    const depthSamples = 10;
     for (let i = 0; i < HIVE_BEAM_MAP_SIZE; i++) {
         const angularKey = (i + 0.5) / HIVE_BEAM_MAP_SIZE;
         const angle = angularKey * Math.PI * 2 - Math.PI;
-        const depthWave = 0.5 + 0.5 * Math.sin(angle * 7 + SEED + hiveRotationPhase * 0.13);
-        const sourceDepth = 0.28 + depthWave * 0.58;
-        const sx = Math.cos(angle) * sourceDepth;
-        const sy = Math.sin(angle) * sourceDepth;
-        const sz = Math.sqrt(Math.max(0.0001, 1 - sx * sx - sy * sy));
-        const longitude = Math.atan2(sx, sz) + hiveRotationPhase;
-        const latitude = Math.asin(Math.max(-0.999, Math.min(0.999, sy))) + latitudeDrift;
-        const cell = sampleHiveCell(longitude * tilingScale, latitude * tilingScale);
-        const cellKey = hiveHash(cell[2] + SEED * 4.19, cell[3] + SEED * 4.19);
-        const cellBand = fftBins[Math.min(15, Math.floor(Math.max(0, Math.min(0.9999, cellKey)) * 16))];
-        const gapDrive = 4 * (smoothBass * 0.026 + cellBand * 0.050 + smoothTreble * 0.010);
-        const panelRadius = Math.max(0.18, Math.min(0.472, 0.478 - gapDrive));
-        const ax = Math.abs(cell[0]);
-        const ay = Math.abs(cell[1]);
-        const metric = Math.max(ax, ax * 0.5 + ay * 0.8660254);
-        const gap = smoothstepJs(panelRadius - 0.003, 0.498, metric);
-        let gate = smoothstepJs(0.12, 0.72, gap);
-        gate *= gate;
+        const directionX = Math.cos(angle);
+        const directionY = Math.sin(angle);
+        let seamEnergy = 0;
+        let dominantStrength = -1;
+        let dominantKey = 0;
+        let dominantBand = 0;
+        for (let sample = 0; sample < depthSamples; sample++) {
+            const sourceDepth = 0.15 + ((sample + 0.5) / depthSamples) * 0.79;
+            const sx = directionX * sourceDepth;
+            const sy = directionY * sourceDepth;
+            const sz = Math.sqrt(Math.max(0.0001, 1 - sx * sx - sy * sy));
+            const longitude = Math.atan2(sx, sz) + hiveRotationPhase;
+            const latitude = Math.asin(Math.max(-0.999, Math.min(0.999, sy))) + latitudeDrift;
+            sampleHiveCell(longitude * tilingScale, latitude * tilingScale, hiveCellScratch);
+            const cellKey = hiveHash(hiveCellScratch[2] + SEED * 4.19, hiveCellScratch[3] + SEED * 4.19);
+            const cellBand = fftBins[Math.min(15, Math.floor(Math.max(0, Math.min(0.9999, cellKey)) * 16))];
+            const gapDrive = 4 * (smoothBass * 0.026 + cellBand * 0.050 + smoothTreble * 0.010);
+            const panelRadius = Math.max(0.18, Math.min(0.472, 0.478 - gapDrive));
+            const seamWidth = 0.014 + gapDrive * 0.22;
+            const ax = Math.abs(hiveCellScratch[0]);
+            const ay = Math.abs(hiveCellScratch[1]);
+            const metric = Math.max(ax, ax * 0.5 + ay * 0.8660254);
+            const seam = 1 - smoothstepJs(0.005, seamWidth, Math.abs(metric - panelRadius));
+            const weightedSeam = seam * (0.58 + cellBand * 0.42);
+            seamEnergy += weightedSeam;
+            if (weightedSeam > dominantStrength) {
+                dominantStrength = weightedSeam;
+                dominantKey = cellKey;
+                dominantBand = cellBand;
+            }
+        }
+        const averageSeamEnergy = seamEnergy / depthSamples;
+        const gate = smoothstepJs(0.018, 0.16, averageSeamEnergy);
         const offset = i * 4;
         hiveBeamMapData[offset] = Math.round(gate * 255);
-        hiveBeamMapData[offset + 1] = Math.round(depthWave * 255);
-        hiveBeamMapData[offset + 2] = Math.round(cellKey * 255);
-        hiveBeamMapData[offset + 3] = Math.round(cellBand * 255);
+        hiveBeamMapData[offset + 1] = Math.round(Math.min(1, averageSeamEnergy * 3.2) * 255);
+        hiveBeamMapData[offset + 2] = Math.round(dominantKey * 255);
+        hiveBeamMapData[offset + 3] = Math.round(dominantBand * 255);
     }
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, hiveBeamTexture);
@@ -1708,7 +1728,6 @@ function render() {
     hiveRadiusPulse += (hiveRadiusTarget - hiveRadiusPulse) * hiveRadiusBlend;
     const hiveRotationRate = 0.085;
     hiveRotationPhase += frameSeconds * hiveRotationRate;
-    updateHiveBeamMap();
     
     const time = (now - startTime) / 1000;
     const elapsed = now - patternTime;
@@ -1721,6 +1740,10 @@ function render() {
         pattern = (pattern + 1) % PATTERN_COUNT;
         patternTime = now;
         transition = 0;
+    }
+    const nextPatternIndex = (pattern + 1) % PATTERN_COUNT;
+    if (pattern === 12 || (transition > 0 && nextPatternIndex === 12)) {
+        updateHiveBeamMap();
     }
     
     // Set uniforms

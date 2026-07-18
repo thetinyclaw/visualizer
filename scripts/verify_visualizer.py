@@ -82,12 +82,21 @@ require("float longitude = atan(sphereXY.x, surfaceZ) + hiveRotation;" in infini
 require("float gapDrive = 4.0 * (bass * 0.026 + cellBand * 0.050 + treble * 0.010);" in infinite_hive and
         "float seamWidth = 0.014 + gapDrive * 0.22;" in infinite_hive,
         "Infinite Hexsphere gaps do not use 400 percent FFT displacement")
-require("texture2D(hiveBeamMap" in infinite_hive and "float frontSourceFlare" in infinite_hive and
-        "float frontShaft" in infinite_hive and "float beams = sourceGate * beamEnvelope" in infinite_hive,
-        "Infinite Hexsphere beams are not causally joined to front-gap sources")
+require("texture2D(hiveBeamMap" in infinite_hive and "float sourceLineEnergy" in infinite_hive and
+        "float beams = sourceGate * beamEnvelope * beamBreath" in infinite_hive and
+        "float lineEmitter = max(seam, gap * 0.34)" in infinite_hive and
+        "frontSourceFlare" not in infinite_hive and "frontShaft" not in infinite_hive,
+        "Infinite Hexsphere gaps are not continuous line emitters")
 require("const HIVE_BEAM_MAP_SIZE = 256;" in html and "function updateHiveBeamMap()" in html and
         "gl.texSubImage2D" in html,
         "Infinite Hexsphere front-gap source map is missing")
+require("const depthSamples = 10;" in html and "let seamEnergy = 0;" in html and
+        "const averageSeamEnergy = seamEnergy / depthSamples;" in html and
+        "const hiveCellScratch = new Float64Array(4);" in html and
+        "sampleHiveCell(longitude * tilingScale, latitude * tilingScale, hiveCellScratch);" in html,
+        "Infinite Hexsphere beam map does not allocation-free integrate seam lines")
+require("if (pattern === 12 || (transition > 0 && nextPatternIndex === 12))" in html,
+        "Infinite Hexsphere CPU source-map work is not isolated to its render/transition path")
 require("uniform float hiveRotation;" in html and "const hiveRotationRate = 0.085;" in html and
         "hiveRotationPhase += frameSeconds * hiveRotationRate;" in html,
         "Infinite Hexsphere rotation is not constant")

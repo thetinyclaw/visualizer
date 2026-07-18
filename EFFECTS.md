@@ -102,10 +102,10 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Cost:** no loops or general powers; fixed multiplication chains form narrow shafts and squared gates avoid redundant shell-distance roots
 
 ### Infinite Hexsphere
-- **Composition:** a perfectly tiled sphere with onset-modulated radius, surrounded by rays visibly anchored to live front-facing gaps
+- **Composition:** a perfectly tiled sphere with onset-modulated radius whose complete front gap network emits as continuous luminous lines
 - **Primitive:** lattice-matched hex Voronoi cells over an unbounded front-hemisphere longitude/latitude domain with the coordinate wrap permanently behind the camera
 - **Motion:** constant-speed longitude motion rotates continuously without exposing a projection seam; positive spectral flux expands the whole sphere independently
 - **Audio:** sustained bass/treble and per-cell bins drive a 400% gap displacement; positive spectral flux/onsets drive radius; rotation ignores audio
-- **Material:** near-black shell plates, narrow cold internal-light seams, and source-coupled volumetric shafts
+- **Material:** near-black shell plates, continuous cold seam-line emitters, and volumetric shafts driven by integrated line energy
 - **Novelty boundary:** no independent background ray lattice, random tile placement, visible longitude reset, or shared generic pulse across gap/radius/rotation is permitted
-- **Cost:** a 256-angle CPU source map computes exact front-gap gates once per frame; the shader uses one filtered lookup for joined front flares and outgoing shafts
+- **Cost:** an allocation-free 256-angle CPU map integrates ten front-surface seam depths per angle; the shader uses one filtered lookup for the outgoing field
