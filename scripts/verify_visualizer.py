@@ -61,6 +61,12 @@ require("float dist = length(diff);" not in html, "Voronoi returned to nine squa
 require("float winningBandAmplitude" in html, "Voronoi per-frequency cell ownership missing")
 require("float frequencyCellWeight = mix(2.20, 0.24, bandAmplitude);" in html,
         "Voronoi dramatic frequency-weighted cell sizing missing")
+require("const float VORONOI_TIME_SCALE = 0.3333333;" in html,
+        "Voronoi-specific one-third motion time scale missing")
+require("sin(voronoiMotionTime * (0.22 + bandAmplitude * 0.92)" in html,
+        "Voronoi motion is not using the slowed time scale while preserving FFT acceleration")
+require("sin(t * (0.22 + bandAmplitude * 0.92)" not in html,
+        "Voronoi generator motion returned to full-speed time")
 require("uv * (8.0 + bass * 4.0)" not in html,
         "Voronoi returned to uniform bass-driven grid scaling")
 require("const FFT_BIN_EDGES = new Float32Array" in html and "const fftBins = new Float32Array(16)" in html,

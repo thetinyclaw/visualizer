@@ -677,6 +677,8 @@ vec3 reaction(vec2 uv, float t) {
 vec3 voronoi(vec2 uv, float t) {
     // Keep generator density stable so audio changes individual cell area rather
     // than shrinking the entire tessellation uniformly.
+    const float VORONOI_TIME_SCALE = 0.3333333;
+    float voronoiMotionTime = t * VORONOI_TIME_SCALE;
     vec2 p = uv * 8.0;
     
     vec2 n = floor(p);
@@ -698,7 +700,7 @@ vec3 voronoi(vec2 uv, float t) {
             // Each generator has a stable one-of-sixteen spectral affinity. Loud bins move
             // their generators more assertively and receive much lower distance
             // weight, so their cells consume dramatically more area.
-            vec2 point = 0.5 + 0.5 * sin(t * (0.22 + bandAmplitude * 0.92) + TAU * pointSeed);
+            vec2 point = 0.5 + 0.5 * sin(voronoiMotionTime * (0.22 + bandAmplitude * 0.92) + TAU * pointSeed);
             
             vec2 diff = neighbor + point - f;
             float rawDist2 = dot(diff, diff);
