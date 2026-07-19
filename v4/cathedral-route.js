@@ -16,7 +16,7 @@ function parseParams(windowObject) {
 function updateState(state, runtime, scene, frame = null) {
   const summary = scene.lastSummary;
   state.rendererMode = runtime.mode;
-  state.webgpuActive = Boolean(runtime.graphExecutor && runtime.mode !== 'webgl2-legacy');
+  state.webgpuActive = Boolean(runtime.graphExecutor && runtime.mode !== 'webgl2-legacy' && !state.validationFailed);
   state.active = state.webgpuActive;
   state.frame = frame || state.frame || null;
   state.seed = scene.seed;
@@ -43,6 +43,19 @@ function writeStatus(status, state) {
     : `WebGPU unavailable; fallback link active · ${state.fallbackReason || 'probe unavailable'}`;
 }
 
+export function recordCathedralValidationError(state, event, status = null, errors = null) {
+  const error = event?.error || event;
+  state.webgpuValidationErrors.push({
+    name: error?.constructor?.name || 'GPUValidationError',
+    message: String(error?.message || 'uncaptured WebGPU error'),
+  });
+  state.validationFailed = true;
+  state.active = false;
+  state.webgpuActive = false;
+  if (errors) errors.textContent = state.webgpuValidationErrors.map((entry) => `webgpu-validation: ${entry.message}`).join('\n');
+  writeStatus(status, state);
+}
+
 export async function startCathedralRoute(windowObject = window) {
   const document = windowObject.document;
   const canvas = document.getElementById('cathedral-canvas');
@@ -60,6 +73,7 @@ export async function startCathedralRoute(windowObject = window) {
     frame: null, telemetry: null, fallbackReason: '', fallbackHref: './lab/prismatic-cathedral.html',
     frameMode: locked ? 'locked-single-frame' : 'live-raf', frameCounters: null, lastFrameMs: 0, rafScheduled: false,
     structuralAudio: scene.structuralAudioMappings, materialHierarchy: scene.materialHierarchy,
+    validationFailed: false, webgpuValidationErrors: [],
   };
   windowObject.__V4_CATHEDRAL_WEBGPU__ = state;
 
@@ -81,6 +95,9 @@ export async function startCathedralRoute(windowObject = window) {
     executorRegistry: createPrismaticCathedralExecutors(),
     dprCap: 2,
     windowObject,
+  });
+  runtime.lifecycle?.device?.addEventListener?.('uncapturederror', (event) => {
+    recordCathedralValidationError(state, event, status, errors);
   });
   await runtime.resourcesReady;
   const initialTime = Number.isFinite(params.lockedTime) ? params.lockedTime : 0;

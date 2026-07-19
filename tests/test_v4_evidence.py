@@ -213,6 +213,25 @@ class EvidenceValidationTests(unittest.TestCase):
         with self.assertRaises(ev.EvidenceError):
             ev.validate_benchmark(data, require_real=True)
 
+    def test_real_benchmark_rejects_nonpositive_known_gpu_timing(self):
+        for impossible_value in (0, -0.5):
+            data = realish_benchmark()
+            data["gpu_timing"]["frame_ms"] = {"value": impossible_value, "unknown_reason": "", "unit": "ms"}
+            with self.subTest(value=impossible_value), self.assertRaises(ev.EvidenceError):
+                ev.validate_benchmark(data, require_real=True, validate_manifest_binding=False)
+
+    def test_capture_renderer_attestation_requires_submitted_frame_and_no_validation_errors(self):
+        valid = {"rendererMode": "webgpu-full", "active": True, "webgpuActive": True,
+                 "frame": {"submitted": True}, "validationErrors": [], "webgpuValidationErrors": []}
+        ev.validate_capture_renderer_attestation(valid)
+        for invalid in (
+            {**valid, "frame": None},
+            {**valid, "frame": {"submitted": False}},
+            {**valid, "webgpuValidationErrors": [{"message": "bad binding"}]},
+        ):
+            with self.subTest(attestation=invalid), self.assertRaises(ev.EvidenceError):
+                ev.validate_capture_renderer_attestation(invalid)
+
     def test_capture_plan_locks_url_rejects_conflicting_determinism_and_bad_paths(self):
         harness = (ROOT / "v4" / "evidence" / "capture-harness.js").read_text(encoding="utf-8")
         self.assertIn("requestAnimationFrame", harness)

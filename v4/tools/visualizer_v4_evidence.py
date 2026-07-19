@@ -764,6 +764,15 @@ def resolve_route_for_browser(route: str, locked_url: str) -> tuple[str, Any, An
     return browser_url, server, server_thread
 
 
+def validate_capture_renderer_attestation(renderer_attestation: Mapping[str, Any]) -> None:
+    require(renderer_attestation.get("rendererMode") == "webgpu-full",
+            f"capture route did not run WebGPU full mode: {renderer_attestation.get('rendererMode')}")
+    frame_attestation = require_mapping(renderer_attestation.get("frame"), "capture route frame attestation")
+    require(frame_attestation.get("submitted") is True, "capture route frame was not submitted")
+    require(not renderer_attestation.get("validationErrors") and not renderer_attestation.get("webgpuValidationErrors"),
+            "capture route reported WebGPU validation errors")
+
+
 def run_local_browser_capture(*, route: str, effect_id: str, seed: int, time_ms: float, mode: str, viewport: Mapping[str, int],
                               out_root: Path, run_id: Optional[str] = None, frame_indices: Sequence[int] = (0, 60),
                               timeout_ms: int = 30000, dpr: float = 1.0) -> Mapping[str, Any]:
@@ -830,16 +839,7 @@ def run_local_browser_capture(*, route: str, effect_id: str, seed: int, time_ms:
                     "v4CathedralWebGPU", "v4FilamentWebGPU", "v4VoxelWebGPU", "v4HistoryTrails"
                 ) if isinstance(exported_state.get(key), Mapping)), None),
                     "capture route attested v4 renderer state")
-                require(renderer_attestation.get("rendererMode") == "webgpu-full",
-                        f"capture route did not run WebGPU full mode: {renderer_attestation.get('rendererMode')}")
-                require(renderer_attestation.get("active") is True or renderer_attestation.get("webgpuActive") is True
-                        or renderer_attestation.get("frameSubmitted") is True,
-                        "capture route did not attest an active WebGPU frame")
-                frame_attestation = renderer_attestation.get("frame")
-                if isinstance(frame_attestation, Mapping):
-                    require(frame_attestation.get("submitted") is True, "capture route frame was not submitted")
-                require(not renderer_attestation.get("validationErrors") and not renderer_attestation.get("webgpuValidationErrors"),
-                        "capture route reported WebGPU validation errors")
+                validate_capture_renderer_attestation(renderer_attestation)
                 observed_dpr = float(telemetry.get("dpr", 0))
                 require(abs(observed_dpr - float(dpr)) <= 0.05, f"observed DPR {observed_dpr} does not match requested DPR {dpr}")
                 require(previous_observed_time is None or observed_time_ms > previous_observed_time,
@@ -1049,13 +1049,15 @@ def check_no_bad_telemetry_labels(value: Any, path: str = "telemetry") -> None:
             check_no_bad_telemetry_labels(child, f"{path}[{index}]")
 
 
-def validate_nullable_measurement(obj: Any, name: str) -> None:
+def validate_nullable_measurement(obj: Any, name: str, *, strictly_positive: bool = False) -> None:
     obj = require_mapping(obj, name)
     value = obj.get("value")
     if value is None:
         require_nonempty_string(obj.get("unknown_reason"), f"{name}.unknown_reason")
     else:
         require(isinstance(value, (int, float)) and math.isfinite(float(value)), f"{name}.value must be numeric or null")
+        if strictly_positive:
+            require(float(value) > 0, f"{name}.value must be strictly positive when known")
         require(obj.get("unknown_reason") in {None, ""}, f"{name}.unknown_reason must be empty when value is known")
     require_nonempty_string(obj.get("unit"), f"{name}.unit")
 
@@ -1185,7 +1187,7 @@ def validate_benchmark(report: Mapping[str, Any], *, require_real: bool = False,
     require(abs(float(summary.get("p50_frame_ms")) - computed_p50) < 0.0001, "summary.p50_frame_ms does not match samples")
     require(abs(float(summary.get("p95_frame_ms")) - computed_p95) < 0.0001, "summary.p95_frame_ms does not match samples")
     gpu = require_mapping(report.get("gpu_timing"), "gpu_timing")
-    validate_nullable_measurement(gpu.get("frame_ms"), "gpu_timing.frame_ms")
+    validate_nullable_measurement(gpu.get("frame_ms"), "gpu_timing.frame_ms", strictly_positive=True)
     memory = require_mapping(report.get("memory"), "memory")
     for key in ("js_heap_used_mb", "gpu_memory_mb"):
         validate_nullable_measurement(memory.get(key), f"memory.{key}")

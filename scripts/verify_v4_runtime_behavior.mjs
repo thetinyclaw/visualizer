@@ -12,6 +12,7 @@ import { LiveAudioFeatureBridge, LIVE_AUDIO_STATES } from '../v4/live-audio-engi
 import { createPrismaticCathedralScene, sceneByteSignature } from '../v4/scenes/prismatic-cathedral/geometry.js';
 import { prismaticCathedralManifest, makePrismaticCathedralGraph } from '../v4/scenes/prismatic-cathedral/manifest.js';
 import { createPrismaticCathedralPipelines, createPrismaticCathedralExecutors } from '../v4/scenes/prismatic-cathedral/pipeline.js';
+import { recordCathedralValidationError } from '../v4/cathedral-route.js';
 import { createFilamentVortexScene, filamentSignature, FILAMENT_CONTRACT } from '../v4/scenes/filament-vortex/geometry.js';
 import { filamentVortexManifest, makeFilamentVortexGraph } from '../v4/scenes/filament-vortex/manifest.js';
 import { createFilamentVortexPipelines, createFilamentVortexExecutors } from '../v4/scenes/filament-vortex/pipeline.js';
@@ -1373,6 +1374,19 @@ function testPrismaticCathedralGraphAndManifestContracts() {
   assert.equal(frozen.resources.find((resource) => resource.id === 'cathedral-indices').type, 'index-buffer');
 }
 
+function testPrismaticCathedralValidationErrorDowngradesPublicState() {
+  const state = { active: true, webgpuActive: true, validationFailed: false, webgpuValidationErrors: [], vertexCounts: null };
+  const status = { textContent: '' };
+  const errors = { textContent: '' };
+  recordCathedralValidationError(state, { error: new Error('bad bind group') }, status, errors);
+  assert.equal(state.active, false);
+  assert.equal(state.webgpuActive, false);
+  assert.equal(state.validationFailed, true);
+  assert.equal(state.webgpuValidationErrors.length, 1);
+  assert.match(errors.textContent, /bad bind group/);
+  assert.match(status.textContent, /fallback link active/);
+}
+
 function testPrismaticCathedralExecutorUploadsAndDrawsIndexed() {
   const canvas = makeCanvas();
   canvas.getBoundingClientRect = () => ({ width: 640, height: 360 });
@@ -1655,6 +1669,7 @@ testRenderGraphDeepValidation();
 testSceneManifestDeepValidation();
 testPrismaticCathedralGeometryContracts();
 testPrismaticCathedralGraphAndManifestContracts();
+testPrismaticCathedralValidationErrorDowngradesPublicState();
 testPrismaticCathedralExecutorUploadsAndDrawsIndexed();
 testFilamentVortexContracts();
 testFilamentExecutorDispatchDrawSubmitAndReuse();
