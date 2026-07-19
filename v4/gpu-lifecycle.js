@@ -29,6 +29,11 @@ export class GpuLifecycle {
     this.disposed = false;
   }
 
+  resetLossBudget(reason = 'explicit-reset-boundary') {
+    this.retryCount = 0;
+    this.transition(this.state, { budgetReset: reason });
+  }
+
   transition(state, detail = {}) {
     this.state = state;
     this.onStateChange(Object.freeze({ state, generation: this.generation, retryCount: this.retryCount, ...detail }));
@@ -43,9 +48,9 @@ export class GpuLifecycle {
         if (device && typeof device.destroy === 'function') device.destroy();
         return null;
       }
+      if (!device) throw new Error('No GPU device returned.');
       this.device = device;
       this.generation += 1;
-      this.retryCount = 0;
       this.transition(GPU_LIFECYCLE_STATES.READY);
       this.watchDeviceLoss(device, requestDevice, this.generation);
       return device;

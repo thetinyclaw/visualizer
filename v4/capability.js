@@ -32,7 +32,7 @@ function hasReducedLimits(adapter) {
     (limits.maxStorageBufferBindingSize || 0) >= REDUCED_WEBGPU_LIMITS.minStorageBufferBindingSize;
 }
 
-export async function probeRenderer({ navigatorObject = globalThis.navigator, canvas = null } = {}) {
+export async function probeRenderer({ navigatorObject = globalThis.navigator, canvas = null, fallbackCanvas = null } = {}) {
   const result = {
     mode: RENDERER_MODES.WEBGL2_LEGACY,
     webgpu: null,
@@ -52,6 +52,7 @@ export async function probeRenderer({ navigatorObject = globalThis.navigator, ca
         result.webgpu = {
           adapter,
           device,
+          requiredFeatures,
           fullFeatures,
           limits: adapter.limits,
         };
@@ -65,8 +66,10 @@ export async function probeRenderer({ navigatorObject = globalThis.navigator, ca
     result.errors.push(publicError('webgpu-unavailable', 'WebGPU is not available in this browser.'));
   }
 
-  if (canvas && typeof canvas.getContext === 'function') {
-    const gl2 = canvas.getContext('webgl2', { antialias: false, alpha: false });
+  const webglCanvas = fallbackCanvas || canvas;
+  if (webglCanvas && typeof webglCanvas.getContext === 'function') {
+    // Prefer a separate fallbackCanvas so canvas.getContext('webgl2') does not prevent later 2D status drawing on the visible canvas.
+    const gl2 = webglCanvas.getContext('webgl2', { antialias: false, alpha: false });
     result.webgl2 = gl2 ? { context: gl2 } : null;
     if (!gl2) result.errors.push(publicError('webgl2-unavailable', 'WebGL2 legacy renderer is unavailable.'));
   }

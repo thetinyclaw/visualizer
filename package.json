@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "scripts": {
+    "test:v4-runtime": "node scripts/verify_v4_runtime_behavior.mjs"
+  }
+}

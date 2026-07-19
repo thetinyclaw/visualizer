@@ -14,7 +14,7 @@ export function storageBuffer(id, byteLength, usage = 'read-write') {
 }
 
 export function pingPongState(id, descriptor) {
-  return Object.freeze({ type: 'ping-pong-state', id, current: `${id}:a`, next: `${id}:b`, descriptor });
+  return Object.freeze({ type: 'ping-pong-state', id, current: `${id}-a`, next: `${id}-b`, descriptor });
 }
 
 export function instancedDepthTarget(id, { format = 'depth24plus', instances = 1 } = {}) {
@@ -29,8 +29,8 @@ export function boundedVolumePass(id, { pipeline, bounds, depthTarget, inputs = 
   return Object.freeze({ kind: PASS_KINDS.VOLUME, id, pipeline, bounds, depthTarget, inputs, outputs });
 }
 
-export function feedbackPass(id, { source, history, blend = 0.92 }) {
-  return Object.freeze({ kind: PASS_KINDS.FEEDBACK, id, source, history, blend });
+export function feedbackPass(id, { source, history, output, blend = 0.92 }) {
+  return Object.freeze({ kind: PASS_KINDS.FEEDBACK, id, source, history, output, blend });
 }
 
 export function postPass(id, { pipeline, inputs = [], output }) {
@@ -60,17 +60,72 @@ export class RenderGraph {
 
   validate() {
     const errors = [];
-    const resourceIds = new Set(this.resources.map((resource) => resource.id));
+    const resourceIds = new Set();
+    for (const resource of this.resources) {
+      if (!resource || typeof resource.id !== 'string' || resource.id.length === 0) {
+        errors.push('resource id is required');
+        continue;
+      }
+      if (resourceIds.has(resource.id)) errors.push(`duplicate resource id: ${resource.id}`);
+      resourceIds.add(resource.id);
+      if (resource.type === 'ping-pong-state') {
+        for (const ref of [resource.current, resource.next]) {
+          if (!resourceIds.has(ref) && !this.resources.some((candidate) => candidate.id === ref)) errors.push(`ping-pong resource ${resource.id} references missing buffer ${ref}`);
+        }
+      }
+    }
     const passIds = new Set();
+    const hasResource = (id) => id === 'swapchain' || resourceIds.has(id);
+    const requireResource = (pass, field, id) => {
+      if (typeof id !== 'string' || id.length === 0) {
+        errors.push(`pass ${pass.id} requires ${field}`);
+      } else if (!hasResource(id)) {
+        errors.push(`pass ${pass.id} references missing ${field} ${id}`);
+      }
+    };
+    const requireResourceList = (pass, field, ids, { allowEmpty = false } = {}) => {
+      if (!Array.isArray(ids) || (!allowEmpty && ids.length === 0)) {
+        errors.push(`pass ${pass.id} requires ${field}`);
+        return;
+      }
+      for (const id of ids) requireResource(pass, field, id);
+    };
     for (const pass of this.passes) {
+      if (!pass || typeof pass.id !== 'string' || pass.id.length === 0) {
+        errors.push('pass id is required');
+        continue;
+      }
       if (passIds.has(pass.id)) errors.push(`duplicate pass id: ${pass.id}`);
       passIds.add(pass.id);
       if (!Object.values(PASS_KINDS).includes(pass.kind)) errors.push(`invalid pass kind: ${pass.kind}`);
-      for (const input of pass.inputs || []) {
-        if (!resourceIds.has(input)) errors.push(`pass ${pass.id} references missing input ${input}`);
-      }
-      for (const output of pass.outputs || []) {
-        if (output !== 'swapchain' && !resourceIds.has(output)) errors.push(`pass ${pass.id} references missing output ${output}`);
+      requireResourceList(pass, 'input', pass.inputs || [], { allowEmpty: true });
+      requireResourceList(pass, 'output', pass.outputs || [], { allowEmpty: true });
+      switch (pass.kind) {
+        case PASS_KINDS.COMPUTE:
+          if (typeof pass.pipeline !== 'string' || pass.pipeline.length === 0) errors.push(`pass ${pass.id} requires pipeline`);
+          break;
+        case PASS_KINDS.VOLUME:
+          if (typeof pass.pipeline !== 'string' || pass.pipeline.length === 0) errors.push(`pass ${pass.id} requires pipeline`);
+          if (!Array.isArray(pass.bounds) || pass.bounds.length !== 6 || pass.bounds.some((value) => typeof value !== 'number')) errors.push(`pass ${pass.id} requires six numeric bounds`);
+          requireResource(pass, 'depthTarget', pass.depthTarget);
+          requireResourceList(pass, 'output', pass.outputs);
+          break;
+        case PASS_KINDS.FEEDBACK:
+          requireResource(pass, 'source', pass.source);
+          requireResource(pass, 'history', pass.history);
+          requireResource(pass, 'output', pass.output);
+          break;
+        case PASS_KINDS.POST:
+          if (typeof pass.pipeline !== 'string' || pass.pipeline.length === 0) errors.push(`pass ${pass.id} requires pipeline`);
+          requireResourceList(pass, 'input', pass.inputs);
+          requireResource(pass, 'output', pass.output);
+          break;
+        case PASS_KINDS.COMPOSITE:
+          requireResourceList(pass, 'layer', pass.layers);
+          requireResource(pass, 'output', pass.output || 'swapchain');
+          break;
+        default:
+          break;
       }
     }
     return { ok: errors.length === 0, errors };
@@ -97,7 +152,7 @@ export function makeSceneGraphFoundation(sceneId) {
     .addResource(storageBuffer('post-color', 1920 * 1080 * 4, 'render-target'))
     .addPass(computePass('simulate', { pipeline: 'scene-simulate', inputs: ['audio-features', 'particle-state-a'], outputs: ['particle-state-b'], workgroups: [16, 1, 1] }))
     .addPass(boundedVolumePass('volume', { pipeline: 'scene-volume', bounds: [-1, -1, -1, 1, 1, 1], depthTarget: 'scene-depth', inputs: ['particle-state-b'], outputs: ['scene-depth'] }))
-    .addPass(feedbackPass('feedback', { source: 'scene-depth', history: 'particle-state' }))
+    .addPass(feedbackPass('feedback', { source: 'scene-depth', history: 'particle-state', output: 'post-color' }))
     .addPass(postPass('post', { pipeline: 'bloom-tonemap', inputs: ['scene-depth'], output: 'post-color' }))
     .addPass(compositePass('composite', { layers: ['post-color'], transition: 'crossfade', output: 'swapchain' }));
 }

@@ -4,31 +4,57 @@ import { AudioFeatureBus } from './audio-feature-bus.js';
 import { assertSceneManifest } from './scene-manifest.js';
 import { makeSceneGraphFoundation } from './render-graph.js';
 
-export async function startV4Runtime({ canvas, statusElement, manifest, navigatorObject = globalThis.navigator } = {}) {
+export async function startV4Runtime({
+  canvas,
+  statusElement,
+  manifest,
+  navigatorObject = globalThis.navigator,
+  gpuLifecycleOptions = {},
+  createFallbackCanvas = () => {
+    if (typeof OffscreenCanvas === 'function') return new OffscreenCanvas(1, 1);
+    if (globalThis.document && typeof globalThis.document.createElement === 'function') return globalThis.document.createElement('canvas');
+    return null;
+  },
+} = {}) {
   const safeManifest = assertSceneManifest(manifest);
-  const probe = await probeRenderer({ navigatorObject, canvas });
+  const fallbackCanvas = createFallbackCanvas ? createFallbackCanvas() : null;
+  const probe = await probeRenderer({ navigatorObject, canvas, fallbackCanvas });
   const audioBus = new AudioFeatureBus();
   const graph = makeSceneGraphFoundation(safeManifest.id).freeze();
   const lifecycle = new GpuLifecycle({
+    ...gpuLifecycleOptions,
     onStateChange: (event) => {
       if (statusElement) statusElement.dataset.gpuState = event.state;
+      if (typeof gpuLifecycleOptions.onStateChange === 'function') gpuLifecycleOptions.onStateChange(event);
     },
   });
 
-  if (probe.webgpu && probe.webgpu.device) {
-    lifecycle.device = probe.webgpu.device;
-    lifecycle.generation = 1;
-    lifecycle.transition('ready');
+  let selectedMode = probe.mode;
+  const publicErrors = [...probe.errors];
+  if (probe.webgpu && probe.webgpu.device && probe.webgpu.adapter) {
+    let adoptingProbedDevice = true;
+    const requestDevice = async () => {
+      if (adoptingProbedDevice) {
+        adoptingProbedDevice = false;
+        return probe.webgpu.device;
+      }
+      return probe.webgpu.adapter.requestDevice({ requiredFeatures: probe.webgpu.requiredFeatures || [] });
+    };
+    const acquiredDevice = await lifecycle.acquire(requestDevice);
+    if (!acquiredDevice) {
+      selectedMode = RENDERER_MODES.WEBGL2_LEGACY;
+      publicErrors.push(Object.freeze({ code: 'gpu-device-request-failed', message: 'GPU lifecycle could not acquire a device; falling back safely.' }));
+    }
   }
 
   const runtime = Object.freeze({
-    mode: probe.mode,
-    modeLabel: describeRendererMode(probe.mode),
+    mode: selectedMode,
+    modeLabel: describeRendererMode(selectedMode),
     manifest: safeManifest,
     graph,
     audioBus,
     lifecycle,
-    publicErrors: probe.errors,
+    publicErrors,
   });
 
   if (statusElement) {
