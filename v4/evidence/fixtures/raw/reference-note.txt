@@ -1,0 +1,1 @@
+Immutable fixture reference placeholder for Visualizer v4 evidence tooling tests. This is not live telemetry and not source media; it exercises provenance hashing only.

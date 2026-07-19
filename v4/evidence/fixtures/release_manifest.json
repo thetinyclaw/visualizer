@@ -1,0 +1,39 @@
+{
+  "channels": [
+    {
+      "deployment_action": "read_only_verify_only",
+      "name": "local-preview",
+      "url": "https://localhost:8789/index.html"
+    },
+    {
+      "deployment_action": "none",
+      "name": "production",
+      "url": "https://example.invalid/visualizer/"
+    }
+  ],
+  "https_verification_checklist": [
+    {
+      "command": "curl -I --fail --silent --show-error https://example.invalid/visualizer/",
+      "name": "headers",
+      "read_only": true
+    },
+    {
+      "command": "curl --fail --silent --show-error https://example.invalid/visualizer/index.html >/dev/null",
+      "name": "main-page",
+      "read_only": true
+    }
+  ],
+  "human_decision": {
+    "approver_id": "human:visual-director",
+    "autonomous": false,
+    "decided_at": "2026-07-18T21:30:00Z",
+    "statement": "Fixture evidence pack is approved for tooling validation only; no live capture is claimed.",
+    "status": "approved"
+  },
+  "release_id": "fixture-v4-release-candidate",
+  "release_manifest_version": "1.0",
+  "rollback": {
+    "operator_instructions": "Repoint the static host to previous-known-good only after explicit human operator approval; this tool performs no deployment.",
+    "previous_release_id": "previous-known-good"
+  }
+}

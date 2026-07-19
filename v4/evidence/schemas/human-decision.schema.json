@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tinyclaw.local/visualizer/v4/human-decision.schema.json",
+  "title": "Non-bypassable human decision",
+  "type": "object",
+  "required": ["status", "approver_id", "statement", "decided_at", "autonomous"],
+  "properties": {
+    "status": {"enum": ["approved", "rejected", "revise", "branch", "discard"]},
+    "approver_id": {"type": "string", "minLength": 1},
+    "statement": {"type": "string", "minLength": 1},
+    "decided_at": {"type": "string", "format": "date-time"},
+    "autonomous": {"const": false}
+  }
+}

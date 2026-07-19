@@ -1,0 +1,91 @@
+{
+  "camera": {
+    "evidence": [
+      "chronological frames preserve viewpoint",
+      "motion belongs to strands and light pressure"
+    ],
+    "summary": "Stationary camera with subtle pressure breathing instead of large pans."
+  },
+  "effect_id": "fixture-filament-vortex",
+  "human_decision": {
+    "approver_id": "human:visual-director",
+    "autonomous": false,
+    "decided_at": "2026-07-18T21:30:00Z",
+    "statement": "Recipe is complete enough for schema validation; production acceptance remains pending.",
+    "status": "revise"
+  },
+  "layers": {
+    "evidence": [
+      "at least five conceptual render layers",
+      "foreground glints do not replace topology"
+    ],
+    "summary": "Background nebula, main rim bundles, secondary hair, glints, and grain."
+  },
+  "lighting": {
+    "evidence": [
+      "lighting follows aperture pressure",
+      "edge highlights preserve volume cues"
+    ],
+    "summary": "Central source leak plus rim highlights."
+  },
+  "material": {
+    "evidence": [
+      "procedural material, no source pixels",
+      "emission and smoke are separated"
+    ],
+    "summary": "Iridescent plasma-fiber material with smoky depth falloff."
+  },
+  "motion_law": {
+    "evidence": [
+      "bass opens void",
+      "mids thicken bundles",
+      "treble modulates glints"
+    ],
+    "summary": "Audio-reactive curl and aperture pressure, deterministic by seed."
+  },
+  "occupancy": {
+    "evidence": [
+      "no blank half-frame",
+      "center void is intentional negative space"
+    ],
+    "summary": "High occupancy around rim and diagonals; controlled negative space in center."
+  },
+  "originality": {
+    "evidence": [
+      "no source frames embedded",
+      "no exact layout copied"
+    ],
+    "exact_layout_copied": false,
+    "source_pixels_embedded": false,
+    "summary": "Reference grammar is abstracted into original procedural geometry.",
+    "transformation_summary": "Preserve topology/material/motion grammar while changing incidental geometry, timing, and all pixels."
+  },
+  "projection": {
+    "evidence": [
+      "center-origin angular coordinates",
+      "radial scale compression toward aperture"
+    ],
+    "summary": "Camera-facing log-polar projection with implied depth through bundle overlap."
+  },
+  "recipe_version": "1.0",
+  "silhouette": {
+    "evidence": [
+      "void occupies stable center",
+      "filament rim breaks outline asymmetrically"
+    ],
+    "summary": "Dark central void ringed by dense luminous hair-like filaments."
+  },
+  "temporal_arc": {
+    "evidence": [
+      "chronological sheet compares geometry, illumination, and camera separately"
+    ],
+    "summary": "Breathing reveal from compressed aperture to expanded strand field and back."
+  },
+  "topology": {
+    "evidence": [
+      "thumbnail silhouette remains aperture-dominant",
+      "strand continuity is the primary topology"
+    ],
+    "summary": "Central aperture with continuous filament bundles and nested strand fields."
+  }
+}

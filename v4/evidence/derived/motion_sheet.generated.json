@@ -1,0 +1,72 @@
+{
+  "capture_claim": "fixture_scaffold_only_no_browser_capture_performed",
+  "chronological_sheet": [
+    {
+      "camera_motion": null,
+      "delta_ms": 500,
+      "from_frame": 0,
+      "geometry_motion": null,
+      "illumination_motion": null,
+      "motion_observation": "pending_human_review",
+      "to_frame": 30
+    },
+    {
+      "camera_motion": null,
+      "delta_ms": 500,
+      "from_frame": 30,
+      "geometry_motion": null,
+      "illumination_motion": null,
+      "motion_observation": "pending_human_review",
+      "to_frame": 60
+    },
+    {
+      "camera_motion": null,
+      "delta_ms": 983.3,
+      "from_frame": 60,
+      "geometry_motion": null,
+      "illumination_motion": null,
+      "motion_observation": "pending_human_review",
+      "to_frame": 119
+    }
+  ],
+  "dpr": 1.0,
+  "effect_id": "fixture-filament-vortex",
+  "generated_at": "2026-07-19T04:08:58.282336Z",
+  "motion_sheet_version": "1.0",
+  "route": "http://127.0.0.1:8789/candidates/filament-vortex.html?benchmark=1",
+  "seed": 491009,
+  "spatial_sheet": [
+    {
+      "capture_path": null,
+      "frame_index": 0,
+      "role": "opening_topology",
+      "status": "pending_real_capture",
+      "time_ms": 0
+    },
+    {
+      "capture_path": null,
+      "frame_index": 30,
+      "role": "aperture_pressure",
+      "status": "pending_real_capture",
+      "time_ms": 500
+    },
+    {
+      "capture_path": null,
+      "frame_index": 60,
+      "role": "strand_continuity",
+      "status": "pending_real_capture",
+      "time_ms": 1000
+    },
+    {
+      "capture_path": null,
+      "frame_index": 119,
+      "role": "closing_arc",
+      "status": "pending_real_capture",
+      "time_ms": 1983.3
+    }
+  ],
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  }
+}

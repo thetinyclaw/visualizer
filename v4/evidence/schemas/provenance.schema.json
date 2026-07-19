@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tinyclaw.local/visualizer/v4/provenance.schema.json",
+  "title": "Visualizer v4 Provenance Manifest",
+  "type": "object",
+  "required": ["manifest_version", "effect_id", "created_at", "sources", "derived_outputs", "human_decision"],
+  "properties": {
+    "manifest_version": {"type": "string"},
+    "effect_id": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "format": "date-time"},
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "immutable_path", "sha256", "rights", "allowed_transformations"],
+        "properties": {
+          "id": {"type": "string"},
+          "immutable_path": {"type": "string", "description": "Repo-relative raw evidence path; never derived output."},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "rights": {
+            "type": "object",
+            "required": ["status", "evidence"],
+            "properties": {
+              "status": {"enum": ["owned", "licensed", "permission_granted", "public_domain", "internal_reference_only"]},
+              "evidence": {"type": "string"}
+            }
+          },
+          "allowed_transformations": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "not": {"enum": ["embed_source_frame", "copy_pixels", "trace_exact_layout", "use_watermark"]}}
+          },
+          "human_notes": {"type": "string"}
+        }
+      }
+    },
+    "derived_outputs": {"type": "array", "items": {"type": "string"}},
+    "human_decision": {"$ref": "human-decision.schema.json"}
+  }
+}

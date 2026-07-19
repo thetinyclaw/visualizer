@@ -91,7 +91,17 @@ Example benchmark route: `candidates/filament-vortex.html?benchmark=1&seed=49100
 
 ```bash
 python3 scripts/verify_visualizer.py
+python3 scripts/verify_candidates.py
+python3 -m unittest tests/test_v4_evidence.py
+python3 v4/tools/visualizer_v4_evidence.py verify-all
 ```
+
+The v4 evidence tooling under `v4/evidence/` adds provenance, scene-recipe,
+deterministic capture-spec, motion-sheet, benchmark-report, Gate 1/2/3,
+candidate-factory, release manifest, rollback, and read-only HTTPS verification
+scaffolding. It is fail-closed for missing human approval, DPR below `1.0`,
+benchmark samples below 120 frames, ambiguous telemetry labels, and autonomous
+self-merge paths.
 
 For a full-density mirrored forward/reverse performance run, open:
 

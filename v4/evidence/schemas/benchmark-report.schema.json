@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tinyclaw.local/visualizer/v4/benchmark-report.schema.json",
+  "title": "Visualizer v4 benchmark report",
+  "type": "object",
+  "required": ["benchmark_schema_version", "effect_id", "seed", "viewport", "dpr", "effective_density", "frame_samples", "summary", "gpu_timing", "memory", "browser", "console_logs", "device_logs"],
+  "properties": {
+    "benchmark_schema_version": {"type": "string"},
+    "effect_id": {"type": "string"},
+    "seed": {"type": "integer"},
+    "viewport": {"type": "object"},
+    "dpr": {"type": "number", "minimum": 1},
+    "effective_density": {"type": "object", "required": ["x", "y"], "properties": {"x": {"type": "number", "minimum": 1}, "y": {"type": "number", "minimum": 1}}},
+    "frame_samples": {"type": "array", "minItems": 120, "items": {"type": "object", "required": ["frame_index", "frame_ms"], "properties": {"frame_index": {"type": "integer"}, "frame_ms": {"type": "number", "exclusiveMinimum": 0}}}},
+    "summary": {"type": "object", "required": ["p50_frame_ms", "p95_frame_ms"]},
+    "gpu_timing": {"type": "object", "description": "Real measurement or null with unknown_reason; never fake labels."},
+    "memory": {"type": "object", "description": "Memory telemetry values are numeric or null/unknown, never fabricated."},
+    "browser": {"type": "object"},
+    "console_logs": {"type": "array"},
+    "device_logs": {"type": "array"}
+  }
+}

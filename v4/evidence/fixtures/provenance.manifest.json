@@ -1,0 +1,33 @@
+{
+  "created_at": "2026-07-18T21:30:00Z",
+  "derived_outputs": [
+    "v4/evidence/derived/motion_sheet.generated.json"
+  ],
+  "effect_id": "fixture-filament-vortex",
+  "human_decision": {
+    "approver_id": "human:visual-director",
+    "autonomous": false,
+    "decided_at": "2026-07-18T21:30:00Z",
+    "statement": "Recipe is complete enough for schema validation; production acceptance remains pending.",
+    "status": "revise"
+  },
+  "manifest_version": "1.0",
+  "sources": [
+    {
+      "allowed_transformations": [
+        "topology_abstraction",
+        "motion_law_abstraction",
+        "material_reinterpretation",
+        "original_procedural_generation"
+      ],
+      "human_notes": "Raw evidence path is immutable; derived reports are written outside raw/.",
+      "id": "fixture-reference-note",
+      "immutable_path": "v4/evidence/fixtures/raw/reference-note.txt",
+      "rights": {
+        "evidence": "Repository-local fixture text created for verifier tests.",
+        "status": "owned"
+      },
+      "sha256": "7913776c56a5d529f6f971d456b66af7de1abd4f2d14de532a32c4d334d5f33b"
+    }
+  ]
+}

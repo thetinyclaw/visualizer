@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tinyclaw.local/visualizer/v4/scene-recipe.schema.json",
+  "title": "Reference Decomposition and Scene Recipe",
+  "type": "object",
+  "required": ["recipe_version", "effect_id", "topology", "projection", "silhouette", "occupancy", "camera", "layers", "motion_law", "material", "lighting", "temporal_arc", "originality", "human_decision"],
+  "$defs": {
+    "section": {
+      "type": "object",
+      "required": ["summary", "evidence"],
+      "properties": {
+        "summary": {"type": "string", "minLength": 1},
+        "evidence": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    }
+  },
+  "properties": {
+    "recipe_version": {"type": "string"},
+    "effect_id": {"type": "string"},
+    "topology": {"$ref": "#/$defs/section"},
+    "projection": {"$ref": "#/$defs/section"},
+    "silhouette": {"$ref": "#/$defs/section"},
+    "occupancy": {"$ref": "#/$defs/section"},
+    "camera": {"$ref": "#/$defs/section"},
+    "layers": {"$ref": "#/$defs/section"},
+    "motion_law": {"$ref": "#/$defs/section"},
+    "material": {"$ref": "#/$defs/section"},
+    "lighting": {"$ref": "#/$defs/section"},
+    "temporal_arc": {"$ref": "#/$defs/section"},
+    "originality": {
+      "allOf": [{"$ref": "#/$defs/section"}],
+      "properties": {
+        "source_pixels_embedded": {"const": false},
+        "exact_layout_copied": {"const": false},
+        "transformation_summary": {"type": "string", "minLength": 1}
+      },
+      "required": ["source_pixels_embedded", "exact_layout_copied", "transformation_summary"]
+    },
+    "human_decision": {"$ref": "human-decision.schema.json"}
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tinyclaw.local/visualizer/v4/gates-factory-release.schema.json",
+  "title": "Gate, candidate factory, and release metadata schemas",
+  "$defs": {
+    "target_device": {"type": "object", "required": ["id", "minimum_dpr", "minimum_frame_samples"], "properties": {"id": {"type": "string"}, "minimum_dpr": {"type": "number", "minimum": 1}, "minimum_frame_samples": {"type": "integer", "minimum": 120}}},
+    "factory_state": {"enum": ["ingested_reference", "brief_created", "prototype_isolated", "motion_sheets_created", "checks_passed", "awaiting_human_approval", "approved_for_release", "rejected", "discarded", "branched_for_learning"]}
+  },
+  "oneOf": [
+    {
+      "title": "Gate manifest",
+      "type": "object",
+      "required": ["gate_manifest_version", "autonomous_self_merge", "production_merge_action", "target_device_matrix", "gates"],
+      "properties": {
+        "autonomous_self_merge": {"const": false},
+        "production_merge_action": {"enum": ["none", null]},
+        "target_device_matrix": {"type": "object", "required": ["devices"], "properties": {"devices": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/target_device"}}}},
+        "gates": {"type": "object", "required": ["gate_1", "gate_2", "gate_3"]}
+      }
+    },
+    {
+      "title": "Candidate factory state",
+      "type": "object",
+      "required": ["factory_schema_version", "candidate_id", "state", "production_merge_action", "transitions"],
+      "properties": {
+        "state": {"$ref": "#/$defs/factory_state"},
+        "production_merge_action": {"enum": ["none", null]},
+        "transitions": {"type": "array", "minItems": 1}
+      }
+    },
+    {
+      "title": "Release manifest",
+      "type": "object",
+      "required": ["release_manifest_version", "release_id", "channels", "rollback", "https_verification_checklist", "human_decision"],
+      "properties": {
+        "channels": {"type": "array", "minItems": 1},
+        "rollback": {"type": "object"},
+        "https_verification_checklist": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["read_only", "command"], "properties": {"read_only": {"const": true}, "command": {"type": "string"}}}}
+      }
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "autonomous_self_merge": false,
+  "effect_id": "fixture-filament-vortex",
+  "gate_manifest_version": "1.0",
+  "gates": {
+    "gate_1": {
+      "evidence": [
+        "v4/evidence/fixtures/provenance.manifest.json",
+        "v4/evidence/fixtures/scene_recipe.json",
+        "v4/evidence/fixtures/benchmark_report.json"
+      ],
+      "human_decision": {
+        "approver_id": "human:visual-director",
+        "autonomous": false,
+        "decided_at": "2026-07-18T21:30:00Z",
+        "statement": "Fixture evidence pack is approved for tooling validation only; no live capture is claimed.",
+        "status": "approved"
+      },
+      "passed": true
+    },
+    "gate_2": {
+      "evidence": [
+        "v4/evidence/fixtures/provenance.manifest.json",
+        "v4/evidence/fixtures/scene_recipe.json",
+        "v4/evidence/fixtures/benchmark_report.json"
+      ],
+      "human_decision": {
+        "approver_id": "human:visual-director",
+        "autonomous": false,
+        "decided_at": "2026-07-18T21:30:00Z",
+        "statement": "Fixture evidence pack is approved for tooling validation only; no live capture is claimed.",
+        "status": "approved"
+      },
+      "passed": true
+    },
+    "gate_3": {
+      "evidence": [
+        "v4/evidence/fixtures/provenance.manifest.json",
+        "v4/evidence/fixtures/scene_recipe.json",
+        "v4/evidence/fixtures/benchmark_report.json"
+      ],
+      "human_decision": {
+        "approver_id": "human:visual-director",
+        "autonomous": false,
+        "decided_at": "2026-07-18T21:30:00Z",
+        "statement": "Fixture evidence pack is approved for tooling validation only; no live capture is claimed.",
+        "status": "approved"
+      },
+      "passed": true
+    }
+  },
+  "production_merge_action": "none",
+  "target_device_matrix": {
+    "devices": [
+      {
+        "browser": "Safari/Chrome local",
+        "fps_floor": 30,
+        "id": "target-mac-local",
+        "minimum_dpr": 1.0,
+        "minimum_frame_samples": 120
+      },
+      {
+        "browser": "TV HTTPS browser",
+        "fps_floor": 30,
+        "id": "tv-secure-route",
+        "minimum_dpr": 1.0,
+        "minimum_frame_samples": 120
+      }
+    ],
+    "matrix_version": "1.0"
+  }
+}

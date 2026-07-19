@@ -1,0 +1,50 @@
+{
+  "candidate_id": "fixture-filament-vortex",
+  "factory_schema_version": "1.0",
+  "production_merge_action": "none",
+  "state": "awaiting_human_approval",
+  "transitions": [
+    {
+      "actor": "tool:ingest-approved-local-reference",
+      "at": "2026-07-18T21:30:00Z",
+      "from": null,
+      "notes": "Approved local provenance loaded.",
+      "to": "ingested_reference"
+    },
+    {
+      "actor": "tool:create-brief",
+      "at": "2026-07-18T21:30:00Z",
+      "from": "ingested_reference",
+      "notes": "Topology/camera/material brief linked.",
+      "to": "brief_created"
+    },
+    {
+      "actor": "tool:create-isolated-prototype",
+      "at": "2026-07-18T21:30:00Z",
+      "from": "brief_created",
+      "notes": "Prototype remains outside production merge path.",
+      "to": "prototype_isolated"
+    },
+    {
+      "actor": "tool:generate-motion-sheets",
+      "at": "2026-07-18T21:30:00Z",
+      "from": "prototype_isolated",
+      "notes": "Fixture scaffold only; no capture claimed.",
+      "to": "motion_sheets_created"
+    },
+    {
+      "actor": "tool:run-checks",
+      "at": "2026-07-18T21:30:00Z",
+      "from": "motion_sheets_created",
+      "notes": "Local validators passed.",
+      "to": "checks_passed"
+    },
+    {
+      "actor": "tool:present-evidence",
+      "at": "2026-07-18T21:30:00Z",
+      "from": "checks_passed",
+      "notes": "Terminal human decision required before release.",
+      "to": "awaiting_human_approval"
+    }
+  ]
+}

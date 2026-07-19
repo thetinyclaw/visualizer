@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tinyclaw.local/visualizer/v4/capture-and-motion.schema.json",
+  "title": "Deterministic local capture spec and paired motion sheets",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["capture_spec_version", "effect_id", "route", "seed", "viewport", "dpr", "browser_automation", "frames"],
+      "properties": {
+        "capture_spec_version": {"type": "string"},
+        "effect_id": {"type": "string"},
+        "route": {"type": "string", "description": "Must be localhost/127.0.0.1/file/repo-relative; enforced by Python validator."},
+        "seed": {"type": "integer"},
+        "viewport": {"type": "object", "required": ["width", "height"], "properties": {"width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1}}},
+        "dpr": {"type": "number", "minimum": 1},
+        "browser_automation": {"enum": ["playwright", "manual_command", "fixture_only"]},
+        "frames": {"type": "array", "minItems": 2, "items": {"type": "object", "required": ["index", "time_ms"], "properties": {"index": {"type": "integer", "minimum": 0}, "time_ms": {"type": "number", "minimum": 0}, "role": {"type": "string"}}}}
+      }
+    },
+    {
+      "type": "object",
+      "required": ["motion_sheet_version", "effect_id", "route", "seed", "viewport", "dpr", "spatial_sheet", "chronological_sheet", "capture_claim"],
+      "properties": {
+        "motion_sheet_version": {"type": "string"},
+        "capture_claim": {"enum": ["fixture_scaffold_only_no_browser_capture_performed", "real_browser_capture_completed"]},
+        "spatial_sheet": {"type": "array", "minItems": 2},
+        "chronological_sheet": {"type": "array", "minItems": 1}
+      }
+    }
+  ]
+}
