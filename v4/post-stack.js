@@ -4,6 +4,36 @@ const FRAGMENT_STAGE = globalThis.GPUShaderStage?.FRAGMENT ?? 0x2;
 
 export const BOUNDED_BLOOM_TAP_COUNT = 9;
 export const BOUNDED_CHROMATIC_MAX_TEXELS = 1.25;
+export const BOUNDED_TRAIL_DECAY_MAX = 0.94;
+
+export const BOUNDED_TRAIL_WGSL = /* wgsl */ `
+struct FullscreenOut {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+};
+struct TrailSettings { decay: f32, reset: f32, clampMax: f32, padding: f32 };
+@group(0) @binding(0) var trailSampler: sampler;
+@group(0) @binding(1) var currentTexture: texture_2d<f32>;
+@group(0) @binding(2) var previousTexture: texture_2d<f32>;
+@group(0) @binding(3) var<uniform> settings: TrailSettings;
+
+@vertex fn trailVs(@builtin(vertex_index) vertexIndex: u32) -> FullscreenOut {
+  var positions = array<vec2f, 3>(vec2f(-1.0, -3.0), vec2f(3.0, 1.0), vec2f(-1.0, 1.0));
+  let p = positions[vertexIndex];
+  var out: FullscreenOut;
+  out.position = vec4f(p, 0.0, 1.0);
+  out.uv = p * vec2f(0.5, -0.5) + vec2f(0.5);
+  return out;
+}
+
+@fragment fn trailFs(in: FullscreenOut) -> @location(0) vec4f {
+  let current = textureSample(currentTexture, trailSampler, in.uv).rgb;
+  let previous = textureSample(previousTexture, trailSampler, in.uv).rgb;
+  let decay = clamp(settings.decay, 0.0, ${BOUNDED_TRAIL_DECAY_MAX.toFixed(2)});
+  let trailed = min(max(current, previous * decay), vec3f(max(settings.clampMax, 0.0)));
+  return vec4f(select(trailed, current, settings.reset > 0.5), 1.0);
+}
+`;
 
 export const BOUNDED_POST_WGSL = /* wgsl */ `
 struct FullscreenOut {
@@ -94,6 +124,30 @@ export function createBoundedPostPipeline({ device, format = 'bgra8unorm' } = {}
     layout,
     vertex: { module: shader, entryPoint: 'fullscreenVs' },
     fragment: { module: shader, entryPoint: 'postFs', targets: [{ format }] },
+    primitive: { topology: 'triangle-list' },
+  });
+}
+
+export function createBoundedTrailPipeline({ device, format = 'bgra8unorm' } = {}) {
+  if (!device || typeof device.createShaderModule !== 'function' || typeof device.createRenderPipeline !== 'function') {
+    throw new TypeError('createBoundedTrailPipeline requires a GPUDevice-compatible object.');
+  }
+  const shader = device.createShaderModule({ label: 'v4-bounded-history-trails-wgsl', code: BOUNDED_TRAIL_WGSL });
+  const bindGroupLayout = device.createBindGroupLayout({
+    label: 'v4-bounded-history-trails-layout',
+    entries: [
+      { binding: 0, visibility: FRAGMENT_STAGE, sampler: { type: 'filtering' } },
+      { binding: 1, visibility: FRAGMENT_STAGE, texture: { sampleType: 'float', viewDimension: '2d' } },
+      { binding: 2, visibility: FRAGMENT_STAGE, texture: { sampleType: 'float', viewDimension: '2d' } },
+      { binding: 3, visibility: FRAGMENT_STAGE, buffer: { type: 'uniform' } },
+    ],
+  });
+  const layout = device.createPipelineLayout({ label: 'v4-bounded-history-trails-pipeline-layout', bindGroupLayouts: [bindGroupLayout] });
+  return device.createRenderPipeline({
+    label: 'v4-bounded-history-trails-pipeline',
+    layout,
+    vertex: { module: shader, entryPoint: 'trailVs' },
+    fragment: { module: shader, entryPoint: 'trailFs', targets: [{ format }] },
     primitive: { topology: 'triangle-list' },
   });
 }

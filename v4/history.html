@@ -27,12 +27,13 @@
 <script type="module">
 import { startV4Runtime } from './runtime.js';
 import { RenderGraph, renderTarget, historyTarget, renderPass, historyPass, compositePass } from './render-graph.js';
+import { BOUNDED_TRAIL_DECAY_MAX, createBoundedTrailPipeline } from './post-stack.js';
 
 const params = new URLSearchParams(location.search);
 const seed = Number.parseInt(params.get('seed') || '491009', 10) || 491009;
 const lockedTime = params.has('time') ? Number.parseFloat(params.get('time')) : null;
 const locked = Number.isFinite(lockedTime);
-const decay = Math.max(0.60, Math.min(Number.parseFloat(params.get('decay') || '0.88'), 0.94));
+const decay = Math.max(0.60, Math.min(Number.parseFloat(params.get('decay') || '0.88'), BOUNDED_TRAIL_DECAY_MAX));
 const start = performance.now();
 const state = { seed, lockedTime, decay, passKinds: [], history: [], frameSubmitted: false, note: 'Scope: restrained trails/history foundation only; not production bloom parity.' };
 window.__V4_HISTORY_TRAILS__ = state;
@@ -107,21 +108,11 @@ fn hash(v: vec2f) -> f32 { return fract(sin(dot(v, vec2f(127.1, 311.7))) * 43758
 }` });
   const fullscreenModule = device.createShaderModule({ label: 'history-feedback-composite-wgsl', code: `
 struct Out { @builtin(position) position: vec4f, @location(0) uv: vec2f };
-struct Settings { decay: f32, reset: f32, clampMax: f32, _pad: f32 };
 @group(0) @binding(0) var samp: sampler;
 @group(0) @binding(1) var currentTex: texture_2d<f32>;
-@group(0) @binding(2) var previousTex: texture_2d<f32>;
-@group(0) @binding(3) var<uniform> settings: Settings;
 @vertex fn vs(@builtin(vertex_index) i: u32) -> Out {
   var p = array<vec2f, 3>(vec2f(-1.0, -3.0), vec2f(3.0, 1.0), vec2f(-1.0, 1.0));
   var o: Out; let q = p[i]; o.position = vec4f(q, 0.0, 1.0); o.uv = q * vec2f(0.5, -0.5) + vec2f(0.5, 0.5); return o;
-}
-@fragment fn historyFs(in: Out) -> @location(0) vec4f {
-  let current = clamp(textureSample(currentTex, samp, in.uv).rgb, vec3f(0.0), vec3f(1.0));
-  let previous = clamp(textureSample(previousTex, samp, in.uv).rgb, vec3f(0.0), vec3f(settings.clampMax));
-  let carried = select(previous * settings.decay, vec3f(0.0), settings.reset > 0.5);
-  let combined = max(current, carried + current * 0.38);
-  return vec4f(clamp(combined, vec3f(0.0), vec3f(settings.clampMax)), 1.0);
 }
 @fragment fn compositeFs(in: Out) -> @location(0) vec4f {
   let color = textureSample(currentTex, samp, in.uv).rgb;
@@ -131,25 +122,20 @@ struct Settings { decay: f32, reset: f32, clampMax: f32, _pad: f32 };
   const sceneLayout = device.createBindGroupLayout({ label: 'history-scene-layout', entries: [
     { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
   ]});
-  const historyLayout = device.createBindGroupLayout({ label: 'history-feedback-layout', entries: [
-    { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
-    { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
-    { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
-    { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-  ]});
+
   const compositeLayout = device.createBindGroupLayout({ label: 'history-composite-layout', entries: [
     { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
     { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
   ]});
   const scenePipelineLayout = device.createPipelineLayout({ label: 'history-scene-pipeline-layout', bindGroupLayouts: [sceneLayout] });
-  const historyPipelineLayout = device.createPipelineLayout({ label: 'history-feedback-pipeline-layout', bindGroupLayouts: [historyLayout] });
+
   const compositePipelineLayout = device.createPipelineLayout({ label: 'history-composite-pipeline-layout', bindGroupLayouts: [compositeLayout] });
   const scene = device.createRenderPipeline({ label: 'history-scene-pipeline', layout: scenePipelineLayout, vertex: { module: sceneModule, entryPoint: 'vs' }, fragment: { module: sceneModule, entryPoint: 'fs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } });
-  const history = device.createRenderPipeline({ label: 'history-feedback-pipeline', layout: historyPipelineLayout, vertex: { module: fullscreenModule, entryPoint: 'vs' }, fragment: { module: fullscreenModule, entryPoint: 'historyFs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } });
+  const history = createBoundedTrailPipeline({ device, format });
   const composite = device.createRenderPipeline({ label: 'history-composite-pipeline', layout: compositePipelineLayout, vertex: { module: fullscreenModule, entryPoint: 'vs' }, fragment: { module: fullscreenModule, entryPoint: 'compositeFs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } });
   const map = new Map([['trail-scene-pipeline', scene], ['trail-history-pipeline', history], ['trail-composite-pipeline', composite]]);
   map.sceneLayout = sceneLayout;
-  map.historyLayout = historyLayout;
+
   map.compositeLayout = compositeLayout;
   return map;
 }
@@ -178,7 +164,7 @@ function makeExecutors() {
   }],
   ['bind-history-feedback', ({ pass, device, frameContext, graphPass, executor }) => {
     const pipeline = executor.pipelineRegistry.get(graphPass.pipeline);
-    const layout = executor.pipelineRegistry.historyLayout || pipeline.getBindGroupLayout(0);
+    const layout = pipeline.getBindGroupLayout(0);
     const sampler = executor._historySampler || (executor._historySampler = device.createSampler({ label: 'history-feedback-linear', magFilter: 'linear', minFilter: 'linear' }));
     const settings = executor._historySettings || (executor._historySettings = device.createBuffer({ label: 'history-feedback-settings', size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
     settingsArray[0] = graphPass.decay ?? frameContext.history.descriptor.decay;

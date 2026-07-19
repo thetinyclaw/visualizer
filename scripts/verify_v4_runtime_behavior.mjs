@@ -18,7 +18,7 @@ import { createFilamentVortexPipelines, createFilamentVortexExecutors } from '..
 import { createNeonVoxelCloudScene, demoVoxelBands, voxelByteSignature, VOXEL_INSTANCE_COUNT, VOXEL_CONTRACT } from '../v4/scenes/neon-voxel-cloud/geometry.js';
 import { neonVoxelCloudManifest, makeNeonVoxelCloudGraph } from '../v4/scenes/neon-voxel-cloud/manifest.js';
 import { createNeonVoxelCloudExecutors, assertNeonVoxelCloudDescriptorContracts } from '../v4/scenes/neon-voxel-cloud/pipeline.js';
-import { BOUNDED_BLOOM_TAP_COUNT, BOUNDED_CHROMATIC_MAX_TEXELS, BOUNDED_POST_WGSL, createBoundedPostPipeline } from '../v4/post-stack.js';
+import { BOUNDED_BLOOM_TAP_COUNT, BOUNDED_CHROMATIC_MAX_TEXELS, BOUNDED_TRAIL_DECAY_MAX, BOUNDED_POST_WGSL, BOUNDED_TRAIL_WGSL, createBoundedPostPipeline, createBoundedTrailPipeline } from '../v4/post-stack.js';
 
 function deferred() {
   let resolve;
@@ -413,6 +413,23 @@ function testBoundedBloomToneMapPipelineContract() {
   assert.equal(pipeline.descriptor.fragment.entryPoint, 'postFs');
   assert.equal(pipeline.descriptor.fragment.targets[0].format, 'bgra8unorm');
   assert.equal(calls.filter(([kind]) => kind === 'pipeline').length, 1, 'factory creates one reusable fullscreen pipeline');
+}
+
+function testBoundedTrailPipelineContract() {
+  assert.equal(BOUNDED_TRAIL_DECAY_MAX, 0.94, 'trail persistence stays bounded');
+  assert.match(BOUNDED_TRAIL_WGSL, /max\(current, previous \* decay\)/, 'history retains bright motion without recursively adding energy');
+  assert.match(BOUNDED_TRAIL_WGSL, /select\(trailed, current, settings\.reset/, 'first frame and resize can bypass stale history');
+  const calls = [];
+  const device = {
+    createShaderModule(descriptor) { calls.push(['shader', descriptor]); return { descriptor }; },
+    createBindGroupLayout(descriptor) { calls.push(['bind-group-layout', descriptor]); return { descriptor }; },
+    createPipelineLayout(descriptor) { calls.push(['pipeline-layout', descriptor]); return { descriptor }; },
+    createRenderPipeline(descriptor) { calls.push(['pipeline', descriptor]); return { descriptor, getBindGroupLayout: () => ({}) }; },
+  };
+  const pipeline = createBoundedTrailPipeline({ device, format: 'rgba16float' });
+  assert.equal(pipeline.descriptor.fragment.entryPoint, 'trailFs');
+  assert.equal(pipeline.descriptor.fragment.targets[0].format, 'rgba16float');
+  assert.deepEqual(calls.find(([kind]) => kind === 'bind-group-layout')[1].entries.map((entry) => entry.binding), [0, 1, 2, 3]);
 }
 
 async function testResourceManagerAndAssetCache() {
@@ -1616,6 +1633,7 @@ testExecutablePostStackAndCompositeSubmission();
 testExecutableBoundedVolumeSubmission();
 testExecutableTwoLayerCrossfadeComposite();
 testBoundedBloomToneMapPipelineContract();
+testBoundedTrailPipelineContract();
 testExecutorCanvasSizingContracts();
 testExecutorFailsClosed();
 await testRuntimeNoExecutorWhenUnavailableAndFallbackCleanup();

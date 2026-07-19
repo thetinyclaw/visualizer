@@ -39,6 +39,7 @@ runtime = read("runtime.js")
 resources = read("resource-manager.js")
 assets = read("asset-loader.js")
 demo = read("demo.html")
+history = read("history.html")
 
 # Capability probing and deterministic selection.
 require("WEBGPU_FULL: 'webgpu-full'" in capability, "full WebGPU mode missing")
@@ -125,6 +126,8 @@ require("transition: { type: 'crossfade', progress: 0.55 }" in demo and "incomin
 require("BOUNDED_BLOOM_TAP_COUNT = 9" in post_stack and "textureDimensions(sourceTexture)" in post_stack, "bounded native-density bloom kernel missing")
 require("acesToneMap" in post_stack and "linearToSrgb" in post_stack and "createBoundedPostPipeline" in post_stack, "reusable tone-map/output pipeline missing")
 require("BOUNDED_CHROMATIC_MAX_TEXELS = 1.25" in post_stack and "fn chromaticSample" in post_stack and "min(radial * radial, 1.0)" in post_stack, "bounded center-weighted chromatic optics missing")
+require("BOUNDED_TRAIL_DECAY_MAX = 0.94" in post_stack and "createBoundedTrailPipeline" in post_stack and "previous * decay" in post_stack, "reusable bounded history trail pipeline missing")
+require("createBoundedTrailPipeline({ device, format })" in history and "pipeline.getBindGroupLayout(0)" in history, "history route does not execute reusable bounded trail pipeline")
 require("createBoundedPostPipeline({ device, format })" in demo and "bloomTapCount" in demo and "chromaticMaxTexels" in demo, "demo does not execute/export bounded post status")
 require("new WebGpuGraphExecutor" in runtime and "graphExecutor.render(" in runtime, "runtime does not execute the render graph")
 
