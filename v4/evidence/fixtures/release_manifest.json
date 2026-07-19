@@ -18,7 +18,7 @@
       "read_only": true
     },
     {
-      "command": "curl --fail --silent --show-error https://example.invalid/visualizer/index.html >/dev/null",
+      "command": "curl --fail --silent --show-error https://example.invalid/visualizer/index.html",
       "name": "main-page",
       "read_only": true
     }

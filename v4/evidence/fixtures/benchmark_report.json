@@ -1,10 +1,14 @@
 {
+  "artifact_evidence": [
+    "v4/evidence/fixtures/motion_sheet.fixture.json"
+  ],
   "benchmark_schema_version": "1.0",
   "browser": {
     "device": "local verifier fixture",
     "name": "fixture-local-browser",
     "user_agent": "Fixture UA for schema validation; not a performance claim"
   },
+  "captured_at": "2026-07-18T21:30:00Z",
   "console_logs": [],
   "device_logs": [],
   "dpr": 1.0,
@@ -13,6 +17,7 @@
     "x": 1.0,
     "y": 1.0
   },
+  "evidence_kind": "fixture_scaffold",
   "frame_samples": [
     {
       "frame_index": 0,
@@ -514,6 +519,8 @@
       "value": null
     }
   },
+  "route": "http://127.0.0.1:8789/candidates/filament-vortex.html?benchmark=1",
+  "run_id": "fixture-run-filament-vortex-local",
   "seed": 491009,
   "summary": {
     "p50_frame_ms": 17.05,

@@ -3,6 +3,7 @@
   "derived_outputs": [
     "v4/evidence/derived/motion_sheet.generated.json"
   ],
+  "derived_root": "v4/evidence/derived",
   "effect_id": "fixture-filament-vortex",
   "human_decision": {
     "approver_id": "human:visual-director",
@@ -12,6 +13,7 @@
     "status": "revise"
   },
   "manifest_version": "1.0",
+  "raw_root": "v4/evidence/fixtures/raw",
   "sources": [
     {
       "allowed_transformations": [
