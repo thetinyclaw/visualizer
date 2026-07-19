@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Visualizer v4 Launcher</title>
+  <style>
+    :root { color-scheme: dark; --bg:#03050c; --panel:rgba(12,20,38,.78); --line:rgba(126,221,255,.28); --text:#e8fbff; --muted:#9bb3c5; --accent:#80eaff; --warn:#ffd27d; --bad:#ff9fbd; --ok:#92ffc8; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: radial-gradient(circle at 15% 0%, #10213f 0, transparent 34rem), radial-gradient(circle at 100% 8%, #29143d 0, transparent 30rem), var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { min-height: 100vh; }
+    a { color: var(--accent); }
+    a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid rgba(128,234,255,.55); outline-offset: 3px; }
+    .skip { position: absolute; left: -999px; top: 12px; padding: 10px 14px; border-radius: 999px; background: #071627; color: var(--text); z-index: 5; }
+    .skip:focus { left: 12px; }
+    header, main, footer { width: min(1180px, calc(100% - 28px)); margin: 0 auto; }
+    header { padding: 32px 0 18px; display: grid; gap: 16px; }
+    .eyebrow { margin: 0; color: var(--accent); letter-spacing: .18em; text-transform: uppercase; font-size: 12px; font-weight: 800; }
+    h1 { margin: 0; font-size: clamp(2rem, 6vw, 5rem); line-height: .92; letter-spacing: -.06em; }
+    .lede { max-width: 850px; margin: 0; color: var(--muted); line-height: 1.55; font-size: 1rem; }
+    .controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 20px; background: rgba(4,9,18,.58); backdrop-filter: blur(14px); }
+    label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+    input, select { width: 100%; min-height: 42px; border: 1px solid rgba(128,234,255,.28); border-radius: 12px; padding: 9px 11px; color: var(--text); background: rgba(2,6,14,.88); font: inherit; }
+    .lock-note { display: flex; align-items: center; gap: 8px; color: var(--warn); font-size: 13px; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 18px 0; }
+    .card { display: grid; gap: 12px; align-content: start; min-height: 100%; padding: 18px; border: 1px solid var(--line); border-radius: 22px; background: linear-gradient(145deg, rgba(13,24,48,.82), rgba(4,7,16,.9)); box-shadow: 0 22px 80px rgba(0,0,0,.25); }
+    .card h2 { margin: 0; font-size: 1.25rem; }
+    .card p { margin: 0; color: var(--muted); line-height: 1.45; }
+    .badges { display: flex; flex-wrap: wrap; gap: 7px; }
+    .badge { display: inline-flex; align-items: center; min-height: 26px; padding: 4px 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,.16); color: #d9f7ff; background: rgba(255,255,255,.06); font-size: 12px; }
+    .badge.ok { color: var(--ok); border-color: rgba(146,255,200,.28); }
+    .badge.warn { color: var(--warn); border-color: rgba(255,210,125,.28); }
+    .badge.bad { color: var(--bad); border-color: rgba(255,159,189,.32); }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+    .button { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 9px 12px; border-radius: 12px; border: 1px solid rgba(128,234,255,.34); background: rgba(9,30,55,.72); color: var(--text); text-decoration: none; font-weight: 750; }
+    .button.secondary { background: rgba(255,255,255,.05); color: var(--accent); }
+    details { border-top: 1px solid rgba(255,255,255,.10); padding-top: 10px; color: var(--muted); }
+    summary { cursor: pointer; color: var(--text); font-weight: 700; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    pre { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0; padding: 10px; border-radius: 12px; background: rgba(0,0,0,.28); color: #cbefff; font-size: 12px; }
+    .panel { margin: 18px 0; padding: 18px; border: 1px solid var(--line); border-radius: 22px; background: var(--panel); }
+    .panel h2 { margin: 0 0 10px; }
+    .link-list { display: flex; flex-wrap: wrap; gap: 10px; padding: 0; list-style: none; }
+    .sr-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    footer { padding: 18px 0 34px; color: var(--muted); font-size: 13px; }
+    @media (max-width: 860px) { .controls { grid-template-columns: repeat(2, minmax(0,1fr)); } .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 520px) { header, main, footer { width: min(100% - 18px, 1180px); } .controls { grid-template-columns: 1fr; padding: 10px; } .card { padding: 14px; } h1 { letter-spacing: -.04em; } .button { width: 100%; } }
+  </style>
+</head>
+<body>
+<a class="skip" href="#scene-grid">Skip to scene cards</a>
+<header>
+  <p class="eyebrow">Visualizer v4 / unified launcher</p>
+  <h1>Approved routes, honest gates, no hidden renders.</h1>
+  <p class="lede">This index links to the current v4 hero and diagnostic routes without iframes or background GPU work. Query controls are deterministic and propagated to every route as <code>seed</code>, <code>time</code>, and <code>mode</code>. Hero maturity is <strong>provisional visual pass</strong>; none are marked human approved.</p>
+  <form class="controls" id="query-form" aria-label="deterministic query controls">
+    <label>Seed <input id="seed" name="seed" inputmode="numeric" autocomplete="off"></label>
+    <label>Locked time seconds <input id="time" name="time" inputmode="decimal" autocomplete="off"></label>
+    <label>Mode <select id="mode" name="mode"><option value="demo">demo synthetic</option><option value="flat">flat no-signal</option><option value="live">live gated</option></select></label>
+    <div class="lock-note" role="note" aria-label="locked route behavior">🔒 Locked links update deterministically; live/mic is never auto-started.</div>
+  </form>
+</header>
+<main>
+  <div id="sr-status" class="sr-status" aria-live="polite"></div>
+  <section id="scene-grid" class="grid" aria-label="v4 scene launcher cards"></section>
+  <section class="panel" aria-labelledby="diag-heading">
+    <h2 id="diag-heading">Read-only diagnostics and capture-plan hints</h2>
+    <p>These links and commands are hints only. They do not claim screenshots, benchmark JSON, motion sheets, or human approval artifacts exist.</p>
+    <ul class="link-list" id="diagnostic-links"></ul>
+    <pre id="registry-json" aria-label="machine-readable registry excerpt"></pre>
+  </section>
+</main>
+<footer>Legacy fallback contract: the original 19-effect WebGL library remains available at <a id="legacy-link" href="../index.html">../index.html</a>.</footer>
+<script type="module">
+import { visualizerV4SceneRegistry, normalizeLauncherQuery, buildSceneUrl, buildCapturePlanCommand, registryPublicJson } from './scene-registry.js';
+
+const state = { query: normalizeLauncherQuery(location.search) };
+window.__V4_SCENE_REGISTRY__ = registryPublicJson();
+window.__V4_LAUNCHER__ = { route: 'v4/index.html', query: state.query, sceneCount: visualizerV4SceneRegistry.scenes.length, autoLoadedRoutes: [], iframes: 0 };
+
+const form = document.getElementById('query-form');
+const seedInput = document.getElementById('seed');
+const timeInput = document.getElementById('time');
+const modeInput = document.getElementById('mode');
+const grid = document.getElementById('scene-grid');
+const diagLinks = document.getElementById('diagnostic-links');
+const registryJson = document.getElementById('registry-json');
+const srStatus = document.getElementById('sr-status');
+const legacyLink = document.getElementById('legacy-link');
+
+function text(tag, value, className) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  el.textContent = value;
+  return el;
+}
+
+function link(label, href, className) {
+  const a = document.createElement('a');
+  a.className = className || '';
+  a.href = href;
+  a.textContent = label;
+  return a;
+}
+
+function syncAddress() {
+  const params = new URLSearchParams();
+  params.set('seed', state.query.seed);
+  params.set('time', state.query.time);
+  params.set('mode', state.query.mode);
+  history.replaceState(null, '', `${location.pathname}?${params.toString()}`);
+}
+
+function badge(label, kind) {
+  const el = text('span', label, `badge ${kind || ''}`.trim());
+  return el;
+}
+
+function renderScene(scene) {
+  const card = document.createElement('article');
+  card.className = 'card';
+  card.id = `scene-${scene.id}`;
+  card.append(text('h2', scene.title));
+  card.append(text('p', scene.summary));
+
+  const badges = document.createElement('div');
+  badges.className = 'badges';
+  badges.append(badge(scene.capability.label, scene.capability.state.includes('fallback') ? 'warn' : 'ok'));
+  badges.append(badge(scene.evidence.approval.maturity, scene.evidence.approval.humanApproved ? 'ok' : 'bad'));
+  badges.append(badge(scene.evidence.status, 'warn'));
+  if (scene.requirements.liveAudio) badges.append(badge('mic requires Start Mic click', 'warn'));
+  if (scene.requirements.compute) badges.append(badge('compute', 'ok'));
+  if (scene.requirements.post) badges.append(badge('post', 'ok'));
+  card.append(badges);
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  const sceneUrl = buildSceneUrl(scene, state.query);
+  actions.append(link('Open locked route', sceneUrl, 'button'));
+  if (scene.fallback.oldLabHref) actions.append(link('Old lab fallback', buildSceneUrl({ route: scene.fallback.oldLabHref }, state.query), 'button secondary'));
+  actions.append(link('Legacy WebGL fallback', buildSceneUrl({ route: scene.fallback.legacyHref }, state.query), 'button secondary'));
+  card.append(actions);
+
+  const details = document.createElement('details');
+  details.append(text('summary', 'Machine-readable route metadata'));
+  const meta = {
+    id: scene.id,
+    route: sceneUrl,
+    routeKind: scene.routeKind,
+    capability: scene.capability,
+    counts: scene.counts,
+    requirements: scene.requirements,
+    fallback: scene.fallback,
+    evidence: scene.evidence,
+    capturePlan: buildCapturePlanCommand(scene, state.query),
+  };
+  details.append(text('pre', JSON.stringify(meta, null, 2)));
+  card.append(details);
+  return card;
+}
+
+function render() {
+  grid.replaceChildren(...visualizerV4SceneRegistry.scenes.map(renderScene));
+  diagLinks.replaceChildren(...visualizerV4SceneRegistry.diagnostics.readOnlyRoutes.map((item) => {
+    const li = document.createElement('li');
+    li.append(link(item.label, item.href, 'button secondary'));
+    return li;
+  }));
+  const legacyUrl = new URL(visualizerV4SceneRegistry.legacy.route, location.href);
+  legacyUrl.searchParams.set('seed', state.query.seed);
+  legacyUrl.searchParams.set('pattern', visualizerV4SceneRegistry.legacy.deterministicQuery.pattern);
+  legacyLink.href = legacyUrl.href;
+  registryJson.textContent = JSON.stringify({ schemaVersion: visualizerV4SceneRegistry.schemaVersion, sceneIds: visualizerV4SceneRegistry.scenes.map((scene) => scene.id), query: state.query, noArtifactsClaimed: true }, null, 2);
+  window.__V4_LAUNCHER__.query = state.query;
+  srStatus.textContent = `Updated locked links for seed ${state.query.seed}, time ${state.query.time}, mode ${state.query.mode}.`;
+}
+
+seedInput.value = state.query.seed;
+timeInput.value = state.query.time;
+modeInput.value = state.query.mode;
+
+form.addEventListener('input', () => {
+  state.query = normalizeLauncherQuery(`?seed=${encodeURIComponent(seedInput.value || visualizerV4SceneRegistry.defaultQuery.seed)}&time=${encodeURIComponent(timeInput.value || visualizerV4SceneRegistry.defaultQuery.time)}&mode=${encodeURIComponent(modeInput.value || visualizerV4SceneRegistry.defaultQuery.mode)}`);
+  syncAddress();
+  render();
+});
+
+render();
+</script>
+</body>
+</html>
