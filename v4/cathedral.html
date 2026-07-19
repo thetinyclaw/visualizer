@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visualizer v4 · Prismatic Cathedral WebGPU</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #02030a; color: #d8f7ff; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    #cathedral-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; background: radial-gradient(circle at 50% 40%, #071126, #02030a 72%); }
+    .hud { position: fixed; left: 16px; right: 16px; bottom: 14px; z-index: 2; display: grid; gap: 6px; max-width: 920px; padding: 12px 14px; border: 1px solid rgba(143, 234, 255, .32); border-radius: 14px; background: rgba(2, 5, 16, .66); box-shadow: 0 0 28px rgba(78, 205, 255, .12); backdrop-filter: blur(12px); }
+    h1 { position: fixed; top: 14px; left: 16px; z-index: 2; margin: 0; font-size: 14px; letter-spacing: .22em; text-transform: uppercase; color: rgba(224, 251, 255, .88); text-shadow: 0 0 18px rgba(125, 228, 255, .38); }
+    #status { font-weight: 650; }
+    #errors { white-space: pre-wrap; color: #ffb5d1; font-size: 12px; min-height: 1em; }
+    a { color: #9beaff; }
+  </style>
+</head>
+<body>
+  <canvas id="cathedral-canvas" aria-label="Prismatic Cathedral native WebGPU canvas"></canvas>
+  <h1>Prismatic Cathedral · WebGPU v4</h1>
+  <section class="hud" aria-live="polite">
+    <div id="status">Initializing deterministic Cathedral WebGPU graph…</div>
+    <div>Query: <code>?seed=491009&amp;time=18&amp;mode=demo</code>. If WebGPU falls back, compare the existing <a id="fallback-link" href="./lab/prismatic-cathedral.html?seed=491009&amp;time=18&amp;mode=demo">WebGL lab baseline</a>.</div>
+    <div id="errors"></div>
+  </section>
+  <script type="module" src="./cathedral-route.js"></script>
+</body>
+</html>

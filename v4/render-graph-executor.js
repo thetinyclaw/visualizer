@@ -295,7 +295,7 @@ export class WebGpuGraphExecutor {
     bindPassResources(passEncoder, this.resourceRegistry, passDef);
     for (const [slot, id] of (passDef.vertexBuffers || []).entries()) passEncoder.setVertexBuffer(slot, this.resourceRegistry.get(id));
     if (passDef.indexBuffer) passEncoder.setIndexBuffer(this.resourceRegistry.get(passDef.indexBuffer), passDef.indexFormat || 'uint32');
-    if (compiled.executor) compiled.executor({ pass: passEncoder, device: this.device, resources: this.resourceRegistry, frameContext, graphPass: passDef });
+    if (compiled.executor) compiled.executor({ pass: passEncoder, device: this.device, resources: this.resourceRegistry, frameContext, graphPass: passDef, executor: this });
     if (passDef.drawIndexed) passEncoder.drawIndexed(...passDef.drawIndexed);
     else if (passDef.draw) passEncoder.draw(...passDef.draw);
     else if (compiled.kind === 'post' || compiled.kind === 'composite') passEncoder.draw(3, 1, 0, 0);

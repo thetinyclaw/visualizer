@@ -9,6 +9,9 @@ import { AssetCache, AssetLoader } from '../v4/asset-loader.js';
 import { WebGpuGraphExecutor } from '../v4/render-graph-executor.js';
 import { AudioFeatureBus, AUDIO_BAND_COUNT, makeLogBandEdges } from '../v4/audio-feature-bus.js';
 import { LiveAudioFeatureBridge, LIVE_AUDIO_STATES } from '../v4/live-audio-engine.js';
+import { createPrismaticCathedralScene, sceneByteSignature } from '../v4/scenes/prismatic-cathedral/geometry.js';
+import { prismaticCathedralManifest, makePrismaticCathedralGraph } from '../v4/scenes/prismatic-cathedral/manifest.js';
+import { createPrismaticCathedralPipelines, createPrismaticCathedralExecutors } from '../v4/scenes/prismatic-cathedral/pipeline.js';
 
 function deferred() {
   let resolve;
@@ -1088,6 +1091,70 @@ async function testDemoFlatLabelsCannotBeConfused() {
   assert.equal(bridge.getDiagnostics().micActive, false);
 }
 
+function testPrismaticCathedralGeometryContracts() {
+  const a = createPrismaticCathedralScene({ seed: 491009, mode: 'demo' });
+  const b = createPrismaticCathedralScene({ seed: 491009, mode: 'demo' });
+  const c = createPrismaticCathedralScene({ seed: 491009, mode: 'demo' });
+  const summaryA = a.update({ time: 18 });
+  const summaryB = b.update({ time: 18 });
+  c.update({ time: 19 });
+  assert.deepEqual(sceneByteSignature(a), sceneByteSignature(b), 'same seed/time/mode produces byte-identical geometry/color/index buffers');
+  assert.notDeepEqual(sceneByteSignature(a), sceneByteSignature(c), 'changed time changes real geometry bytes');
+  assert.equal(summaryA.archCount, 13);
+  assert.equal(summaryA.shardCount, 72);
+  assert.equal(summaryA.vertexCount, 7176, '13 arches + 72 shard meshes + floor runes stay within exact budget');
+  assert.equal(summaryA.indexCount, summaryA.vertexCount, 'indexed draw has one deterministic index per triangle vertex');
+  assert.ok(summaryA.vertexCount <= 7200);
+  assert.ok(summaryA.width > 4, `broad corridor width expected > 4, got ${summaryA.width}`);
+  assert.ok(summaryA.height > 3, `cathedral height expected > 3, got ${summaryA.height}`);
+  assert.ok(summaryA.depth > 8, `corridor depth expected > 8, got ${summaryA.depth}`);
+  assert.match(a.topology, /72 persistent real 3D prismatic shard meshes/);
+  assert.ok(a.structuralAudioMappings.some((entry) => /camera pressure/.test(entry)), 'audio maps structurally to camera/travel/materials');
+}
+
+function testPrismaticCathedralGraphAndManifestContracts() {
+  assert.equal(validateSceneManifest(prismaticCathedralManifest).ok, true, 'manifest accepts relative optional WebGPU shader metadata');
+  const bad = structuredClone(prismaticCathedralManifest);
+  bad.webgpu.shaders[0].uri = 'https://evil.test/cathedral.wgsl';
+  assert.ok(!validateSceneManifest(bad).ok, 'absolute shader URIs are rejected');
+  const graph = makePrismaticCathedralGraph();
+  const validation = graph.validate();
+  assert.equal(validation.ok, true, validation.errors.join('; '));
+  const frozen = graph.freeze();
+  assert.deepEqual(frozen.passes.map((pass) => pass.id), ['cathedral-geometry', 'cathedral-post', 'cathedral-composite']);
+  assert.equal(frozen.resources.find((resource) => resource.id === 'cathedral-scene-depth').type, 'depth-target');
+  assert.equal(frozen.resources.find((resource) => resource.id === 'cathedral-indices').type, 'index-buffer');
+}
+
+function testPrismaticCathedralExecutorUploadsAndDrawsIndexed() {
+  const canvas = makeCanvas();
+  canvas.getBoundingClientRect = () => ({ width: 640, height: 360 });
+  const device = makeResourceDevice();
+  const graph = makePrismaticCathedralGraph().freeze();
+  const scene = createPrismaticCathedralScene({ seed: 491009, mode: 'demo' });
+  const executor = new WebGpuGraphExecutor({
+    device,
+    canvas,
+    graph,
+    resources: new Map([
+      ['cathedral-uniforms', { id: 'uniforms' }],
+      ['cathedral-audio', { id: 'audio' }],
+      ['cathedral-positions', { id: 'positions' }],
+      ['cathedral-colors', { id: 'colors' }],
+      ['cathedral-indices', { id: 'indices' }],
+    ]),
+    pipelines: createPrismaticCathedralPipelines({ device, format: 'bgra8unorm' }),
+    executors: createPrismaticCathedralExecutors(),
+    windowObject: { devicePixelRatio: 1 },
+  });
+  const frame = executor.render({ time: 18, scene, audio: null });
+  assert.equal(frame.submitted, true);
+  assert.deepEqual(frame.passes, ['cathedral-geometry', 'cathedral-post', 'cathedral-composite']);
+  assert.equal(device.calls.writes.filter((write) => write[0] === 'buffer').length >= 5, true, 'positions/colors/indices/uniform/audio are uploaded through queue.writeBuffer');
+  assert.deepEqual(device.calls.drawIndexed, [scene.mesh.indexCount, 1, 0, 0, 0], 'authored executor issues drawIndexed with real mesh indices');
+  assert.equal(device.calls.submissions.length, 1, 'executor submits encoded command buffer');
+}
+
 await testRuntimeUsesLifecycleAndRetryBudget();
 await testExplicitLifecycleBudgetResetOnly();
 await testStalePendingRetryCannotReplaceExplicitReacquire();
@@ -1107,6 +1174,9 @@ await testDefaultGeneratedPixelAssets();
 await testDefaultGeneratedPixelHydratesManagedTexture();
 testRenderGraphDeepValidation();
 testSceneManifestDeepValidation();
+testPrismaticCathedralGeometryContracts();
+testPrismaticCathedralGraphAndManifestContracts();
+testPrismaticCathedralExecutorUploadsAndDrawsIndexed();
 await testFallbackCanvasSeparation();
 testAudioFeatureBusLogBandsAndAllocationReuse();
 await testLiveAudioSecureContextAndPermissionDenial();

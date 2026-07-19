@@ -46,6 +46,12 @@ function validateRefs(values, targetIds, path, label, errors) {
   });
 }
 
+function validateRelativeShaderUri(uri) {
+  if (!isNonemptyString(uri)) return false;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(uri) || uri.startsWith('/') || uri.includes('..') || uri.includes('\\')) return false;
+  return /\.(wgsl|js)$/i.test(uri);
+}
+
 export function validateSceneManifest(manifest) {
   const errors = [];
   if (!isRecord(manifest)) return { ok: false, errors: [err('$', 'Manifest must be an object.')] };
@@ -117,6 +123,16 @@ export function validateSceneManifest(manifest) {
     validateRefs(transition.from, pipelineIds, `transitions[${index}].from`, 'Pipeline', errors);
     validateRefs(transition.to, pipelineIds, `transitions[${index}].to`, 'Pipeline', errors);
   });
+
+  if (manifest.webgpu !== undefined) {
+    if (!isRecord(manifest.webgpu)) errors.push(err('webgpu', 'Optional WebGPU metadata must be an object.'));
+    const shaders = Array.isArray(manifest.webgpu?.shaders) ? manifest.webgpu.shaders : [];
+    if (manifest.webgpu?.shaders !== undefined && !Array.isArray(manifest.webgpu.shaders)) errors.push(err('webgpu.shaders', 'WebGPU shaders must be an array when provided.'));
+    shaders.forEach((shader, index) => {
+      if (!isRecord(shader) || !isNonemptyString(shader.id)) errors.push(err(`webgpu.shaders[${index}].id`, 'Shader id is required.'));
+      if (!validateRelativeShaderUri(shader?.uri)) errors.push(err(`webgpu.shaders[${index}].uri`, 'Shader URI must be relative, same-origin, and end in .wgsl or .js.'));
+    });
+  }
 
   return { ok: errors.length === 0, errors };
 }
