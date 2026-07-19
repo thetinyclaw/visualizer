@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Visualizer v4 Hero Prototype Lab</title>
+  <link rel="stylesheet" href="hero-lab.css">
+</head>
+<body class="home">
+  <main class="shell">
+    <p class="eyebrow">Visualizer v4 / isolated hero-prototype lab</p>
+    <h1>Three runnable 3D hero proofs</h1>
+    <p class="lede">Deterministic no-build browser artifacts for reviewing topology, motion law, depth, and structural audio mappings without touching the existing visualizer cycle.</p>
+    <section class="grid" aria-label="Hero prototype routes">
+      <a class="card" href="filament-vortex.html?seed=491009&mode=demo&time=18">
+        <span>01</span><h2>Filament Vortex</h2>
+        <p>Persistent CPU strand/advection state rendered as depth-tested 3D bundles, with an explicit topology-preserving Canvas fallback when WebGL is unavailable.</p>
+      </a>
+      <a class="card" href="prismatic-cathedral.html?seed=491009&mode=demo&time=18">
+        <span>02</span><h2>Prismatic Cathedral</h2>
+        <p>Procedural shard geometry, perspective camera travel, depth occlusion, emissive material/lighting cues, and structural FFT hooks.</p>
+      </a>
+      <a class="card" href="neon-voxel-cloud.html?seed=491009&mode=demo&time=18">
+        <span>03</span><h2>Neon Voxel Cloud</h2>
+        <p>Instanced-style 3D cube cells, persistent scan occupancy, occlusion, and audio-owned topology/spacing/motion/camera inputs.</p>
+      </a>
+    </section>
+    <section class="controls-note">
+      <h2>Deterministic capture controls</h2>
+      <p>Use <code>?seed=&lt;int&gt;</code> for stable geometry, <code>?time=&lt;seconds&gt;</code> to lock a capture frame, <code>?mode=demo</code> for generated demo input, and <code>?mode=flat</code> for zero-input topology review. Routes export <code>window.__V4_HERO_LAB__</code>.</p>
+    </section>
+  </main>
+</body>
+</html>
