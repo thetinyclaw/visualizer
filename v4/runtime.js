@@ -17,7 +17,6 @@ function texturePixelsFromAsset(asset, value) {
   if (value?.pixels) return value;
   if (value instanceof Uint8Array) return { width: asset.width, height: asset.height, pixels: value };
   if (value instanceof ArrayBuffer) return { width: asset.width, height: asset.height, pixels: new Uint8Array(value) };
-  if (asset.uri === 'generated://pixel' || asset.uri === 'generated://pixel-texture') return makePixelTexture(asset.width || 1, asset.height || 1, asset.rgba || [255, 255, 255, 255]);
   return null;
 }
 

@@ -528,6 +528,45 @@ async function testRuntimeHydrationApi() {
   assert.equal(device.created.some((resource) => resource.write), true, 'hydrated assets/buffers upload through queue when available');
 }
 
+async function testDefaultGeneratedPixelAssets() {
+  const cache = new AssetCache({ baseUrl: 'https://example.test/v4/demo.html', maxBytes: 64 });
+  const pixel = await cache.loadAssetDescriptor({ id: 'white', type: 'texture', uri: 'generated://pixel' });
+  assert.equal(pixel.byteLength, 4);
+  assert.deepEqual(Array.from(pixel.data.pixels), [255, 255, 255, 255], 'default generated://pixel expands to an opaque white pixel');
+  assert.equal(Object.isFrozen(pixel.data), true, 'generated pixel output object is immutable');
+
+  const explicit = [1, 2, 3, 4, 5, 6, 7, 8];
+  const tex = await cache.loadAssetDescriptor({ id: 'explicit', type: 'texture', uri: 'generated://pixel-texture', width: 2, height: 1, pixels: explicit });
+  explicit[0] = 99;
+  assert.deepEqual(Array.from(tex.data.pixels), [1, 2, 3, 4, 5, 6, 7, 8], 'explicit pixel payload is copied before caching');
+
+  const expanded = await cache.loadAssetDescriptor({ id: 'expanded', type: 'texture', uri: 'generated://pixel-texture', width: 2, height: 2, rgba: [9, 8, 7, 6] });
+  assert.deepEqual(Array.from(expanded.data.pixels), [9, 8, 7, 6, 9, 8, 7, 6, 9, 8, 7, 6, 9, 8, 7, 6], 'single rgba payload expands across dimensions');
+
+  await assert.rejects(() => cache.loadAssetDescriptor({ id: 'bad-width', type: 'texture', uri: 'generated://pixel', width: 0, height: 1, rgba: [1, 2, 3, 4] }), /positive bounded integer/);
+  await assert.rejects(() => cache.loadAssetDescriptor({ id: 'bad-count', type: 'texture', uri: 'generated://pixel-texture', width: 2, height: 1, pixels: [1, 2, 3, 4] }), /exactly match/);
+  await assert.rejects(() => cache.loadAssetDescriptor({ id: 'bad-range', type: 'texture', uri: 'generated://pixel', width: 1, height: 1, rgba: [1, 2, 3, 256] }), /integer byte/);
+  await assert.rejects(() => cache.loadAssetDescriptor({ id: 'too-large', type: 'texture', uri: 'generated://pixel-texture', width: 5, height: 4, rgba: [1, 2, 3, 4] }), /exceeds configured size bound/);
+  await assert.rejects(() => cache.loadAssetDescriptor({ id: 'unknown', type: 'texture', uri: 'generated://not-a-generator' }), /Scene asset could not be loaded/);
+  const injectedUnknown = new AssetCache({ generatedLoaders: { 'not-a-generator': async () => ({ width: 1, height: 1, pixels: new Uint8Array(4) }) } });
+  await assert.rejects(() => injectedUnknown.loadAssetDescriptor({ id: 'unknown-injected', type: 'texture', uri: 'generated://not-a-generator' }), /Scene asset could not be loaded/);
+}
+
+async function testDefaultGeneratedPixelHydratesManagedTexture() {
+  const manifest = validManifest();
+  manifest.assets.push({ id: 'default-pixel', type: 'texture', uri: 'generated://pixel', width: 2, height: 2, rgba: [10, 20, 30, 40] });
+  manifest.assets.push({ id: 'default-pixel-texture', type: 'texture', uri: 'generated://pixel-texture', width: 1, height: 2, pixels: [1, 2, 3, 4, 5, 6, 7, 8] });
+  manifest.pipelines[0].assets.push('default-pixel', 'default-pixel-texture');
+  const lifecycle = new GpuLifecycle({ maxRetries: 0, retryDelayMs: 0 });
+  const device = makeDevice('hydrate-default-generated');
+  await lifecycle.acquire(async () => device);
+  const manager = new DeviceResourceManager(lifecycle, { labelPrefix: 'hydrate-default-generated' });
+  await hydrateRuntimeResources({ manager, manifest });
+  assert.ok(manager.get('asset:default-pixel'), 'default AssetCache hydrates generated://pixel into a managed GPU texture');
+  assert.ok(manager.get('asset:default-pixel-texture'), 'default AssetCache hydrates generated://pixel-texture into a managed GPU texture');
+  assert.equal(device.created.some((resource) => resource.write && resource.write.size.width === 2 && resource.write.size.height === 2), true, 'generated pixel texture bytes upload through the GPU queue');
+}
+
 function testSceneManifestDeepValidation() {
   assert.equal(validateSceneManifest(validManifest()).ok, true);
   const duplicateAssets = validManifest();
@@ -828,6 +867,8 @@ await testAssetLoaderAndCacheContainment();
 await testAssetLoaderAdversarialContainment();
 await testAssetCacheAbortAndStaleRaces();
 await testRuntimeHydrationApi();
+await testDefaultGeneratedPixelAssets();
+await testDefaultGeneratedPixelHydratesManagedTexture();
 testRenderGraphDeepValidation();
 testSceneManifestDeepValidation();
 await testFallbackCanvasSeparation();

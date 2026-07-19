@@ -3,6 +3,7 @@
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
+const MAX_GENERATED_PIXEL_DIMENSION = 4096;
 const DEFAULT_ALLOWED_TYPES = Object.freeze([
   'application/json',
   'application/octet-stream',
@@ -188,6 +189,67 @@ function makeBlueNoise() {
   return Object.freeze({ width, height, pixels });
 }
 
+function assertPositiveBoundedInteger(value, label) {
+  if (!Number.isInteger(value) || value <= 0 || value > MAX_GENERATED_PIXEL_DIMENSION) {
+    throw assetError('asset-generated-invalid', `Generated pixel ${label} must be a positive bounded integer.`);
+  }
+  return value;
+}
+
+function assertByte(value, label) {
+  if (!Number.isInteger(value) || value < 0 || value > 255) {
+    throw assetError('asset-generated-invalid', `Generated pixel ${label} channel must be an integer byte.`);
+  }
+  return value;
+}
+
+function byteArrayFrom(value, label) {
+  const values = ArrayBuffer.isView(value) ? Array.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength)) : value;
+  if (!Array.isArray(values)) throw assetError('asset-generated-invalid', `Generated pixel ${label} must be an array of byte values.`);
+  return values.map((entry, index) => assertByte(entry, `${label}[${index}]`));
+}
+
+function makeGeneratedPixel(asset, { maxBytes = DEFAULT_MAX_BYTES } = {}) {
+  const width = assertPositiveBoundedInteger(asset.width ?? 1, 'width');
+  const height = assertPositiveBoundedInteger(asset.height ?? 1, 'height');
+  const expectedBytes = width * height * 4;
+  if (!Number.isSafeInteger(expectedBytes) || expectedBytes > maxBytes) {
+    throw assetError('asset-too-large', 'Generated pixel texture exceeds configured size bound.');
+  }
+
+  let pixels;
+  if (asset.pixels !== undefined) {
+    const source = byteArrayFrom(asset.pixels, 'pixels');
+    if (source.length !== expectedBytes) {
+      throw assetError('asset-generated-invalid', 'Generated pixel payload length must exactly match width × height × 4.');
+    }
+    pixels = new Uint8Array(source);
+  } else {
+    const rgba = byteArrayFrom(asset.rgba ?? [255, 255, 255, 255], 'rgba');
+    if (rgba.length !== 4) {
+      throw assetError('asset-generated-invalid', 'Generated pixel rgba payload must contain exactly four byte values.');
+    }
+    pixels = new Uint8Array(expectedBytes);
+    for (let offset = 0; offset < pixels.length; offset += 4) pixels.set(rgba, offset);
+  }
+  return Object.freeze({ width, height, pixels });
+}
+
+const BUILTIN_GENERATED_LOADERS = Object.freeze({
+  'blue-noise': makeBlueNoise,
+  pixel: makeGeneratedPixel,
+  'pixel-texture': makeGeneratedPixel,
+});
+const ALLOWED_GENERATED_LOADER_NAMES = Object.freeze(new Set(Object.keys(BUILTIN_GENERATED_LOADERS)));
+
+function mergeGeneratedLoaders(generatedLoaders = {}) {
+  const merged = { ...BUILTIN_GENERATED_LOADERS };
+  for (const [name, loader] of Object.entries(generatedLoaders || {})) {
+    if (ALLOWED_GENERATED_LOADER_NAMES.has(name) && typeof loader === 'function') merged[name] = loader;
+  }
+  return merged;
+}
+
 export class AssetLoader {
   constructor({
     baseUrl = globalThis.location?.href || 'http://localhost/',
@@ -252,14 +314,14 @@ export class AssetLoader {
 }
 
 export class AssetCache {
-  constructor(loader = new AssetLoader(), { generatedLoaders = { 'blue-noise': makeBlueNoise } } = {}) {
+  constructor(loader = new AssetLoader(), { generatedLoaders = BUILTIN_GENERATED_LOADERS } = {}) {
     if (loader && typeof loader.load !== 'function' && !(loader instanceof AssetLoader)) {
       const options = loader;
       loader = new AssetLoader(options);
       generatedLoaders = options.generatedLoaders || generatedLoaders;
     }
     this.loader = loader;
-    this.generatedLoaders = new Map(Object.entries(generatedLoaders));
+    this.generatedLoaders = new Map(Object.entries(mergeGeneratedLoaders(generatedLoaders)));
     this.entries = new Map();
     this.inflight = new Map();
     this.session = 0;
@@ -315,7 +377,7 @@ export class AssetCache {
       const generatedKey = asset.uri.slice('generated://'.length);
       const loader = this.generatedLoaders.get(generatedKey);
       if (!loader) throw assetError('asset-load-failed', 'Scene asset could not be loaded.');
-      const data = await loader(asset);
+      const data = await loader(asset, { maxBytes: this.loader.maxBytes });
       if (controller.signal.aborted || this.session !== session || !this.inflight.has(key)) throw assetError('asset-aborted', 'Asset request was aborted or timed out.');
       const byteLength = data?.pixels ? byteLengthOf(data.pixels) : byteLengthOf(data);
       const immutableAsset = Object.freeze({ key, url: asset.uri, responseType: asset.type, contentType: 'generated', byteLength, data });
