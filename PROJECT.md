@@ -122,5 +122,12 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Single-pattern telemetry captures post-timing luminance, dark/bright coverage, and edge energy from the final native-density framebuffer without measuring screenshot/readback cost as frame time.
 - `scripts/verify_visualizer.py` checks registration, transition, documentation, and performance invariants before browser QA.
 
+## Visualizer v4 roadmap
+
+- `docs/VISUALIZER_V4_PLAN.md` defines the three-phase execution plan, phase gates, and non-bypassable human acceptance process.
+- `docs/visualizer-v4-roadmap.mmd` maps Visual R&D → WebGPU Core → Production Evolution, with rendered SVG/PNG companions.
+- `docs/visualizer-v4-engine.mmd` maps TouchDesigner/Notch and Blender prototypes into the WebGPU render graph, compatibility lane, observability, and secure browser output.
+- The current nineteen-effect WebGL library remains the compatibility lane; new hero effects use separate WebGPU pipelines and persistent simulation state rather than expanding the monolithic shader.
+
 ## Usage
 User visits URL -> starts visualizer -> allows mic if desired. If mic is missing or denied, visuals still animate in demo mode. Use arrow keys or horizontal swipes to move between patterns.

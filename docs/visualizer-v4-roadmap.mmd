@@ -1,0 +1,80 @@
+flowchart LR
+  SRC["Source References<br/>image + chronological motion sheets"]
+
+  subgraph P1["PHASE 1 · VISUAL R&D + PROTOTYPE LAB"]
+    direction TB
+    P1A["Reference Decomposition<br/>topology · camera · material · motion"]
+    P1B["Prototype Engine<br/>TouchDesigner / Notch + Blender + shader sketches"]
+    P1C["Three Hero Proofs<br/>Filament · Cathedral · Voxel"]
+    P1D["Scene Recipe Export<br/>geometry · simulation · lighting · audio map"]
+    P1A --> P1B --> P1C --> P1D
+  end
+
+  G1{{"GATE 1<br/>recognizable topology + motion<br/>human visual sign-off"}}
+
+  subgraph P2["PHASE 2 · WEBGPU CORE + HERO EFFECTS"]
+    direction TB
+    P2A["WebGPU Foundation<br/>capability probe · device lifecycle · fallback"]
+    P2B["Render Graph<br/>compute · geometry · depth · feedback · post"]
+    P2C["Audio Feature Bus<br/>16 bands · flux · onset · envelopes"]
+    P2D["Hero Effect Ports<br/>persistent strands · 3D shards · instanced voxels"]
+    P2E["Runtime Integration<br/>scene manifests · transitions · telemetry"]
+    P2A --> P2B --> P2D --> P2E
+    P2C --> P2D
+  end
+
+  G2{{"GATE 2<br/>native density · stable frame pacing<br/>structural audio response · browser QA"}}
+
+  subgraph P3["PHASE 3 · PRODUCTION + CONTINUOUS EVOLUTION"]
+    direction TB
+    P3A["Curated Migration<br/>upgrade winners · retain WebGL legacy library"]
+    P3B["Automated Candidate Factory<br/>reference brief · isolated prototype · comparison"]
+    P3C["Regression System<br/>motion sheets · frame metrics · device matrix"]
+    P3D["Release Operations<br/>versioned scenes · rollback · HTTPS deployment"]
+    P3A --> P3B --> P3C --> P3D
+  end
+
+  G3{{"GATE 3<br/>curated release approval<br/>no autonomous self-acceptance"}}
+  LIVE["Visualizer v4<br/>high-fidelity live library"]
+
+  SRC --> P1A
+  P1D --> G1
+  G1 -- "pass" --> P2A
+  G1 -- "revise topology" --> P1B
+  P2E --> G2
+  G2 -- "pass" --> P3A
+  G2 -- "optimize / repair" --> P2B
+  P3D --> G3
+  G3 -- "release" --> LIVE
+  G3 -- "reject / branch" --> P3B
+
+  subgraph ACCEPT["NON-BYPASSABLE ACCEPTANCE LOOP · EVERY EFFECT"]
+    direction LR
+    NOTE["Every phase submission<br/>must enter this loop"] -->
+    A1["1 · Provenance<br/>rights + source inventory"] -->
+    A2["2 · Topology Proof<br/>grayscale silhouette + projection"] -->
+    A3["3 · Motion Proof<br/>camera + temporal coherence"] -->
+    A4["4 · Material Pass<br/>light + color + depth"] -->
+    A5["5 · Audio Pass<br/>structure, not brightness"] -->
+    A6["6 · Evidence<br/>side-by-side motion sheet + telemetry"] -->
+    A7{{"7 · Human Approval"}}
+    A7 -- "fail" --> A2
+  end
+
+  G3 -. "same acceptance loop applies at Gates 1–3" .-> NOTE
+
+  classDef input fill:#172033,stroke:#94a3b8,color:#e2e8f0,stroke-width:2px;
+  classDef phase1 fill:#082f49,stroke:#22d3ee,color:#ecfeff,stroke-width:2px;
+  classDef phase2 fill:#064e3b,stroke:#34d399,color:#ecfdf5,stroke-width:2px;
+  classDef phase3 fill:#4c1d95,stroke:#a78bfa,color:#f5f3ff,stroke-width:2px;
+  classDef gate fill:#881337,stroke:#fb7185,color:#fff1f2,stroke-width:3px;
+  classDef accept fill:#451a03,stroke:#fbbf24,color:#fffbeb,stroke-width:2px;
+  classDef live fill:#052e16,stroke:#4ade80,color:#f0fdf4,stroke-width:3px;
+
+  class SRC input;
+  class P1A,P1B,P1C,P1D phase1;
+  class P2A,P2B,P2C,P2D,P2E phase2;
+  class P3A,P3B,P3C,P3D phase3;
+  class G1,G2,G3,A7 gate;
+  class NOTE,A1,A2,A3,A4,A5,A6 accept;
+  class LIVE live;

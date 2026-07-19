@@ -1,0 +1,102 @@
+flowchart LR
+  subgraph INPUTS["INPUTS"]
+    direction TB
+    REF["Reference Media<br/>image + video + motion sheets"]
+    MIC["Live Audio<br/>microphone / demo"]
+    USER["Controls<br/>effect · seed · TV mode"]
+  end
+
+  subgraph PROTO["PROTOTYPING ENGINE"]
+    direction TB
+    TD["TouchDesigner / Notch<br/>particles · feedback · volumetrics"]
+    BL["Blender<br/>meshes · camera · UV · authored assets"]
+    SK["Shader Sketches<br/>WGSL / GLSL topology proofs"]
+    COMP["Reference Comparator<br/>paired frames · motion sheet · feature checklist"]
+    RECIPE["Scene Recipe<br/>manifest + assets + simulation + material + audio mapping"]
+    TD --> COMP
+    BL --> COMP
+    SK --> COMP
+    COMP --> RECIPE
+  end
+
+  APPROVE{{"PROTOTYPE APPROVAL<br/>topology · motion · material"}}
+
+  subgraph APP["BROWSER APP SHELL"]
+    direction TB
+    CAP["Capability Probe<br/>WebGPU / WebGL2 / reduced mode"]
+    SCENE["Scene Orchestrator<br/>manifest · lifecycle · transitions"]
+    AUDIO["Audio Analysis Worker<br/>16-band FFT · flux · onset · envelopes"]
+    ASSET["Asset Loader + Cache<br/>meshes · textures · LUTs"]
+  end
+
+  subgraph GPU["WEBGPU RENDERER"]
+    direction TB
+    DEV["Device + Resource Manager<br/>buffers · textures · bind groups"]
+    SIM["Compute Simulation<br/>particles · strands · voxel state · ping-pong fields"]
+    GEO["Geometry + Camera Pass<br/>instances · splines · meshes · depth"]
+    VOL["SDF / Volume Pass<br/>bounded raymarch · scattering · fog"]
+    RG["Render Graph<br/>color/depth targets · feedback history"]
+    POST["Post Stack<br/>bloom · trails · tone map · chromatic optics"]
+    MIX["Compositor<br/>effect transitions · HUD-safe output"]
+    DEV --> SIM --> GEO --> RG --> POST --> MIX
+    DEV --> VOL --> RG
+  end
+
+  subgraph FALLBACK["COMPATIBILITY LANE"]
+    GL["WebGL2 Legacy Renderer<br/>existing 19 effects"]
+    REDUCED["Reduced WebGPU Scenes<br/>fewer particles / volume steps"]
+  end
+
+  subgraph EVIDENCE["OBSERVABILITY + ACCEPTANCE"]
+    direction TB
+    PERF["Frame Telemetry<br/>FPS · p95 · GPU timing · memory"]
+    CAPTURE["Deterministic Capture<br/>seeded frames + motion sheets"]
+    VIS["Visual Regression<br/>silhouette · occupancy · depth · edge metrics"]
+    HUMAN{{"Human Release Sign-off"}}
+    REWORK["Rework / Branch Ticket<br/>failed stage + evidence retained"]
+    PERF --> HUMAN
+    CAPTURE --> VIS --> HUMAN
+    HUMAN -- "rebuild" --> REWORK
+  end
+
+  OUT["Secure Browser Output<br/>Safari / Chrome / TV / AirPlay workflow"]
+
+  REF --> TD
+  REF --> BL
+  REF --> SK
+  RECIPE --> APPROVE
+  APPROVE -- "pass" --> SCENE
+  APPROVE -- "revise" --> TD
+
+  MIC --> AUDIO
+  USER --> SCENE
+  CAP --> SCENE
+  SCENE --> DEV
+  SCENE --> ASSET --> DEV
+  AUDIO --> SIM
+  AUDIO --> GEO
+  AUDIO --> VOL
+  CAP -- "WebGL only" --> GL
+  CAP -- "constrained GPU" --> REDUCED --> DEV
+  GL --> MIX
+  MIX --> PERF
+  MIX --> CAPTURE
+  HUMAN -- "accepted" --> OUT
+
+  classDef input fill:#172033,stroke:#94a3b8,color:#e2e8f0,stroke-width:2px;
+  classDef proto fill:#082f49,stroke:#22d3ee,color:#ecfeff,stroke-width:2px;
+  classDef app fill:#451a03,stroke:#fbbf24,color:#fffbeb,stroke-width:2px;
+  classDef gpu fill:#064e3b,stroke:#34d399,color:#ecfdf5,stroke-width:2px;
+  classDef fallback fill:#4c1d95,stroke:#a78bfa,color:#f5f3ff,stroke-width:2px;
+  classDef evidence fill:#881337,stroke:#fb7185,color:#fff1f2,stroke-width:2px;
+  classDef gate fill:#7c2d12,stroke:#fb923c,color:#fff7ed,stroke-width:3px;
+  classDef output fill:#052e16,stroke:#4ade80,color:#f0fdf4,stroke-width:3px;
+
+  class REF,MIC,USER input;
+  class TD,BL,SK,COMP,RECIPE proto;
+  class CAP,SCENE,AUDIO,ASSET app;
+  class DEV,SIM,GEO,VOL,RG,POST,MIX gpu;
+  class GL,REDUCED fallback;
+  class PERF,CAPTURE,VIS,HUMAN,REWORK evidence;
+  class APPROVE gate;
+  class OUT output;
