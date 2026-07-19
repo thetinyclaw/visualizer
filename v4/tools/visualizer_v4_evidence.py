@@ -500,24 +500,25 @@ def validate_target_matrix(matrix: Mapping[str, Any], *, evidence_root: Path = D
         validate_benchmark(load_json(target), require_real=require_real)
 
 
-def validator_for_path(path: Path, *, require_real_benchmark: bool = False,
-                       require_real_motion: bool = False) -> Callable[[Mapping[str, Any]], None]:
-    name = path.name
-    if "provenance" in name:
-        return validate_provenance
-    if "scene_recipe" in name or "scene" in name:
-        return validate_scene_recipe
-    if "capture_spec" in name:
-        return validate_capture_spec
-    if "motion_sheet" in name or "motion" in name:
-        return lambda data: validate_motion_sheet(data, require_real=require_real_motion)
-    if "benchmark" in name:
-        return lambda data: validate_benchmark(data, require_real=require_real_benchmark)
-    if "candidate_factory" in name or "candidate" in name:
-        return validate_candidate_factory
-    if "release" in name:
-        return validate_release_manifest
-    raise EvidenceError(f"cannot infer validator for evidence ref {path}")
+def validator_for_payload(data: Mapping[str, Any], *, require_real_benchmark: bool = False,
+                          require_real_motion: bool = False) -> tuple[str, Callable[[Mapping[str, Any]], None]]:
+    """Select an evidence validator from its schema discriminator, never its filename."""
+    candidates: List[tuple[str, Callable[[Mapping[str, Any]], None]]] = []
+    discriminators: List[tuple[str, str, Callable[[Mapping[str, Any]], None]]] = [
+        ("provenance", "manifest_version", validate_provenance),
+        ("scene", "recipe_version", validate_scene_recipe),
+        ("capture_spec", "capture_spec_version", validate_capture_spec),
+        ("motion", "motion_sheet_version", lambda payload: validate_motion_sheet(payload, require_real=require_real_motion)),
+        ("benchmark", "benchmark_schema_version", lambda payload: validate_benchmark(payload, require_real=require_real_benchmark)),
+        ("candidate_factory", "factory_schema_version", validate_candidate_factory),
+        ("release", "release_manifest_version", validate_release_manifest),
+    ]
+    for kind, field, validator in discriminators:
+        if field in data:
+            candidates.append((kind, validator))
+    require(len(candidates) == 1,
+            f"evidence payload must have exactly one recognized schema discriminator; found {[kind for kind, _ in candidates]}")
+    return candidates[0]
 
 
 def validate_evidence_ref(ref: str, *, evidence_root: Path, seen: Optional[Set[Path]] = None,
@@ -529,13 +530,13 @@ def validate_evidence_ref(ref: str, *, evidence_root: Path, seen: Optional[Set[P
     realpath_under(path, evidence_root, "evidence ref")
     seen = seen or set()
     real = path.resolve(strict=True)
-    if real in seen:
-        return real.name
-    seen.add(real)
-    data = load_json(real)
-    validator_for_path(real, require_real_benchmark=require_real_benchmark,
-                       require_real_motion=require_real_motion)(data)
-    return real.name
+    data = require_mapping(load_json(real), "evidence payload")
+    kind, validator = validator_for_payload(data, require_real_benchmark=require_real_benchmark,
+                                            require_real_motion=require_real_motion)
+    if real not in seen:
+        seen.add(real)
+        validator(data)
+    return kind
 
 
 def validate_gates(gate_manifest: Mapping[str, Any], *, evidence_root: Path = DEFAULT_FIXTURES, mode: str = "scaffold") -> None:
@@ -550,14 +551,14 @@ def validate_gates(gate_manifest: Mapping[str, Any], *, evidence_root: Path = DE
         declared_passed = gate.get("passed")
         evidence = gate.get("evidence")
         require(isinstance(evidence, list) and evidence, f"{gate_name}.evidence must be non-empty")
-        validated_names = [validate_evidence_ref(str(ref), evidence_root=evidence_root,
+        validated_kinds = [validate_evidence_ref(str(ref), evidence_root=evidence_root,
                                                  require_real_benchmark=(mode == "acceptance" and gate_name in {"gate_2", "gate_3"}),
                                                  require_real_motion=(mode == "acceptance" and gate_name in {"gate_2", "gate_3"}))
                            for ref in evidence]
-        has_provenance = any("provenance" in name for name in validated_names)
-        has_scene = any("scene" in name for name in validated_names)
-        has_benchmark = any("benchmark" in name for name in validated_names)
-        has_motion = any("motion" in name for name in validated_names)
+        has_provenance = "provenance" in validated_kinds
+        has_scene = "scene" in validated_kinds
+        has_benchmark = "benchmark" in validated_kinds
+        has_motion = "motion" in validated_kinds
         computed = has_provenance and has_scene and (gate_name == "gate_1" or has_benchmark) and (gate_name == "gate_1" or has_motion)
         if mode == "scaffold" and gate_name in {"gate_2", "gate_3"}:
             # Fixture/scaffold artifacts may validate structurally, but never become

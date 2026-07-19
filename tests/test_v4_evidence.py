@@ -232,6 +232,23 @@ class EvidenceValidationTests(unittest.TestCase):
         with self.assertRaises(ev.EvidenceError):
             ev.validate_gates(data)
 
+    def test_evidence_kind_comes_from_payload_not_filename_substrings(self):
+        with tempfile.TemporaryDirectory(dir=FIXTURES) as td:
+            tmp = Path(td)
+            deceptive = tmp / "scene_benchmark_motion.json"
+            deceptive.write_text(json.dumps(fixture("scene_recipe.json")), encoding="utf-8")
+            kind = ev.validate_evidence_ref(
+                str(deceptive.relative_to(ROOT)),
+                evidence_root=tmp,
+                require_real_benchmark=True,
+                require_real_motion=True,
+            )
+            self.assertEqual(kind, "scene")
+            ambiguous = fixture("scene_recipe.json")
+            ambiguous["benchmark_schema_version"] = "1.0"
+            with self.assertRaises(ev.EvidenceError):
+                ev.validator_for_payload(ambiguous)
+
     def test_target_matrix_rejects_absolute_traversal_outside_and_symlink_benchmark_refs(self):
         probes = [
             str((FIXTURES / "benchmark_report.json").resolve()),

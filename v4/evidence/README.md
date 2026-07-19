@@ -9,6 +9,7 @@ This directory contains Phase 1/2/3 acceptance scaffolding for the Visualizer v4
 - Capture specs are deterministic and local-route only. If browser automation is unavailable, the tool emits command scaffolds and fixture motion-sheet paths without claiming real captures.
 - Benchmark reports require seed, viewport, DPR/effective density, at least 120 frame samples, computed p50/p95, GPU timing and memory telemetry as real numeric values or null with an unknown reason, plus browser/device and console/device logs.
 - Gate 1/2/3 validation fails closed without explicit non-autonomous human approval and forbids autonomous self-merge.
+- Gate evidence is classified by one unique schema discriminator in its JSON payload, never by filename substrings, so renamed or multi-label artifacts cannot impersonate required evidence classes.
 - Candidate-factory state advances through evidence-building states only; it has terminal states and no production merge action.
 - Release manifests describe channels, rollback metadata, and read-only HTTPS verification commands. The script prints commands; it does not deploy.
 
