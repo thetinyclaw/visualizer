@@ -80,7 +80,12 @@ require("processBandFrame" in audio and "snapshotObject" in audio, "stable struc
 # Live microphone bridge and smoke route.
 for token in ["LIVE_WORKLET", "LIVE_FALLBACK", "DEMO", "FLAT", "DENIED", "INSECURE", "DEVICE_LOST", "STOPPED"]:
     require(token in live_audio, f"live audio state {token} missing")
-require("gesture = false" in live_audio and "gesture-required" in live_audio, "microphone start is not explicitly user-gesture gated")
+require("createActivationToken(event)" in live_audio and "ACTIVATION_TOKEN_BRAND" in live_audio and "gesture-required" in live_audio, "microphone start is not explicitly user-activation-token gated")
+require("userActivation" in live_audio and "isActive === true" in live_audio, "microphone request must honor navigator.userActivation.isActive")
+require("event instanceof EventCtor" in live_audio and "trustedActivationValidator" in live_audio, "older-browser activation fallback must require trusted Event or test-only validator")
+require("async startMicrophone({ activationToken = null } = {})" in live_audio and "async startMicrophone({ gesture" not in live_audio, "caller-supplied gesture flag must not gate microphone requests")
+require("createActivationToken(event)" in live_smoke and "startMicrophone({ activationToken })" in live_smoke, "live smoke UI must pass a bound one-shot activation token")
+require("activeSessionGeneration" in live_audio and "handleWorkletMessage(event, sessionGeneration" in live_audio, "worklet messages must be session/generation guarded")
 require("isSecureContext" in live_audio and "insecure-context" in live_audio, "secure-context rejection missing")
 require("getUserMedia" in live_audio and "echoCancellation: false" in live_audio, "raw-ish microphone request missing")
 require("audioWorklet.addModule" in live_audio and "AudioWorkletNode" in live_audio, "AudioWorklet live analysis path missing")

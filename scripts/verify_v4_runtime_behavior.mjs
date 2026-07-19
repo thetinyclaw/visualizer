@@ -389,6 +389,12 @@ function makeStream(track = makeTrack()) {
   return { track, getTracks() { return [track]; }, getAudioTracks() { return [track]; } };
 }
 
+function testActivationToken(bridge) {
+  const token = bridge.createActivationToken({ isTrusted: true });
+  assert.ok(token, 'test activation validator should mint a one-shot token');
+  return token;
+}
+
 function makeFallbackAudioContext() {
   const analyser = {
     fftSize: 0,
@@ -408,8 +414,12 @@ function makeFallbackAudioContext() {
 
 async function testLiveAudioSecureContextAndPermissionDenial() {
   const insecureWindow = makeRafWindow({ secure: false });
-  const insecure = new LiveAudioFeatureBridge({ windowObject: insecureWindow, navigatorObject: { mediaDevices: { async getUserMedia() { throw new Error('must not request'); } } } });
-  const rejected = await insecure.startMicrophone({ gesture: true });
+  const insecure = new LiveAudioFeatureBridge({
+    windowObject: insecureWindow,
+    navigatorObject: { mediaDevices: { async getUserMedia() { throw new Error('must not request'); } } },
+    trustedActivationValidator: () => true,
+  });
+  const rejected = await insecure.startMicrophone({ activationToken: testActivationToken(insecure) });
   assert.equal(rejected.ok, false);
   assert.equal(rejected.error.code, 'insecure-context');
   assert.equal(insecure.getDiagnostics().state, LIVE_AUDIO_STATES.INSECURE);
@@ -419,8 +429,9 @@ async function testLiveAudioSecureContextAndPermissionDenial() {
   const denied = new LiveAudioFeatureBridge({
     windowObject: makeRafWindow({ secure: true, AudioContextCtor: makeFallbackAudioContext() }),
     navigatorObject: { mediaDevices: { async getUserMedia() { requested += 1; const err = new Error('denied'); err.name = 'NotAllowedError'; throw err; } } },
+    trustedActivationValidator: () => true,
   });
-  const result = await denied.startMicrophone({ gesture: true });
+  const result = await denied.startMicrophone({ activationToken: testActivationToken(denied) });
   assert.equal(result.ok, false);
   assert.equal(result.error.code, 'permission-denied');
   assert.equal(requested, 1);
@@ -439,11 +450,12 @@ async function testLiveAudioFallbackAndStopCleanup() {
     windowObject: win,
     navigatorObject: { mediaDevices: { async getUserMedia() { requested += 1; return stream; } } },
     now: () => 1000,
+    trustedActivationValidator: () => true,
   });
   const noGesture = await bridge.startMicrophone({ gesture: false });
   assert.equal(noGesture.ok, false);
   assert.equal(requested, 0, 'mic is user-gesture gated');
-  const started = await bridge.startMicrophone({ gesture: true });
+  const started = await bridge.startMicrophone({ activationToken: testActivationToken(bridge) });
   assert.equal(started.ok, true);
   assert.equal(bridge.getDiagnostics().state, LIVE_AUDIO_STATES.LIVE_FALLBACK);
   assert.equal(bridge.getDiagnostics().source, 'live-fallback');
@@ -473,8 +485,9 @@ async function testLiveAudioWorkletPathAndDeviceLoss() {
   const bridge = new LiveAudioFeatureBridge({
     windowObject: win,
     navigatorObject: { mediaDevices: { async getUserMedia() { return stream; } } },
+    trustedActivationValidator: () => true,
   });
-  const started = await bridge.startMicrophone({ gesture: true });
+  const started = await bridge.startMicrophone({ activationToken: testActivationToken(bridge) });
   assert.equal(started.ok, true);
   assert.equal(bridge.getDiagnostics().state, LIVE_AUDIO_STATES.LIVE_WORKLET);
   const snapBefore = bridge.getSnapshot();
@@ -486,6 +499,86 @@ async function testLiveAudioWorkletPathAndDeviceLoss() {
   await track.onended();
   assert.equal(bridge.getDiagnostics().state, LIVE_AUDIO_STATES.DEVICE_LOST);
   assert.equal(track.stopped, true);
+}
+
+async function testForgedGestureFlagAndInactiveUserActivationCannotRequestMic() {
+  let requested = 0;
+  const defaultMockBridge = new LiveAudioFeatureBridge({
+    windowObject: makeRafWindow({ secure: true, AudioContextCtor: makeFallbackAudioContext() }),
+    navigatorObject: { mediaDevices: { async getUserMedia() { requested += 1; return makeStream(); } } },
+  });
+  assert.equal(defaultMockBridge.createActivationToken({ isTrusted: true }), null, 'plain mock objects cannot forge trusted browser activation');
+  assert.equal((await defaultMockBridge.startMicrophone({ activationToken: { generation: 0 } })).ok, false);
+  assert.equal(requested, 0, 'default non-browser public path fails closed without test validator');
+
+  const nav = {
+    userActivation: { isActive: false },
+    mediaDevices: { async getUserMedia() { requested += 1; return makeStream(); } },
+  };
+  const bridge = new LiveAudioFeatureBridge({
+    windowObject: makeRafWindow({ secure: true, AudioContextCtor: makeFallbackAudioContext() }),
+    navigatorObject: nav,
+    trustedActivationValidator: () => true,
+  });
+
+  const forgedGesture = await bridge.startMicrophone({ gesture: true });
+  assert.equal(forgedGesture.ok, false, 'caller-supplied gesture:true is ignored');
+  assert.equal(forgedGesture.error.code, 'gesture-required');
+  assert.equal(requested, 0, 'forged gesture must not reach getUserMedia');
+
+  const tokenWhileInactive = bridge.createActivationToken({ isTrusted: true });
+  assert.ok(tokenWhileInactive, 'test-only validator can mint a token in mocks');
+  const inactive = await bridge.startMicrophone({ activationToken: tokenWhileInactive });
+  assert.equal(inactive.ok, false, 'navigator.userActivation.isActive=false fails closed at request time');
+  assert.equal(requested, 0, 'inactive userActivation must not request permission');
+
+  const staleToken = bridge.createActivationToken({ isTrusted: true });
+  await bridge.stop();
+  const stale = await bridge.startMicrophone({ activationToken: staleToken });
+  assert.equal(stale.ok, false, 'activation tokens expire across session invalidation');
+  assert.equal(requested, 0, 'stale activation token must not request permission');
+}
+
+async function testStaleCapturedWorkletHandlerAfterStopAndRestartCannotMutate() {
+  const firstTrack = makeTrack();
+  const secondTrack = makeTrack();
+  const streams = [makeStream(firstTrack), makeStream(secondTrack)];
+  const createdNodes = [];
+  class MockAudioWorkletNode {
+    constructor() { this.port = { onmessage: null }; this.disconnected = false; createdNodes.push(this); }
+    disconnect() { this.disconnected = true; }
+  }
+  class WorkletAudioContext {
+    constructor() { this.state = 'running'; this.audioWorklet = { async addModule() {} }; this.closed = false; }
+    createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    async close() { this.closed = true; }
+  }
+  const bridge = new LiveAudioFeatureBridge({
+    windowObject: makeRafWindow({ secure: true, AudioContextCtor: WorkletAudioContext, AudioWorkletNodeCtor: MockAudioWorkletNode }),
+    navigatorObject: { mediaDevices: { async getUserMedia() { return streams.shift(); } } },
+    trustedActivationValidator: () => true,
+  });
+
+  assert.equal((await bridge.startMicrophone({ activationToken: testActivationToken(bridge) })).ok, true);
+  const staleHandler = createdNodes[0].port.onmessage;
+  const loudPayload = new Float32Array(AUDIO_BAND_COUNT + 3);
+  loudPayload.fill(0.9, 0, AUDIO_BAND_COUNT);
+  await bridge.stop();
+  const stoppedSequence = bridge.getSnapshot().sequence;
+  staleHandler({ data: { payload: loudPayload } });
+  assert.equal(bridge.getSnapshot().sequence, stoppedSequence, 'stale worklet message after stop cannot mutate stopped snapshot');
+
+  assert.equal((await bridge.startFlat({ gesture: true })).ok, true);
+  const flatSequence = bridge.getSnapshot().sequence;
+  staleHandler({ data: { payload: loudPayload } });
+  assert.equal(bridge.getSnapshot().sequence, flatSequence, 'stale worklet message cannot mutate flat snapshot');
+
+  assert.equal((await bridge.startMicrophone({ activationToken: testActivationToken(bridge) })).ok, true);
+  const newLiveSequence = bridge.getSnapshot().sequence;
+  staleHandler({ data: { payload: loudPayload } });
+  assert.equal(bridge.getSnapshot().sequence, newLiveSequence, 'stale first-session handler cannot mutate restarted live snapshot');
+  createdNodes[1].port.onmessage({ data: { payload: loudPayload } });
+  assert.ok(bridge.getSnapshot().sequence > newLiveSequence, 'current-session handler still updates live snapshot');
 }
 
 async function testDemoFlatLabelsCannotBeConfused() {
@@ -512,6 +605,8 @@ testAudioFeatureBusLogBandsAndAllocationReuse();
 await testLiveAudioSecureContextAndPermissionDenial();
 await testLiveAudioFallbackAndStopCleanup();
 await testLiveAudioWorkletPathAndDeviceLoss();
+await testForgedGestureFlagAndInactiveUserActivationCannotRequestMic();
+await testStaleCapturedWorkletHandlerAfterStopAndRestartCannotMutate();
 await testDemoFlatLabelsCannotBeConfused();
 console.log('Behavioral v4 runtime tests passed');
 console.log('Covered lifecycle adoption/loss budget/stale retry aborts, fallback status, render-graph refs, manifest refs, WebGL2/2D canvas separation, live audio worklet/fallback lifecycle, permission/security gates, and allocation reuse');

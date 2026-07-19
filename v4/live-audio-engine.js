@@ -50,6 +50,34 @@ function publicError(code, message) {
   return Object.freeze({ code, message });
 }
 
+const ACTIVATION_TOKEN_BRAND = Symbol('visualizer-v4-live-audio-activation-token');
+const consumedActivationTokens = new WeakSet();
+
+function defaultTrustedActivationValidator({ windowObject, navigatorObject, event } = {}) {
+  const userActivation = navigatorObject && navigatorObject.userActivation;
+  if (userActivation && typeof userActivation.isActive === 'boolean') return userActivation.isActive === true;
+  if (windowObject && windowObject.navigator && windowObject.navigator.userActivation && typeof windowObject.navigator.userActivation.isActive === 'boolean') {
+    return windowObject.navigator.userActivation.isActive === true;
+  }
+  const EventCtor = (windowObject && windowObject.Event) || (typeof Event !== 'undefined' ? Event : null);
+  return Boolean(EventCtor && event instanceof EventCtor && event.isTrusted === true);
+}
+
+function hasActiveUserActivationNow({ windowObject, navigatorObject } = {}) {
+  const userActivation = navigatorObject && navigatorObject.userActivation;
+  if (userActivation && typeof userActivation.isActive === 'boolean') return userActivation.isActive === true;
+  const windowActivation = windowObject && windowObject.navigator && windowObject.navigator.userActivation;
+  if (windowActivation && typeof windowActivation.isActive === 'boolean') return windowActivation.isActive === true;
+  return true;
+}
+
+function releaseStream(stream) {
+  if (!stream || typeof stream.getTracks !== 'function') return;
+  for (const track of stream.getTracks()) {
+    try { track.onended = null; track.stop(); } catch (error) {}
+  }
+}
+
 export class LiveAudioFeatureBridge {
   constructor({
     bus = new AudioFeatureBus(),
@@ -57,12 +85,14 @@ export class LiveAudioFeatureBridge {
     navigatorObject = globalThis.navigator,
     workletUrl = new URL('./audio-feature-worklet.js', import.meta.url),
     now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()),
+    trustedActivationValidator = null,
   } = {}) {
     this.bus = bus;
     this.windowObject = windowObject;
     this.navigatorObject = navigatorObject;
     this.workletUrl = workletUrl;
     this.now = now;
+    this.trustedActivationValidator = trustedActivationValidator;
     this.audioContext = null;
     this.stream = null;
     this.sourceNode = null;
@@ -78,6 +108,34 @@ export class LiveAudioFeatureBridge {
     this.diagnostics = defaultDiagnostics();
     this.errors = [];
     this.onStateChange = () => {};
+    this.sessionGeneration = 0;
+    this.activeSessionGeneration = 0;
+  }
+
+  invalidateActiveSession() {
+    this.sessionGeneration += 1;
+    this.activeSessionGeneration = 0;
+    return this.sessionGeneration;
+  }
+
+  beginActiveSession() {
+    this.sessionGeneration += 1;
+    this.activeSessionGeneration = this.sessionGeneration;
+    return this.activeSessionGeneration;
+  }
+
+  createActivationToken(event) {
+    const validator = this.trustedActivationValidator || defaultTrustedActivationValidator;
+    const active = validator({ windowObject: this.windowObject, navigatorObject: this.navigatorObject, event }) === true;
+    if (!active) return null;
+    return Object.freeze({ [ACTIVATION_TOKEN_BRAND]: true, generation: this.sessionGeneration });
+  }
+
+  consumeActivationToken(token) {
+    if (!token || token[ACTIVATION_TOKEN_BRAND] !== true || token.generation !== this.sessionGeneration || consumedActivationTokens.has(token)) return false;
+    if (!hasActiveUserActivationNow({ windowObject: this.windowObject, navigatorObject: this.navigatorObject })) return false;
+    consumedActivationTokens.add(token);
+    return true;
   }
 
   getSnapshot() {
@@ -112,8 +170,8 @@ export class LiveAudioFeatureBridge {
     return null;
   }
 
-  async startMicrophone({ gesture = false } = {}) {
-    if (!gesture) {
+  async startMicrophone({ activationToken = null } = {}) {
+    if (!this.consumeActivationToken(activationToken)) {
       const error = publicError('gesture-required', 'Start Mic must be called from an explicit user gesture.');
       this.errors.push(error);
       this.setState(LIVE_AUDIO_STATES.IDLE, { source: 'idle', error: error.message });
@@ -129,6 +187,7 @@ export class LiveAudioFeatureBridge {
       return { ok: false, error: preflight };
     }
 
+    const sessionGeneration = this.beginActiveSession();
     this.diagnostics.requestCount += 1;
     this.setState(LIVE_AUDIO_STATES.REQUESTING, { source: 'idle' });
     try {
@@ -136,11 +195,27 @@ export class LiveAudioFeatureBridge {
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
         video: false,
       });
+      if (sessionGeneration !== this.activeSessionGeneration) {
+        releaseStream(this.stream);
+        this.stream = null;
+        return { ok: false, error: publicError('stale-session', 'Microphone request was superseded safely.') };
+      }
       this.audioContext = await this.createAudioContext();
       if (this.audioContext.state === 'suspended' && typeof this.audioContext.resume === 'function') await this.audioContext.resume();
+      if (sessionGeneration !== this.activeSessionGeneration) {
+        releaseStream(this.stream);
+        this.stream = null;
+        if (this.audioContext && typeof this.audioContext.close === 'function') await this.audioContext.close();
+        this.audioContext = null;
+        return { ok: false, error: publicError('stale-session', 'Microphone request was superseded safely.') };
+      }
       this.sourceNode = this.audioContext.createMediaStreamSource(this.stream);
       this.installTrackLossHandlers();
-      const workletReady = await this.tryStartWorklet();
+      const workletReady = await this.tryStartWorklet(sessionGeneration);
+      if (sessionGeneration !== this.activeSessionGeneration) {
+        await this.releaseCurrentAudioGraph();
+        return { ok: false, error: publicError('stale-session', 'Microphone request was superseded safely.') };
+      }
       if (!workletReady) this.startAnalyserFallback();
       return { ok: true, mode: this.diagnostics.state, snapshot: this.getSnapshot() };
     } catch (error) {
@@ -155,12 +230,13 @@ export class LiveAudioFeatureBridge {
     return new Ctor({ sampleRate: 48000 });
   }
 
-  async tryStartWorklet() {
+  async tryStartWorklet(sessionGeneration = this.activeSessionGeneration) {
     if (!this.audioContext || !this.audioContext.audioWorklet || !this.windowObject.AudioWorkletNode) return false;
     try {
       await this.audioContext.audioWorklet.addModule(this.workletUrl);
+      if (sessionGeneration !== this.activeSessionGeneration) return false;
       this.workletNode = new this.windowObject.AudioWorkletNode(this.audioContext, 'visualizer-v4-feature-processor', { numberOfInputs: 1, numberOfOutputs: 0 });
-      this.workletNode.port.onmessage = (event) => this.handleWorkletMessage(event);
+      this.workletNode.port.onmessage = (event) => this.handleWorkletMessage(event, sessionGeneration);
       this.sourceNode.connect(this.workletNode);
       this.setState(LIVE_AUDIO_STATES.LIVE_WORKLET, { source: 'live-worklet', permission: 'granted' });
       return true;
@@ -171,7 +247,9 @@ export class LiveAudioFeatureBridge {
     }
   }
 
-  handleWorkletMessage(event) {
+  handleWorkletMessage(event, sessionGeneration = 0) {
+    if (this.diagnostics.state !== LIVE_AUDIO_STATES.LIVE_WORKLET) return;
+    if (sessionGeneration !== this.activeSessionGeneration || sessionGeneration === 0) return;
     const payload = event && event.data && event.data.payload;
     if (!payload || payload.length < AUDIO_BAND_COUNT) return;
     this.compactInput.set(payload.subarray(0, AUDIO_BAND_COUNT));
@@ -196,6 +274,7 @@ export class LiveAudioFeatureBridge {
   }
 
   tick() {
+    if (this.diagnostics.state !== LIVE_AUDIO_STATES.LIVE_FALLBACK && this.diagnostics.state !== LIVE_AUDIO_STATES.DEMO) return;
     const now = this.now();
     const dt = this.lastTickMs ? Math.max(1 / 120, Math.min(0.25, (now - this.lastTickMs) / 1000)) : 1 / 60;
     this.lastTickMs = now;
@@ -261,9 +340,7 @@ export class LiveAudioFeatureBridge {
     this.workletNode = null;
   }
 
-  async stop({ nextState = LIVE_AUDIO_STATES.STOPPED, nextSource = 'stopped', error = '' } = {}) {
-    if (this.rafId && this.windowObject.cancelAnimationFrame) this.windowObject.cancelAnimationFrame(this.rafId);
-    this.rafId = 0;
+  async releaseCurrentAudioGraph() {
     this.disconnectWorklet();
     if (this.sourceNode) {
       try { this.sourceNode.disconnect(); } catch (e) {}
@@ -274,16 +351,19 @@ export class LiveAudioFeatureBridge {
     this.sourceNode = null;
     this.analyser = null;
     this.frequencyData = null;
-    if (this.stream) {
-      for (const track of this.stream.getTracks()) {
-        try { track.onended = null; track.stop(); } catch (e) {}
-      }
-    }
+    releaseStream(this.stream);
     this.stream = null;
     if (this.audioContext && typeof this.audioContext.close === 'function') {
       try { await this.audioContext.close(); } catch (e) {}
     }
     this.audioContext = null;
+  }
+
+  async stop({ nextState = LIVE_AUDIO_STATES.STOPPED, nextSource = 'stopped', error = '' } = {}) {
+    this.invalidateActiveSession();
+    if (this.rafId && this.windowObject.cancelAnimationFrame) this.windowObject.cancelAnimationFrame(this.rafId);
+    this.rafId = 0;
+    await this.releaseCurrentAudioGraph();
     this.diagnostics.stopCount += 1;
     this.bus.reset({ source: nextSource, state: nextState });
     this.setState(nextState, { source: nextSource, error });

@@ -124,7 +124,11 @@ function render() {
 bridge.onStateChange = render;
 render();
 
-document.getElementById('start-mic').addEventListener('click', async () => { await bridge.startMicrophone({ gesture: true }); render(); });
+document.getElementById('start-mic').addEventListener('click', async (event) => {
+  const activationToken = bridge.createActivationToken(event);
+  await bridge.startMicrophone({ activationToken });
+  render();
+});
 document.getElementById('start-demo').addEventListener('click', async () => { await bridge.startDemo({ gesture: true }); render(); });
 document.getElementById('start-flat').addEventListener('click', async () => { await bridge.startFlat({ gesture: true }); render(); });
 document.getElementById('stop').addEventListener('click', async () => { await bridge.stop(); render(); });
