@@ -33,6 +33,49 @@ def run_node(script: str, cwd: Path = ROOT) -> dict:
         raise RuntimeError(f"node failed\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}")
     return json.loads(proc.stdout)
 
+META_RE = re.compile(r"```json\s*\n(\{.*?\})\s*\n```", re.S)
+
+def validate_recipe_contracts(text: str, contracts: dict) -> list[str]:
+    problems: list[str] = []
+    match = META_RE.search(text)
+    if not match:
+        return ["RECIPES.md missing machine-readable JSON contract block"]
+    try:
+        meta = json.loads(match.group(1))
+    except json.JSONDecodeError as exc:
+        return [f"RECIPES.md contract JSON is invalid: {exc}"]
+    expected = {
+        "filament-vortex": {"strands": contracts.get("filament", {}).get("strands"), "pointsPerStrand": contracts.get("filament", {}).get("pointsPerStrand")},
+        "prismatic-cathedral": {"arches": contracts.get("cathedral", {}).get("arches"), "shards": contracts.get("cathedral", {}).get("shards")},
+        "neon-voxel-cloud": {"voxels": contracts.get("voxels", {}).get("cells")},
+    }
+    scenes = meta.get("scenes", {}) if isinstance(meta, dict) else {}
+    for scene, fields in expected.items():
+        got = scenes.get(scene, {}) if isinstance(scenes, dict) else {}
+        for field, value in fields.items():
+            if got.get(field) != value:
+                problems.append(f"RECIPES.md JSON {scene}.{field}={got.get(field)!r}, expected {value!r}")
+
+    prose = text[match.end():]
+    claim_patterns = {
+        "filament-vortex.strands": (contracts.get("filament", {}).get("strands"), [r"(\d+)\s*(?=x\s*52\s+ribbon strands)", r"(\d+)\s+strands?"]),
+        "filament-vortex.pointsPerStrand": (contracts.get("filament", {}).get("pointsPerStrand"), [r"118\s*x\s*(\d+)\s+ribbon strands", r"(\d+)\s+advected samples"]),
+        "prismatic-cathedral.arches": (contracts.get("cathedral", {}).get("arches"), [r"(\d+)\s+arches?", r"(\d+)\s+arched corridor ribs"]),
+        "prismatic-cathedral.shards": (contracts.get("cathedral", {}).get("shards"), [r"(\d+)\s+shards?", r"(\d+)\s+bounded prismatic shard"]),
+        "neon-voxel-cloud.voxels": (contracts.get("voxels", {}).get("cells"), [r"(\d+)\s+voxels?", r"(\d+)\s+persistent cells?"]),
+    }
+    for label, (expected_value, patterns) in claim_patterns.items():
+        claims: set[int] = set()
+        for pattern in patterns:
+            for m in re.finditer(pattern, prose, re.I):
+                claims.add(int(m.group(1)))
+        if expected_value not in claims:
+            problems.append(f"RECIPES.md prose missing {label} claim {expected_value}")
+        extras = sorted(v for v in claims if v != expected_value)
+        if extras:
+            problems.append(f"RECIPES.md contradictory {label} claims: expected only {expected_value}, also saw {extras}")
+    return problems
+
 for path in required:
     require(path.exists(), f"missing {path.relative_to(ROOT)}")
 
@@ -75,17 +118,26 @@ for (const scene of ['filament-vortex','prismatic-cathedral','neon-voxel-cloud']
   const a = lab.createHeadlessScene(scene, 17, 'demo');
   const s12 = a.update(12);
   const prefix12 = Array.from(a.mesh.positions.slice(0, 360));
+  a.update(0.25); a.update(3.5); a.update(19.75);
+  const prefixAfterHistory = Array.from((a.update(12), a.mesh.positions.slice(0, 360)));
   const same = lab.createHeadlessScene(scene, 17, 'demo');
   const same12 = same.update(12);
   const prefixSame = Array.from(same.mesh.positions.slice(0, 360));
+  const order = lab.createHeadlessScene(scene, 17, 'demo');
+  order.update(18); order.update(6); const order12 = order.update(12);
+  const prefixOrder = Array.from(order.mesh.positions.slice(0, 360));
   const diffTime = lab.createHeadlessScene(scene, 17, 'demo');
   const s18 = diffTime.update(18);
   const prefix18 = Array.from(diffTime.mesh.positions.slice(0, 360));
-  const repeatBefore = Array.from(a.mesh.positions.slice(0, 360));
-  a.update(12);
-  const repeatAfter = Array.from(a.mesh.positions.slice(0, 360));
+  let liveAdvects = false;
+  if (a.mesh.step) {{
+    const live = lab.createHeadlessScene(scene, 17, 'demo');
+    live.mesh.step(12, live.fft); const liveBefore = Array.from(live.mesh.positions.slice(0,360));
+    live.mesh.step(12, live.fft); const liveAfter = Array.from(live.mesh.positions.slice(0,360));
+    liveAdvects = !liveBefore.every((v,i)=>Math.abs(v-liveAfter[i]) < 1e-7);
+  }}
   const eq = (x,y) => x.length === y.length && x.every((v,i)=>Math.abs(v-y[i]) < 1e-7);
-  out.scenes[scene] = {{ summary: s12, sameSeedTimeEqual: eq(prefix12,prefixSame), changedTimeDifferent: !eq(prefix12,prefix18), repeatedSameTimeAdvects: !eq(repeatBefore,repeatAfter), time18: s18, topology: a.mesh.topology, geometry: a.mesh.geometry, contract: a.mesh.contract }};
+  out.scenes[scene] = {{ summary: s12, sameSeedTimeEqual: eq(prefix12,prefixSame), historyIndependent: eq(prefix12,prefixAfterHistory), callOrderIndependent: eq(prefix12,prefixOrder) && JSON.stringify(s12) === JSON.stringify(order12), changedTimeDifferent: !eq(prefix12,prefix18), liveAdvects, time18: s18, topology: a.mesh.topology, geometry: a.mesh.geometry, contract: a.mesh.contract }};
 }}
 console.log(JSON.stringify(out));
 """
@@ -104,15 +156,27 @@ console.log(JSON.stringify(out));
     require("118x52 ribbon strands" in recipes, "RECIPES.md missing exact 118x52 ribbon strands")
     require("13 arches + 72 shards" in recipes, "RECIPES.md missing exact 13 arches + 72 shards")
     require("260 voxels" in recipes, "RECIPES.md missing exact 260 voxels")
+    for problem in validate_recipe_contracts(recipes, contracts):
+        errors.append(problem)
+    contradiction_fixtures = {
+        "filament": recipes.replace("exactly **118x52 ribbon strands**", "exactly **118x52 ribbon strands**, also 119 strands"),
+        "cathedral": recipes.replace("exactly **13 arches + 72 shards**", "exactly **13 arches + 72 shards**, also 14 arches and 73 shards"),
+        "voxels": recipes.replace("exactly **260 voxels**", "exactly **260 voxels**, also 261 voxels"),
+    }
+    for label, bad_recipe in contradiction_fixtures.items():
+        if not validate_recipe_contracts(bad_recipe, contracts):
+            errors.append(f"RECIPES.md contradiction regression was not rejected for {label}")
 
     for scene, data in behavior.get("scenes", {}).items():
         require(data.get("sameSeedTimeEqual"), f"{scene} is not deterministic for same seed/time")
+        require(data.get("historyIndependent"), f"{scene} same seed/time depends on prior updates")
+        require(data.get("callOrderIndependent"), f"{scene} same seed/time depends on call order")
         require(data.get("changedTimeDifferent"), f"{scene} geometry does not change when time changes")
         summary = data.get("summary", {})
         require(summary.get("vertexCount", 0) > 0, f"{scene} emitted no vertices")
         require(summary.get("width", 0) >= 2.0 and summary.get("height", 0) >= 1.5, f"{scene} composition bounds too small: {summary}")
         if scene == "filament-vortex":
-            require(data.get("repeatedSameTimeAdvects"), "Filament repeated same-time update must advect persistent phase/radius state")
+            require(data.get("liveAdvects"), "Filament live unlocked step must still advect persistent phase/radius state")
             require(summary.get("vertexCount") == 118 * 51 * 6 * 3, "Filament vertex count must prove 118x52 × 3 ribbon layers")
         if scene == "prismatic-cathedral":
             b = summary.get("bounds", {})
@@ -122,25 +186,25 @@ console.log(JSON.stringify(out));
         if scene == "neon-voxel-cloud":
             require(summary.get("width", 0) >= 4.6 and summary.get("depth", 0) >= 6.0, f"Voxel cloud mass/depth too small: {summary}")
 
-    # Adversarial proof: remove both phase and radius advection; verifier should detect lack of persistent same-time state change.
+    # Adversarial proof: make locked update use persistent stepping; verifier should detect history-dependent same seed/time captures.
     if not errors:
-        mutated = js.replace("strand.phase += strand.handed*(.006 + hi*.014); strand.radius += Math.sin(t*.27+strand.bin)*.00135;",
-                             "strand.phase += 0; strand.radius += 0;")
+        mutated = js.replace("mesh.update=(t,fft)=>{ renderFilaments(t,fft,true); };",
+                             "mesh.update=(t,fft)=>{ renderFilaments(t,fft,false); };")
         with tempfile.TemporaryDirectory(prefix="hermes-hero-lab-") as td:
             tmp = Path(td) / "hero-lab-mutated.js"
             tmp.write_text(mutated)
             mutation_script = f"""
 const lab = require({json.dumps(str(tmp))});
 const s = lab.createHeadlessScene('filament-vortex', 17, 'demo');
-s.update(12); const a = Array.from(s.mesh.positions.slice(0,360));
-s.update(12); const b = Array.from(s.mesh.positions.slice(0,360));
-const eq = a.length === b.length && a.every((v,i)=>Math.abs(v-b[i]) < 1e-7);
-console.log(JSON.stringify({{ mutationAccepted: eq }}));
+s.update(12); const locked = Array.from(s.mesh.positions.slice(0,360));
+s.update(2); s.update(7); s.update(12); const afterHistory = Array.from(s.mesh.positions.slice(0,360));
+const eq = locked.length === afterHistory.length && locked.every((v,i)=>Math.abs(v-afterHistory[i]) < 1e-7);
+console.log(JSON.stringify({{ mutationRejected: !eq }}));
 """
             try:
                 adversarial = run_node(mutation_script)
-                require(adversarial.get("mutationAccepted") is True,
-                        "adversarial mutation did not remove same-time filament advection as expected; test may be invalid")
+                require(adversarial.get("mutationRejected") is True,
+                        "adversarial mutation did not make filament locked capture history-dependent as expected; test may be invalid")
             except Exception as exc:
                 errors.append(f"adversarial verifier probe failed: {exc}")
 

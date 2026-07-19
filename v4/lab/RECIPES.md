@@ -2,11 +2,22 @@
 
 All lab routes are isolated under `v4/lab/` and are demo-input browser artifacts, not production v4 integration. Deterministic capture controls: `?seed=<int>`, `?time=<seconds>`, `?mode=demo|flat`. Demo input is generated and labeled honestly; microphone input is intentionally out of scope for this static proof surface. Each route exports `window.__V4_HERO_LAB__` with scene key, seed/time/input mode, renderer/fallback state, DPR, topology, geometry, vertex counts, and runtime bounds.
 
+```json
+{
+  "contractVersion": 1,
+  "scenes": {
+    "filament-vortex": { "strands": 118, "pointsPerStrand": 52, "ribbonLayers": 3 },
+    "prismatic-cathedral": { "arches": 13, "shards": 72 },
+    "neon-voxel-cloud": { "voxels": 260 }
+  }
+}
+```
+
 ## Filament Vortex
 
 - **Route:** `v4/lab/filament-vortex.html?seed=491009&mode=demo&time=18`
 - **Geometry:** exactly **118x52 ribbon strands**. Each persistent strand has 52 advected samples and is emitted as layered triangle ribbons: soft halo, narrow luminous core, and fine secondary filaments.
-- **Simulation state:** CPU state persists per strand (`phase`, `radius`, `z`, FFT owner bin, tier, handedness). Every frame mutates phase/radius in place and rewrites stable typed-array buffers; strand identity does not redraw randomly.
+- **Simulation state:** CPU state persists per strand (`phase`, `radius`, `z`, FFT owner bin, tier, handedness). Unlocked live frames mutate phase/radius in place and rewrite stable typed-array buffers; locked `time=` captures derive phase/radius from immutable seeded base state plus absolute time, so capture bytes do not depend on previous frames.
 - **Camera:** perspective camera at bounded z with slow lateral travel and bass-linked height; locked `time=` freezes a reproducible view.
 - **Material:** luminous filament material, not broad flat bands: low-alpha cyan halo, narrower pearlescent core, and intermittent fine white-blue secondary lines.
 - **Lighting:** emissive line hierarchy plus depth test and alpha blending; no fake exposure-only audio response.
@@ -48,7 +59,7 @@ All lab routes are isolated under `v4/lab/` and are demo-input browser artifacts
 
 - WebGL allocates position/color buffers once with `bufferData(byteLength, DYNAMIC_DRAW)` and updates live ranges with `bufferSubData`.
 - Band, camera, projection/view/MVP, and geometry/color typed arrays are reused; topology arrays and persistent scene objects are not rebuilt per frame.
-- Deterministic same seed/time/mode outputs match across helper runs; changing locked time changes geometry through stateful simulation/advection.
+- Deterministic same seed/time/mode outputs match across helper runs and remain byte-identical after unrelated prior updates or different call orders; changing locked time changes geometry through absolute-time simulation/advection.
 - Native density is capped to DPR 2 but never below DPR 1. Canvas fallback is explicit and labeled.
 
 ## Paired motion-sheet scaffolding
