@@ -18,7 +18,7 @@ import { createFilamentVortexPipelines, createFilamentVortexExecutors } from '..
 import { createNeonVoxelCloudScene, demoVoxelBands, voxelByteSignature, VOXEL_INSTANCE_COUNT, VOXEL_CONTRACT } from '../v4/scenes/neon-voxel-cloud/geometry.js';
 import { neonVoxelCloudManifest, makeNeonVoxelCloudGraph } from '../v4/scenes/neon-voxel-cloud/manifest.js';
 import { createNeonVoxelCloudExecutors, assertNeonVoxelCloudDescriptorContracts } from '../v4/scenes/neon-voxel-cloud/pipeline.js';
-import { BOUNDED_BLOOM_TAP_COUNT, BOUNDED_POST_WGSL, createBoundedPostPipeline } from '../v4/post-stack.js';
+import { BOUNDED_BLOOM_TAP_COUNT, BOUNDED_CHROMATIC_MAX_TEXELS, BOUNDED_POST_WGSL, createBoundedPostPipeline } from '../v4/post-stack.js';
 
 function deferred() {
   let resolve;
@@ -394,8 +394,12 @@ function testExecutableTwoLayerCrossfadeComposite() {
 
 function testBoundedBloomToneMapPipelineContract() {
   assert.equal(BOUNDED_BLOOM_TAP_COUNT, 9, 'bloom cost stays explicitly bounded');
+  assert.equal(BOUNDED_CHROMATIC_MAX_TEXELS, 1.25, 'chromatic separation stays near-pixel and bounded at native density');
   assert.match(BOUNDED_POST_WGSL, /textureDimensions\(sourceTexture\)/, 'bloom offsets are texel-sized');
   assert.match(BOUNDED_POST_WGSL, /max\(luminance - bloomThreshold, 0\.0\)/, 'only highlights feed bloom');
+  assert.match(BOUNDED_POST_WGSL, /fn chromaticSample/, 'post stack has an executable chromatic optics stage');
+  assert.match(BOUNDED_POST_WGSL, /min\(radial \* radial, 1\.0\)/, 'chromatic separation is restrained toward the optical center');
+  assert.doesNotMatch(BOUNDED_POST_WGSL, /textureSample\(sourceTexture, sourceSampler, in\.uv\)\.rgb/, 'base sample must flow through chromatic optics');
   assert.match(BOUNDED_POST_WGSL, /acesToneMap/, 'post output is tone mapped');
   assert.match(BOUNDED_POST_WGSL, /linearToSrgb/, 'post output is encoded for the swapchain');
   const calls = [];

@@ -3,6 +3,7 @@
 const FRAGMENT_STAGE = globalThis.GPUShaderStage?.FRAGMENT ?? 0x2;
 
 export const BOUNDED_BLOOM_TAP_COUNT = 9;
+export const BOUNDED_CHROMATIC_MAX_TEXELS = 1.25;
 
 export const BOUNDED_POST_WGSL = /* wgsl */ `
 struct FullscreenOut {
@@ -28,6 +29,17 @@ fn bloomHighlight(uv: vec2f) -> vec3f {
   let bloomThreshold = 0.72;
   let contribution = max(luminance - bloomThreshold, 0.0) / max(luminance, 0.0001);
   return color * contribution;
+}
+
+fn chromaticSample(uv: vec2f, texel: vec2f) -> vec3f {
+  let centered = uv - vec2f(0.5);
+  let radial = length(centered) * 2.0;
+  let direction = centered / max(length(centered), 0.0001);
+  let separation = direction * texel * ${BOUNDED_CHROMATIC_MAX_TEXELS.toFixed(2)} * min(radial * radial, 1.0);
+  let red = textureSample(sourceTexture, sourceSampler, uv + separation).r;
+  let green = textureSample(sourceTexture, sourceSampler, uv).g;
+  let blue = textureSample(sourceTexture, sourceSampler, uv - separation).b;
+  return vec3f(red, green, blue);
 }
 
 fn acesToneMap(color: vec3f) -> vec3f {
@@ -58,7 +70,7 @@ fn linearToSrgb(color: vec3f) -> vec3f {
   bloom += bloomHighlight(in.uv + vec2f(diagonal.x, -diagonal.y)) * 0.08;
   bloom += bloomHighlight(in.uv + vec2f(-diagonal.x, diagonal.y)) * 0.08;
   bloom += bloomHighlight(in.uv - diagonal) * 0.08;
-  let base = textureSample(sourceTexture, sourceSampler, in.uv).rgb;
+  let base = chromaticSample(in.uv, texel);
   let mapped = acesToneMap(max(base + bloom * 0.65, vec3f(0.0)));
   return vec4f(linearToSrgb(mapped), 1.0);
 }

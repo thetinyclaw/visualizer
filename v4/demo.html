@@ -28,7 +28,7 @@
 <script type="module">
 import { startV4Runtime } from './runtime.js';
 import { RenderGraph, renderTarget, depthTarget, boundedVolumePass, postPass, compositePass } from './render-graph.js';
-import { BOUNDED_BLOOM_TAP_COUNT, createBoundedPostPipeline } from './post-stack.js';
+import { BOUNDED_BLOOM_TAP_COUNT, BOUNDED_CHROMATIC_MAX_TEXELS, createBoundedPostPipeline } from './post-stack.js';
 
 const smokeManifest = {
   schemaVersion: 1,
@@ -163,7 +163,7 @@ try {
     telemetryElement.textContent = 'WebGPU resource manager inactive; no GPU resources allocated on fallback route. No live GPU telemetry is displayed.';
   }
   errorsElement.textContent = runtime.publicErrors.map((error) => `${error.code}: ${error.message}`).join('\n');
-  window.__V4_RUNTIME_SMOKE__ = { label: 'authored bounded 3D volume raymarch through real offscreen post stack and two-layer swapchain crossfade; foundation smoke, not a human-approved hero', mode: runtime.mode, graphId: runtime.graph?.id, passes: runtime.graph?.passes.map((pass) => pass.id), passKinds: runtime.graph?.passes.map((pass) => pass.kind), volumeBounds: runtime.graph?.passes.find((pass) => pass.kind === 'bounded-volume')?.bounds, resources: runtime.graph?.resources.map((resource) => resource.id), postStatus: `executable ${BOUNDED_BLOOM_TAP_COUNT}-tap highlight bloom, ACES tone map, and linear-to-sRGB output; no history/trails`, bloomTapCount: BOUNDED_BLOOM_TAP_COUNT, transition: runtime.graph?.passes.find((pass) => pass.kind === 'composite')?.transition, resourcesReady: statusElement.dataset.resourcesReady, frameSubmitted: statusElement.dataset.frameSubmitted, telemetry: resourceTelemetry };
+  window.__V4_RUNTIME_SMOKE__ = { label: 'authored bounded 3D volume raymarch through real offscreen post stack and two-layer swapchain crossfade; foundation smoke, not a human-approved hero', mode: runtime.mode, graphId: runtime.graph?.id, passes: runtime.graph?.passes.map((pass) => pass.id), passKinds: runtime.graph?.passes.map((pass) => pass.kind), volumeBounds: runtime.graph?.passes.find((pass) => pass.kind === 'bounded-volume')?.bounds, resources: runtime.graph?.resources.map((resource) => resource.id), postStatus: `executable ${BOUNDED_BLOOM_TAP_COUNT}-tap highlight bloom, bounded ${BOUNDED_CHROMATIC_MAX_TEXELS}-texel chromatic optics, ACES tone map, and linear-to-sRGB output; no history/trails`, bloomTapCount: BOUNDED_BLOOM_TAP_COUNT, chromaticMaxTexels: BOUNDED_CHROMATIC_MAX_TEXELS, transition: runtime.graph?.passes.find((pass) => pass.kind === 'composite')?.transition, resourcesReady: statusElement.dataset.resourcesReady, frameSubmitted: statusElement.dataset.frameSubmitted, telemetry: resourceTelemetry };
   const ctx = runtime.graphExecutor ? null : canvas.getContext('2d');
   if (ctx) {
     canvas.width = Math.max(1, canvas.clientWidth || 960); canvas.height = Math.max(1, canvas.clientHeight || 360);

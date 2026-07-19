@@ -124,7 +124,8 @@ require("transitionUniforms" in executor and "transitionProgress" in executor an
 require("transition: { type: 'crossfade', progress: 0.55 }" in demo and "incomingTexture" in demo, "demo does not execute the two-layer crossfade path")
 require("BOUNDED_BLOOM_TAP_COUNT = 9" in post_stack and "textureDimensions(sourceTexture)" in post_stack, "bounded native-density bloom kernel missing")
 require("acesToneMap" in post_stack and "linearToSrgb" in post_stack and "createBoundedPostPipeline" in post_stack, "reusable tone-map/output pipeline missing")
-require("createBoundedPostPipeline({ device, format })" in demo and "bloomTapCount" in demo, "demo does not execute/export bounded bloom post status")
+require("BOUNDED_CHROMATIC_MAX_TEXELS = 1.25" in post_stack and "fn chromaticSample" in post_stack and "min(radial * radial, 1.0)" in post_stack, "bounded center-weighted chromatic optics missing")
+require("createBoundedPostPipeline({ device, format })" in demo and "bloomTapCount" in demo and "chromaticMaxTexels" in demo, "demo does not execute/export bounded post status")
 require("new WebGpuGraphExecutor" in runtime and "graphExecutor.render(" in runtime, "runtime does not execute the render graph")
 
 # Runtime/demo route.
