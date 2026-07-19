@@ -45,11 +45,16 @@ ALLOWED_TRANSITIONS = {
     "checks_passed": {"awaiting_human_approval", "rejected", "discarded", "branched_for_learning"},
     "awaiting_human_approval": {"approved_for_release", "rejected", "discarded", "branched_for_learning"},
 }
-DISALLOWED_TELEMETRY_LABELS = ("fake", "fabricated", "simulated", "dummy", "placeholder", "n/a", "estimated")
+DISALLOWED_TELEMETRY_LABELS = (
+    "fake", "fabricated", "synthetic", "simulated", "dummy", "placeholder", "n/a", "estimated",
+    "mock", "mocked", "artificial", "fixture", "scaffold", "tooling only", "automation-only",
+    "no live", "not real",
+)
 APPROVAL_ABSENCE_PHRASES = (
     "no live capture", "no browser capture", "no real capture", "capture absent", "without live evidence",
-    "live evidence absent", "missing live evidence", "no live evidence", "fixture only", "scaffold only",
-    "tooling validation only", "not a performance claim", "not acceptance",
+    "live evidence absent", "missing live evidence", "missing evidence", "no live evidence", "fixture only",
+    "scaffold only", "tooling validation only", "tooling-only", "tool only", "tool-only", "not a performance claim",
+    "not acceptance", "no capture", "capture not performed", "capture was not performed", "evidence is missing",
 )
 REQUIRED_RECIPE_SECTIONS = [
     "topology", "projection", "silhouette", "occupancy", "camera", "layers", "motion_law",
@@ -130,6 +135,17 @@ def realpath_under(path: Path, root: Path, label: str) -> Path:
     path_real = path.resolve(strict=True)
     require(path_real == root_real or root_real in path_real.parents, f"{label} escapes declared root: {path}")
     return path_real
+
+
+def path_has_symlink_component(path: Path) -> bool:
+    current = Path(path.anchor) if path.is_absolute() else Path()
+    for part in path.parts:
+        if part == path.anchor:
+            continue
+        current = current / part
+        if current.exists() and current.is_symlink():
+            return True
+    return False
 
 
 def declared_root(manifest: Mapping[str, Any], key: str, default: Path) -> Path:
@@ -311,7 +327,7 @@ def generate_motion_sheet(spec: Mapping[str, Any]) -> Mapping[str, Any]:
     }
 
 
-def validate_motion_sheet(sheet: Mapping[str, Any], *, root: Path = ROOT) -> None:
+def validate_motion_sheet(sheet: Mapping[str, Any], *, root: Path = ROOT, require_real: bool = False) -> None:
     require_nonempty_string(sheet.get("motion_sheet_version"), "motion_sheet_version")
     require_nonempty_string(sheet.get("effect_id"), "effect_id")
     validate_local_route(require_nonempty_string(sheet.get("route"), "route"))
@@ -324,6 +340,9 @@ def validate_motion_sheet(sheet: Mapping[str, Any], *, root: Path = ROOT) -> Non
     claim = sheet.get("capture_claim")
     require(claim in {"fixture_scaffold_only_no_browser_capture_performed", "real_browser_capture_completed"},
             "capture_claim must be explicit and honest")
+    if require_real:
+        require(claim == "real_browser_capture_completed",
+                "acceptance motion sheet requires capture_claim == real_browser_capture_completed")
     spatial_by_index: Dict[int, Mapping[str, Any]] = {}
     last_time = -math.inf
     for i, cell in enumerate(spatial):
@@ -340,7 +359,11 @@ def validate_motion_sheet(sheet: Mapping[str, Any], *, root: Path = ROOT) -> Non
             rel = repo_relative_path(cell.get("capture_path"), f"spatial_sheet[{i}].capture_path")
             path = root / rel
             require(path.exists() and path.is_file(), f"spatial_sheet[{i}].capture_path must exist")
+            require(not path_has_symlink_component(path), f"spatial_sheet[{i}].capture_path must not use symlinks")
             realpath_under(path, root, f"spatial_sheet[{i}].capture_path")
+            validate_sha256(cell.get("capture_sha256"), f"spatial_sheet[{i}].capture_sha256")
+            actual_hash = compute_file_sha256(path)
+            require(actual_hash == cell.get("capture_sha256"), f"spatial_sheet[{i}].capture_sha256 mismatch")
         else:
             require(cell.get("capture_path") is None and cell.get("status") == "pending_real_capture",
                     f"spatial_sheet[{i}] fixture scaffold must keep capture_path null and pending")
@@ -355,6 +378,12 @@ def validate_motion_sheet(sheet: Mapping[str, Any], *, root: Path = ROOT) -> Non
         require(abs(float(edge.get("delta_ms")) - expected_delta) < 0.0001, f"chronological_sheet[{i}].delta_ms inconsistent")
         if claim == "real_browser_capture_completed":
             require_nonempty_string(edge.get("motion_observation"), f"chronological_sheet[{i}].motion_observation")
+            expected_from_path = spatial_by_index[fr].get("capture_path")
+            expected_to_path = spatial_by_index[to].get("capture_path")
+            require(edge.get("from_capture_path") == expected_from_path,
+                    f"chronological_sheet[{i}].from_capture_path must pair adjacent immutable capture")
+            require(edge.get("to_capture_path") == expected_to_path,
+                    f"chronological_sheet[{i}].to_capture_path must pair adjacent immutable capture")
             for key in ("geometry_motion", "illumination_motion", "camera_motion"):
                 require(edge.get(key) is not None, f"chronological_sheet[{i}].{key} required for real capture claims")
         else:
@@ -463,12 +492,16 @@ def validate_target_matrix(matrix: Mapping[str, Any], *, evidence_root: Path = D
         require(int(device.get("minimum_frame_samples", 0)) >= 120,
                 f"devices[{i}].minimum_frame_samples must be >= 120")
         ref = require_nonempty_string(device.get("benchmark_evidence_ref"), f"devices[{i}].benchmark_evidence_ref")
-        target = (evidence_root / ref).resolve() if not Path(ref).is_absolute() else Path(ref)
-        require(target.exists(), f"devices[{i}].benchmark_evidence_ref does not exist: {ref}")
+        rel = repo_relative_path(ref, f"devices[{i}].benchmark_evidence_ref")
+        target = ROOT / rel
+        require(target.exists() and target.is_file(), f"devices[{i}].benchmark_evidence_ref does not exist: {ref}")
+        require(not path_has_symlink_component(target), f"devices[{i}].benchmark_evidence_ref must not use symlinks")
+        realpath_under(target, evidence_root, f"devices[{i}].benchmark_evidence_ref")
         validate_benchmark(load_json(target), require_real=require_real)
 
 
-def validator_for_path(path: Path, *, require_real_benchmark: bool = False) -> Callable[[Mapping[str, Any]], None]:
+def validator_for_path(path: Path, *, require_real_benchmark: bool = False,
+                       require_real_motion: bool = False) -> Callable[[Mapping[str, Any]], None]:
     name = path.name
     if "provenance" in name:
         return validate_provenance
@@ -477,7 +510,7 @@ def validator_for_path(path: Path, *, require_real_benchmark: bool = False) -> C
     if "capture_spec" in name:
         return validate_capture_spec
     if "motion_sheet" in name or "motion" in name:
-        return validate_motion_sheet
+        return lambda data: validate_motion_sheet(data, require_real=require_real_motion)
     if "benchmark" in name:
         return lambda data: validate_benchmark(data, require_real=require_real_benchmark)
     if "candidate_factory" in name or "candidate" in name:
@@ -488,18 +521,20 @@ def validator_for_path(path: Path, *, require_real_benchmark: bool = False) -> C
 
 
 def validate_evidence_ref(ref: str, *, evidence_root: Path, seen: Optional[Set[Path]] = None,
-                          require_real_benchmark: bool = False) -> str:
+                          require_real_benchmark: bool = False, require_real_motion: bool = False) -> str:
     rel = repo_relative_path(ref, "evidence ref")
     path = ROOT / rel
     require(path.exists() and path.is_file(), f"evidence ref does not exist: {ref}")
-    realpath_under(path, ROOT, "evidence ref")
+    require(not path_has_symlink_component(path), "evidence ref must not use symlinks")
+    realpath_under(path, evidence_root, "evidence ref")
     seen = seen or set()
     real = path.resolve(strict=True)
     if real in seen:
         return real.name
     seen.add(real)
     data = load_json(real)
-    validator_for_path(real, require_real_benchmark=require_real_benchmark)(data)
+    validator_for_path(real, require_real_benchmark=require_real_benchmark,
+                       require_real_motion=require_real_motion)(data)
     return real.name
 
 
@@ -516,7 +551,8 @@ def validate_gates(gate_manifest: Mapping[str, Any], *, evidence_root: Path = DE
         evidence = gate.get("evidence")
         require(isinstance(evidence, list) and evidence, f"{gate_name}.evidence must be non-empty")
         validated_names = [validate_evidence_ref(str(ref), evidence_root=evidence_root,
-                                                 require_real_benchmark=(mode == "acceptance" and gate_name in {"gate_2", "gate_3"}))
+                                                 require_real_benchmark=(mode == "acceptance" and gate_name in {"gate_2", "gate_3"}),
+                                                 require_real_motion=(mode == "acceptance" and gate_name in {"gate_2", "gate_3"}))
                            for ref in evidence]
         has_provenance = any("provenance" in name for name in validated_names)
         has_scene = any("scene" in name for name in validated_names)
@@ -628,7 +664,9 @@ def validate_read_only_command(command: str, context: str) -> None:
         validate_https_url(url, f"{context}.command url")
 
 
-def validate_release_manifest(release: Mapping[str, Any]) -> None:
+def validate_release_manifest(release: Mapping[str, Any], *, mode: str = "acceptance",
+                              evidence_root: Path = DEFAULT_FIXTURES) -> None:
+    require(mode in {"scaffold", "acceptance"}, "release validation mode must be scaffold or acceptance")
     require_nonempty_string(release.get("release_manifest_version"), "release_manifest_version")
     require_nonempty_string(release.get("release_id"), "release_id")
     channels = release.get("channels")
@@ -648,11 +686,20 @@ def validate_release_manifest(release: Mapping[str, Any]) -> None:
         require(item.get("read_only") is True, f"https_verification_checklist[{i}].read_only must be true")
         validate_read_only_command(require_nonempty_string(item.get("command"), f"https_verification_checklist[{i}].command"),
                                    f"https_verification_checklist[{i}]")
-    validate_human_decision(release.get("human_decision"), require_approved=True, context="release")
+    validate_human_decision(release.get("human_decision"), require_approved=(mode == "acceptance"),
+                            context="release", forbid_absence_notes=(mode == "acceptance"))
+    if mode == "acceptance":
+        gate_ref = require_nonempty_string(release.get("acceptance_gate_ref"), "acceptance_gate_ref")
+        rel = repo_relative_path(gate_ref, "acceptance_gate_ref")
+        gate_path = ROOT / rel
+        require(gate_path.exists() and gate_path.is_file(), f"acceptance_gate_ref does not exist: {gate_ref}")
+        require(not path_has_symlink_component(gate_path), "acceptance_gate_ref must not use symlinks")
+        realpath_under(gate_path, evidence_root, "acceptance_gate_ref")
+        validate_gates(load_json(gate_path), evidence_root=evidence_root, mode="acceptance")
 
 
 def read_only_https_check(release: Mapping[str, Any]) -> List[str]:
-    validate_release_manifest(release)
+    validate_release_manifest(release, mode="scaffold")
     return [item["command"] for item in release["https_verification_checklist"]]
 
 
@@ -674,7 +721,7 @@ def verify_all(fixtures_dir: Path, *, mode: str = "scaffold") -> List[Validation
         ("benchmark_report.json", validate_benchmark),
         ("gate_manifest.json", lambda data: validate_gates(data, evidence_root=fixtures_dir, mode=mode)),
         ("candidate_factory_state.json", validate_candidate_factory),
-        ("release_manifest.json", validate_release_manifest),
+        ("release_manifest.json", lambda data: validate_release_manifest(data, mode=mode, evidence_root=fixtures_dir)),
     ]
     return [validate_file(fixtures_dir / name, validator) for name, validator in checks]
 
@@ -713,7 +760,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "validate-gates": lambda data: validate_gates(data, mode="scaffold"),
         "validate-gates-acceptance": lambda data: validate_gates(data, mode="acceptance"),
         "validate-candidate-factory": validate_candidate_factory,
-        "validate-release": validate_release_manifest,
+        "validate-release": lambda data: validate_release_manifest(data, mode="acceptance"),
     }
     try:
         if args.command in validators:
@@ -734,7 +781,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         elif args.command == "verify-all":
             results = verify_all(args.fixtures, mode=args.mode)
             for result in results:
-                print(f"{Path(result.path).name}: {'ok' if result.ok else 'FAIL'} {result.message}")
+                status = "ok" if result.ok else "FAIL"
+                message = result.message
+                if args.mode == "scaffold" and result.ok and Path(result.path).name in {"gate_manifest.json", "release_manifest.json"}:
+                    status = "scaffold-valid"
+                    message = "not release-approved"
+                print(f"{Path(result.path).name}: {status} {message}")
             if not all(result.ok for result in results):
                 return 1
         return 0

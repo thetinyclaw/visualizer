@@ -55,7 +55,7 @@
   "target_device_matrix": {
     "devices": [
       {
-        "benchmark_evidence_ref": "benchmark_report.json",
+        "benchmark_evidence_ref": "v4/evidence/fixtures/benchmark_report.json",
         "browser": "Safari/Chrome local",
         "fps_floor": 30,
         "id": "target-mac-local",
@@ -63,7 +63,7 @@
         "minimum_frame_samples": 120
       },
       {
-        "benchmark_evidence_ref": "benchmark_report.json",
+        "benchmark_evidence_ref": "v4/evidence/fixtures/benchmark_report.json",
         "browser": "TV HTTPS browser",
         "fps_floor": 30,
         "id": "tv-secure-route",
