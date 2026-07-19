@@ -9,20 +9,25 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.server
 import json
 import math
 import shlex
 import sys
+import threading
+import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Set
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FIXTURES = ROOT / "v4" / "evidence" / "fixtures"
 DEFAULT_RAW_ROOT = DEFAULT_FIXTURES / "raw"
 DEFAULT_DERIVED_ROOT = ROOT / "v4" / "evidence" / "derived"
+DEFAULT_CAPTURE_ROOT = ROOT / "v4" / "evidence" / "local-runs"
 TERMINAL_STATES = {"approved_for_release", "rejected", "discarded", "branched_for_learning"}
 FACTORY_STATES = [
     "ingested_reference",
@@ -50,6 +55,7 @@ DISALLOWED_TELEMETRY_LABELS = (
     "mock", "mocked", "artificial", "fixture", "scaffold", "tooling only", "automation-only",
     "no live", "not real",
 )
+CONSOLE_ERROR_TYPES = {"error", "assert"}
 APPROVAL_ABSENCE_PHRASES = (
     "no live capture", "no browser capture", "no real capture", "capture absent", "without live evidence",
     "live evidence absent", "missing live evidence", "missing evidence", "no live evidence", "fixture only",
@@ -327,6 +333,271 @@ def generate_motion_sheet(spec: Mapping[str, Any]) -> Mapping[str, Any]:
     }
 
 
+def iso_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def locked_capture_url(route: str, *, seed: int, time_ms: float, mode: str) -> str:
+    """Return a deterministic local URL; reject conflicting seed/time/mode query values."""
+    validate_local_route(route)
+    parsed = urlparse(route)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    locks = {"seed": str(int(seed)), "time": format(float(time_ms), ".6f").rstrip("0").rstrip("."), "mode": mode}
+    for key, value in locks.items():
+        if key in query and query[key] != value:
+            raise EvidenceError(f"route already contains conflicting {key}={query[key]!r}; deterministic lock requires {value!r}")
+        query[key] = value
+    return urlunparse(parsed._replace(query=urlencode(query)))
+
+
+def parse_frame_indices(text: str) -> List[int]:
+    frames = [int(part.strip()) for part in text.split(",") if part.strip()]
+    require(len(frames) >= 2, "at least two capture frame indices are required")
+    require(frames == sorted(set(frames)), "capture frame indices must be strictly increasing")
+    return frames
+
+
+def safe_run_directory(out_root: Path, run_id: str, *, allow_existing: bool = False) -> Path:
+    root = out_root.resolve()
+    repo = ROOT.resolve()
+    require(root == repo or repo in root.parents, "out root must stay inside this repository")
+    require(not path_has_symlink_component(root), "out root must not include symlink components")
+    require(bool(run_id) and all(ch.isalnum() or ch in "-_." for ch in run_id), "run id must be path-safe")
+    run_dir = root / run_id
+    if run_dir.exists() and not allow_existing:
+        raise EvidenceError(f"run directory already exists; refusing overwrite: {run_dir}")
+    require(not path_has_symlink_component(run_dir), "run directory must not include symlink components")
+    return run_dir
+
+
+def local_capture_plan(*, route: str, seed: int, time_ms: float, mode: str, viewport: Mapping[str, int],
+                       frame_indices: Sequence[int], out_root: Path, run_id: str, timeout_ms: int) -> Mapping[str, Any]:
+    locked = locked_capture_url(route, seed=seed, time_ms=time_ms, mode=mode)
+    run_dir = safe_run_directory(out_root, run_id, allow_existing=False)
+    return {
+        "capture_plan_version": "1.0",
+        "supported_when": "Python Playwright is installed with a browser binary; otherwise execution returns unsupported without artifacts.",
+        "route": route,
+        "locked_url": locked,
+        "seed": seed,
+        "time_ms": time_ms,
+        "mode": mode,
+        "viewport": {"width": int(viewport["width"]), "height": int(viewport["height"])},
+        "minimum_frame_samples": 120,
+        "warmup_raf_frames": 10,
+        "capture_frame_indices": list(frame_indices),
+        "out_root": str(out_root),
+        "run_id": run_id,
+        "raw_dir": str(run_dir / "raw"),
+        "derived_dir": str(run_dir / "derived"),
+        "timeout_ms": timeout_ms,
+        "network_upload": False,
+        "overwrite_policy": "refuse_existing_run_directory",
+    }
+
+
+def browser_harness_script(seed: int, time_ms: float, mode: str, min_frames: int) -> str:
+    # Dependency-free script injected by the local controller. It only observes and
+    # exports page/runtime state; Playwright performs the actual PNG screenshots.
+    return f"""
+(() => {{
+  const config = {{ seed: {int(seed)}, lockedTimeMs: {float(time_ms)}, mode: {json.dumps(mode)}, minFrames: {int(min_frames)} }};
+  window.__V4_CAPTURE_CONFIG__ = Object.freeze(config);
+  const originalError = console.error.bind(console);
+  const originalWarn = console.warn.bind(console);
+  const consoleLogs = [];
+  console.error = (...args) => {{ consoleLogs.push({{ type: 'error', text: args.map(String).join(' ') }}); originalError(...args); }};
+  console.warn = (...args) => {{ consoleLogs.push({{ type: 'warning', text: args.map(String).join(' ') }}); originalWarn(...args); }};
+  window.addEventListener('error', (event) => consoleLogs.push({{ type: 'error', text: String(event.message || 'window error') }}));
+  window.addEventListener('unhandledrejection', (event) => consoleLogs.push({{ type: 'error', text: String(event.reason && (event.reason.message || event.reason) || 'unhandled rejection') }}));
+  window.__V4_CAPTURE_SAMPLE__ = async function() {{
+    const frames = [];
+    const warmup = 10;
+    let previous = null;
+    await new Promise((resolve) => {{ let n = 0; const tick = () => (++n >= warmup ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); }});
+    await new Promise((resolve) => {{
+      const tick = (ts) => {{
+        if (previous !== null) frames.push({{ frame_index: frames.length, frame_ms: ts - previous, timestamp_ms: ts }});
+        previous = ts;
+        if (frames.length >= config.minFrames) resolve(); else requestAnimationFrame(tick);
+      }};
+      requestAnimationFrame(tick);
+    }});
+    const canvas = document.querySelector('canvas');
+    const rect = canvas ? canvas.getBoundingClientRect() : null;
+    const nav = navigator || {{}};
+    const perfMemory = performance && performance.memory ? performance.memory : null;
+    const exportedState = {{
+      v4RuntimeSmoke: window.__V4_RUNTIME_SMOKE__ || null,
+      v4HeroLab: window.__V4_HERO_LAB__ || null,
+      v4CaptureConfig: window.__V4_CAPTURE_CONFIG__,
+    }};
+    return {{
+      config,
+      frameSamples: frames,
+      viewport: {{ width: window.innerWidth, height: window.innerHeight }},
+      dpr: window.devicePixelRatio,
+      backing: canvas ? {{ width: canvas.width, height: canvas.height, cssWidth: rect ? rect.width : null, cssHeight: rect ? rect.height : null }} : null,
+      browser: {{ userAgent: nav.userAgent || '', platform: nav.platform || '', hardwareConcurrency: nav.hardwareConcurrency || null, deviceMemory: nav.deviceMemory || null }},
+      consoleLogs,
+      exportedState,
+      memory: {{ jsHeapUsedMB: perfMemory ? perfMemory.usedJSHeapSize / 1048576 : null }},
+      gpuTiming: {{ frameMs: null, unknownReason: 'WebGPU timestamp queries are not exposed by this route/controller' }},
+      gpuMemory: {{ mb: null, unknownReason: 'Browser GPU memory is not exposed to page JavaScript' }},
+    }};
+  }};
+}})();
+"""
+
+
+def summarize_samples(samples: Sequence[Mapping[str, Any]]) -> Mapping[str, float]:
+    require(len(samples) >= 120, "capture telemetry must include at least 120 measured frames")
+    values = sorted(float(sample["frame_ms"]) for sample in samples)
+    return {"p50_frame_ms": percentile(values, 0.50), "p95_frame_ms": percentile(values, 0.95)}
+
+
+def raw_ref(path: Path) -> str:
+    return str(path.relative_to(ROOT))
+
+
+def build_real_motion_sheet_from_captures(*, effect_id: str, route: str, seed: int, viewport: Mapping[str, Any], dpr: float,
+                                          captures: Sequence[Mapping[str, Any]]) -> Mapping[str, Any]:
+    spatial = []
+    for capture in captures:
+        spatial.append({
+            "frame_index": capture["frame_index"],
+            "time_ms": capture["time_ms"],
+            "role": capture.get("role", "sample"),
+            "capture_path": capture["capture_path"],
+            "capture_sha256": capture["capture_sha256"],
+            "status": "captured",
+        })
+    chronological = []
+    for prev, cur in zip(spatial, spatial[1:]):
+        chronological.append({
+            "from_frame": prev["frame_index"], "to_frame": cur["frame_index"],
+            "delta_ms": float(cur["time_ms"]) - float(prev["time_ms"]),
+            "from_capture_path": prev["capture_path"], "to_capture_path": cur["capture_path"],
+            "motion_observation": "real browser PNG pair captured; human visual interpretation pending",
+            "geometry_motion": "unknown_pending_review",
+            "illumination_motion": "unknown_pending_review",
+            "camera_motion": "unknown_pending_review",
+        })
+    return {
+        "motion_sheet_version": "1.0", "effect_id": effect_id, "route": route, "seed": seed,
+        "viewport": viewport, "dpr": dpr, "spatial_sheet": spatial, "chronological_sheet": chronological,
+        "generated_at": iso_now(), "capture_claim": "real_browser_capture_completed",
+    }
+
+
+def run_local_browser_capture(*, route: str, effect_id: str, seed: int, time_ms: float, mode: str, viewport: Mapping[str, int],
+                              out_root: Path, run_id: Optional[str] = None, frame_indices: Sequence[int] = (0, 60),
+                              timeout_ms: int = 30000) -> Mapping[str, Any]:
+    run_id = run_id or f"capture-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
+    plan = local_capture_plan(route=route, seed=seed, time_ms=time_ms, mode=mode, viewport=viewport,
+                              frame_indices=frame_indices, out_root=out_root, run_id=run_id, timeout_ms=timeout_ms)
+    try:
+        from playwright.sync_api import sync_playwright  # type: ignore
+    except Exception as exc:
+        return {**plan, "status": "unsupported", "unsupported_reason": f"python Playwright unavailable: {exc.__class__.__name__}", "artifacts_written": []}
+
+    run_dir = safe_run_directory(out_root, run_id, allow_existing=False)
+    raw_dir = run_dir / "raw"
+    derived_dir = run_dir / "derived"
+    raw_dir.mkdir(parents=True)
+    derived_dir.mkdir(parents=True)
+    locked = str(plan["locked_url"])
+    server = None
+    server_thread = None
+    parsed = urlparse(locked)
+    if not parsed.scheme:
+        rel = repo_relative_path(parsed.path, "route")
+        target = ROOT / rel
+        require(target.exists(), f"repo-relative route does not exist: {route}")
+        class Handler(http.server.SimpleHTTPRequestHandler):
+            def __init__(self, *handler_args: Any, **handler_kwargs: Any) -> None:
+                super().__init__(*handler_args, directory=str(ROOT), **handler_kwargs)
+
+            def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
+                pass
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+        locked = f"http://127.0.0.1:{server.server_address[1]}/{rel.as_posix()}?{parsed.query}"
+    started = time.time()
+    console_logs: List[Mapping[str, Any]] = []
+    page_errors: List[Mapping[str, Any]] = []
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(viewport={"width": int(viewport["width"]), "height": int(viewport["height"])}, device_scale_factor=1)
+            page = context.new_page()
+            page.on("console", lambda msg: console_logs.append({"type": msg.type, "text": msg.text}))
+            page.on("pageerror", lambda err: page_errors.append({"type": "error", "text": str(err)}))
+            page.add_init_script(browser_harness_script(seed, time_ms, mode, 120))
+            page.goto(locked, wait_until="networkidle", timeout=timeout_ms)
+            telemetry = page.evaluate("window.__V4_CAPTURE_SAMPLE__ && window.__V4_CAPTURE_SAMPLE__()")
+            require(isinstance(telemetry, Mapping), "browser harness did not export telemetry")
+            dpr = float(telemetry.get("dpr", 0))
+            require(dpr >= 1.0, "native browser DPR must be >= 1")
+            frame_samples = telemetry["frameSamples"]
+            summary = summarize_samples(frame_samples)
+            captures = []
+            for frame_index in frame_indices:
+                capture_path = raw_dir / f"frame-{int(frame_index):04d}.png"
+                page.screenshot(path=str(capture_path), full_page=False)
+                captures.append({
+                    "frame_index": int(frame_index), "time_ms": float(time_ms) + (1000.0 / 60.0) * int(frame_index),
+                    "role": "spatial" if frame_index == frame_indices[0] else "chronological",
+                    "capture_path": raw_ref(capture_path), "capture_sha256": compute_file_sha256(capture_path),
+                })
+            browser.close()
+    finally:
+        if server is not None:
+            server.shutdown()
+            if server_thread is not None:
+                server_thread.join(timeout=2)
+    all_console = console_logs + page_errors + list(telemetry.get("consoleLogs", []))
+    raw_telemetry_path = raw_dir / "frame-telemetry.raw.json"
+    raw_payload = {"captured_at": iso_now(), "locked_url": locked, "telemetry": telemetry, "console_logs": all_console}
+    write_json(raw_telemetry_path, raw_payload)
+    motion = build_real_motion_sheet_from_captures(effect_id=effect_id, route=locked, seed=seed, viewport=telemetry["viewport"], dpr=float(telemetry["dpr"]), captures=captures)
+    motion_path = derived_dir / "motion_sheet.json"
+    write_json(motion_path, motion)
+    validate_motion_sheet(motion, require_real=True)
+    benchmark = {
+        "benchmark_schema_version": "1.0", "evidence_kind": "real_acceptance", "effect_id": effect_id,
+        "seed": seed, "captured_at": iso_now(), "run_id": run_id, "route": locked,
+        "artifact_evidence": [raw_ref(raw_telemetry_path), raw_ref(motion_path)] + [c["capture_path"] for c in captures],
+        "viewport": telemetry["viewport"], "backing_store": telemetry.get("backing"), "dpr": float(telemetry["dpr"]),
+        "effective_density": {"x": float(telemetry["dpr"]), "y": float(telemetry["dpr"])},
+        "frame_samples": [{"frame_index": int(s["frame_index"]), "frame_ms": float(s["frame_ms"]), "evidence_ref": raw_ref(raw_telemetry_path)} for s in frame_samples],
+        "summary": summary,
+        "gpu_timing": {"frame_ms": {"value": None, "unknown_reason": telemetry["gpuTiming"]["unknownReason"], "unit": "ms"}},
+        "memory": {
+            "js_heap_used_mb": {"value": telemetry["memory"].get("jsHeapUsedMB"), "unknown_reason": "browser performance.memory unavailable" if telemetry["memory"].get("jsHeapUsedMB") is None else "", "unit": "MB"},
+            "gpu_memory_mb": {"value": telemetry["gpuMemory"].get("mb"), "unknown_reason": telemetry["gpuMemory"].get("unknownReason"), "unit": "MB"},
+        },
+        "browser": {"name": "Chromium via Playwright", "user_agent": telemetry["browser"].get("userAgent", "unknown"), "device": telemetry["browser"].get("platform", "automation browser") or "automation browser"},
+        "console_logs": all_console, "device_logs": [],
+        "capture_limitations": ["automation-browser relative evidence only; not target-device acceptance"],
+        "duration_ms": round((time.time() - started) * 1000, 3),
+    }
+    benchmark_path = derived_dir / "benchmark_report.json"
+    write_json(benchmark_path, benchmark)
+    validate_benchmark(benchmark, require_real=True)
+    manifest = {"run_id": run_id, "route": locked, "raw_artifacts": {}, "derived_artifacts": {}, "created_at": iso_now()}
+    for path in sorted(raw_dir.iterdir()):
+        if path.is_file():
+            manifest["raw_artifacts"][raw_ref(path)] = compute_file_sha256(path)
+    for path in sorted(derived_dir.iterdir()):
+        if path.is_file():
+            manifest["derived_artifacts"][raw_ref(path)] = compute_file_sha256(path)
+    manifest_path = raw_dir / "run-manifest.raw.json"
+    write_json(manifest_path, manifest)
+    return {**plan, "status": "completed", "locked_url": locked, "benchmark_report": raw_ref(benchmark_path), "motion_sheet": raw_ref(motion_path), "raw_manifest": raw_ref(manifest_path), "artifacts_written": list(manifest["raw_artifacts"].keys()) + list(manifest["derived_artifacts"].keys())}
+
+
 def validate_motion_sheet(sheet: Mapping[str, Any], *, root: Path = ROOT, require_real: bool = False) -> None:
     require_nonempty_string(sheet.get("motion_sheet_version"), "motion_sheet_version")
     require_nonempty_string(sheet.get("effect_id"), "effect_id")
@@ -479,6 +750,14 @@ def validate_benchmark(report: Mapping[str, Any], *, require_real: bool = False)
     require_nonempty_string(browser.get("device"), "browser.device")
     require(isinstance(report.get("console_logs"), list), "console_logs must be an array")
     require(isinstance(report.get("device_logs"), list), "device_logs must be an array")
+    if evidence_kind == "real_acceptance":
+        for group_name in ("console_logs", "device_logs"):
+            for i, entry in enumerate(report.get(group_name, [])):
+                entry = require_mapping(entry, f"{group_name}[{i}]")
+                entry_type = str(entry.get("type", entry.get("level", ""))).lower()
+                text = str(entry.get("text", entry.get("message", ""))).lower()
+                require(entry_type not in CONSOLE_ERROR_TYPES and "shader error" not in text and "shader compile" not in text,
+                        f"{group_name}[{i}] records a console/shader error")
 
 
 def validate_target_matrix(matrix: Mapping[str, Any], *, evidence_root: Path = DEFAULT_FIXTURES, require_real: bool = False) -> None:
@@ -742,6 +1021,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p = sub.add_parser("generate-motion-sheet")
     p.add_argument("--capture-spec", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
+    p = sub.add_parser("capture-plan")
+    p.add_argument("--route", required=True)
+    p.add_argument("--effect-id", default="v4-local-route")
+    p.add_argument("--seed", type=int, required=True)
+    p.add_argument("--time-ms", type=float, default=0.0)
+    p.add_argument("--mode", default="demo")
+    p.add_argument("--viewport", default="1280x720")
+    p.add_argument("--frames", default="0,60")
+    p.add_argument("--out-root", type=Path, default=DEFAULT_CAPTURE_ROOT)
+    p.add_argument("--run-id", default="dry-run")
+    p.add_argument("--timeout-ms", type=int, default=30000)
+    p = sub.add_parser("capture-local")
+    p.add_argument("--route", required=True)
+    p.add_argument("--effect-id", default="v4-local-route")
+    p.add_argument("--seed", type=int, required=True)
+    p.add_argument("--time-ms", type=float, default=0.0)
+    p.add_argument("--mode", default="demo")
+    p.add_argument("--viewport", default="1280x720")
+    p.add_argument("--frames", default="0,60")
+    p.add_argument("--out-root", type=Path, default=DEFAULT_CAPTURE_ROOT)
+    p.add_argument("--run-id")
+    p.add_argument("--timeout-ms", type=int, default=30000)
     p = sub.add_parser("candidate-step")
     p.add_argument("--state", type=Path, required=True)
     p.add_argument("--next-state", required=True)
@@ -774,6 +1075,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         elif args.command == "generate-motion-sheet":
             write_json(args.out, generate_motion_sheet(load_json(args.capture_spec)))
             print(f"generated motion sheet scaffold: {args.out}")
+        elif args.command == "capture-plan":
+            width, height = [int(part) for part in args.viewport.lower().split("x", 1)]
+            plan = local_capture_plan(route=args.route, seed=args.seed, time_ms=args.time_ms, mode=args.mode,
+                                      viewport={"width": width, "height": height},
+                                      frame_indices=parse_frame_indices(args.frames), out_root=args.out_root,
+                                      run_id=args.run_id, timeout_ms=args.timeout_ms)
+            print(json.dumps(plan, indent=2, sort_keys=True))
+        elif args.command == "capture-local":
+            width, height = [int(part) for part in args.viewport.lower().split("x", 1)]
+            result = run_local_browser_capture(route=args.route, effect_id=args.effect_id, seed=args.seed,
+                                               time_ms=args.time_ms, mode=args.mode,
+                                               viewport={"width": width, "height": height},
+                                               out_root=args.out_root, run_id=args.run_id,
+                                               frame_indices=parse_frame_indices(args.frames),
+                                               timeout_ms=args.timeout_ms)
+            print(json.dumps(result, indent=2, sort_keys=True))
+            if result.get("status") == "unsupported":
+                return 2
         elif args.command == "candidate-step":
             write_json(args.out, advance_candidate_factory(load_json(args.state), args.next_state, args.actor))
             print(f"advanced candidate factory state to {args.next_state}: {args.out}")

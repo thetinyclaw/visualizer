@@ -5,6 +5,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from v4.tools import visualizer_v4_evidence as ev
 
@@ -19,14 +20,16 @@ def fixture(name):
 def realish_benchmark():
     data = fixture("benchmark_report.json")
     data["evidence_kind"] = "real_acceptance"
+    data["effect_id"] = "real-candidate"
     data["run_id"] = "browser-capture-20260718-213000"
     data["browser"] = {
         "name": "Chrome",
         "user_agent": "Mozilla/5.0 AppleWebKit/537.36 Chrome/126 Safari/537.36",
         "device": "MacBook Pro M-series display",
     }
+    data["artifact_evidence"] = ["v4/evidence/local-runs/test-run/raw/frame-telemetry.raw.json"]
     for sample in data["frame_samples"]:
-        sample["evidence_ref"] = "v4/evidence/fixtures/motion_sheet.fixture.json"
+        sample["evidence_ref"] = "v4/evidence/local-runs/test-run/raw/frame-telemetry.raw.json"
     return data
 
 
@@ -172,6 +175,43 @@ class EvidenceValidationTests(unittest.TestCase):
         data["memory"]["gpu_memory_mb"]["unknown_reason"] = "simulated by automation"
         with self.assertRaises(ev.EvidenceError):
             ev.validate_benchmark(data)
+
+    def test_real_benchmark_rejects_console_and_shader_errors_but_allows_null_telemetry(self):
+        data = realish_benchmark()
+        data["gpu_timing"]["frame_ms"] = {"value": None, "unknown_reason": "Timestamp query unavailable in browser", "unit": "ms"}
+        data["memory"]["gpu_memory_mb"] = {"value": None, "unknown_reason": "Browser GPU memory unavailable", "unit": "MB"}
+        ev.validate_benchmark(data, require_real=True)
+        data["console_logs"] = [{"type": "error", "text": "Shader compile failed"}]
+        with self.assertRaises(ev.EvidenceError):
+            ev.validate_benchmark(data, require_real=True)
+
+    def test_capture_plan_locks_url_rejects_conflicting_determinism_and_bad_paths(self):
+        harness = (ROOT / "v4" / "evidence" / "capture-harness.js").read_text(encoding="utf-8")
+        self.assertIn("requestAnimationFrame", harness)
+        self.assertIn("minFrames: Math.max(120", harness)
+        self.assertIn("gpuMemory: { mb: null", harness)
+        locked = ev.locked_capture_url("v4/demo.html?foo=bar", seed=7, time_ms=1234.5, mode="demo")
+        self.assertIn("seed=7", locked)
+        self.assertIn("time=1234.5", locked)
+        self.assertIn("mode=demo", locked)
+        with self.assertRaises(ev.EvidenceError):
+            ev.locked_capture_url("v4/demo.html?seed=8", seed=7, time_ms=0, mode="demo")
+        with self.assertRaises(ev.EvidenceError):
+            ev.local_capture_plan(route="v4/demo.html", seed=1, time_ms=0, mode="demo",
+                                  viewport={"width": 640, "height": 360}, frame_indices=[0, 60],
+                                  out_root=Path("/tmp"), run_id="bad", timeout_ms=1000)
+
+    def test_capture_local_reports_unsupported_without_creating_artifacts_when_playwright_missing(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as td:
+            out_root = Path(td) / "runs"
+            with mock.patch.dict("sys.modules", {"playwright.sync_api": None}):
+                result = ev.run_local_browser_capture(route="v4/demo.html", effect_id="demo", seed=1,
+                                                      time_ms=0, mode="demo", viewport={"width": 640, "height": 360},
+                                                      out_root=out_root, run_id="unsupported-test",
+                                                      frame_indices=[0, 60], timeout_ms=1000)
+            self.assertEqual(result["status"], "unsupported")
+            self.assertEqual(result["artifacts_written"], [])
+            self.assertFalse((out_root / "unsupported-test").exists())
 
     def test_benchmark_rejects_synthetic_synonyms_in_real_acceptance_provenance_metadata(self):
         probes = [

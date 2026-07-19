@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tinyclaw.local/visualizer/v4/capture-and-motion.schema.json",
-  "title": "Deterministic local capture spec and paired motion sheets",
+  "title": "Deterministic local capture spec, real-browser run plan, and paired motion sheets",
   "oneOf": [
     {
       "type": "object",
@@ -15,6 +15,24 @@
         "dpr": {"type": "number", "minimum": 1},
         "browser_automation": {"enum": ["playwright", "manual_command", "fixture_only"]},
         "frames": {"type": "array", "minItems": 2, "items": {"type": "object", "required": ["index", "time_ms"], "properties": {"index": {"type": "integer", "minimum": 0}, "time_ms": {"type": "number", "minimum": 0}, "role": {"type": "string"}}}}
+      }
+    },
+    {
+      "type": "object",
+      "required": ["capture_plan_version", "route", "locked_url", "seed", "time_ms", "mode", "viewport", "minimum_frame_samples", "warmup_raf_frames", "capture_frame_indices", "raw_dir", "derived_dir", "network_upload", "overwrite_policy"],
+      "properties": {
+        "capture_plan_version": {"type": "string"},
+        "route": {"type": "string"},
+        "locked_url": {"type": "string", "description": "Local same-origin route plus deterministic seed/time/mode lock."},
+        "seed": {"type": "integer"},
+        "time_ms": {"type": "number"},
+        "mode": {"type": "string"},
+        "viewport": {"type": "object"},
+        "minimum_frame_samples": {"type": "integer", "minimum": 120},
+        "warmup_raf_frames": {"type": "integer", "minimum": 1},
+        "capture_frame_indices": {"type": "array", "minItems": 2, "items": {"type": "integer", "minimum": 0}},
+        "network_upload": {"const": false},
+        "overwrite_policy": {"const": "refuse_existing_run_directory"}
       }
     },
     {
