@@ -27,6 +27,9 @@ def read(name: str) -> str:
 capability = read("capability.js")
 lifecycle = read("gpu-lifecycle.js")
 audio = read("audio-feature-bus.js")
+live_audio = read("live-audio-engine.js")
+worklet = read("audio-feature-worklet.js")
+live_smoke = read("live-audio.html")
 manifest = read("scene-manifest.js")
 graph = read("render-graph.js")
 executor = read("render-graph-executor.js")
@@ -70,6 +73,28 @@ require("FFT_ATTACK_MS" in audio and "FFT_RELEASE_MS" in audio, "separate attack
 require("rms > this.envelopedBands[band] ? FFT_ATTACK_MS : FFT_RELEASE_MS" in audio, "attack/release branch missing")
 require("stableOwnerId" in audio and "this.bandOwners = new Map()" in audio, "stable structural ownership missing")
 require("onsetImpulse" in audio and "ONSET_FLUX_THRESHOLD" in audio, "onset impulse missing")
+require("vec4Views" in audio and ".subarray(0, 4)" in audio, "allocation-safe four-vec4 payload views missing")
+require("processDecibelSpectrum" in audio and "Math.pow(10" in audio, "AnalyserNode dB-to-power log-band path missing")
+require("processBandFrame" in audio and "snapshotObject" in audio, "stable structural feature snapshot missing")
+
+# Live microphone bridge and smoke route.
+for token in ["LIVE_WORKLET", "LIVE_FALLBACK", "DEMO", "FLAT", "DENIED", "INSECURE", "DEVICE_LOST", "STOPPED"]:
+    require(token in live_audio, f"live audio state {token} missing")
+require("gesture = false" in live_audio and "gesture-required" in live_audio, "microphone start is not explicitly user-gesture gated")
+require("isSecureContext" in live_audio and "insecure-context" in live_audio, "secure-context rejection missing")
+require("getUserMedia" in live_audio and "echoCancellation: false" in live_audio, "raw-ish microphone request missing")
+require("audioWorklet.addModule" in live_audio and "AudioWorkletNode" in live_audio, "AudioWorklet live analysis path missing")
+require("createAnalyser" in live_audio and "getFloatFrequencyData" in live_audio, "main-thread AnalyserNode fallback missing")
+require("track.stop()" in live_audio and "audioContext.close" in live_audio, "stop cleanup does not release tracks/context")
+require("permission-denied" in live_audio and "Use Start Mic to retry" in live_audio, "permission denial recovery copy missing")
+require("processBandFrame(this.compactInput" in live_audio, "worklet compact feature transfer bridge missing")
+require("processDecibelSpectrum(this.frequencyData" in live_audio, "fallback feature bridge missing")
+require("DEMO SYNTHETIC" in live_audio and "FLAT TEST SIGNAL" in live_audio, "demo/flat labels can be confused")
+require("registerProcessor('visualizer-v4-feature-processor'" in worklet, "AudioWorklet processor registration missing")
+require("new Float32Array(AUDIO_BAND_COUNT + 3)" in worklet and "postMessage" in worklet, "worklet does not transfer compact band/flux/onset packet")
+require("Start Mic" in live_smoke and "Demo" in live_smoke and "Stop" in live_smoke, "live audio smoke controls missing")
+require("window.__V4_LIVE_AUDIO__" in live_smoke and "data-audio-state" in live_smoke, "live audio browser-smoke diagnostic export missing")
+require("never auto-requests" in live_smoke and "demo synthetic - no microphone" in live_smoke, "live smoke route lacks honest source labeling")
 
 # Manifest schema coverage.
 require("SCENE_MANIFEST_VERSION = 1" in manifest, "versioned scene manifest missing")

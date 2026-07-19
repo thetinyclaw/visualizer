@@ -6,6 +6,8 @@ import { validateSceneManifest } from '../v4/scene-manifest.js';
 import { startV4Runtime } from '../v4/runtime.js';
 import { AssetCache, GpuResourceManager } from '../v4/resource-manager.js';
 import { WebGpuGraphExecutor } from '../v4/render-graph-executor.js';
+import { AudioFeatureBus, AUDIO_BAND_COUNT, makeLogBandEdges } from '../v4/audio-feature-bus.js';
+import { LiveAudioFeatureBridge, LIVE_AUDIO_STATES } from '../v4/live-audio-engine.js';
 
 function deferred() {
   let resolve;
@@ -335,6 +337,168 @@ async function testFallbackCanvasSeparation() {
   assert.deepEqual(fallbackCanvas.calls, ['webgl2']);
 }
 
+function testAudioFeatureBusLogBandsAndAllocationReuse() {
+  const edges = makeLogBandEdges();
+  assert.equal(edges.length, AUDIO_BAND_COUNT + 1);
+  assert.ok(Math.abs(edges[0] - 20) < 1e-5);
+  assert.ok(Math.abs(edges[16] - 20000) < 0.1);
+  const ratio0 = edges[1] / edges[0];
+  const ratio8 = edges[9] / edges[8];
+  assert.ok(Math.abs(ratio0 - ratio8) < 1e-5, 'band edges are logarithmic');
+
+  const bus = new AudioFeatureBus();
+  const frame = new Float32Array(129);
+  frame.fill(0);
+  const snap0 = bus.processSpectrum(frame, 1 / 60, { source: 'flat', state: 'flat' });
+  frame.fill(0.75, 4, 40);
+  const snap1 = bus.processSpectrum(frame, 1 / 60, { source: 'demo', state: 'demo' });
+  const risingFlux = snap1.positiveSpectralFlux;
+  const risingOnset = snap1.onsetImpulse;
+  frame.fill(0);
+  const snap2 = bus.processSpectrum(frame, 1 / 60, { source: 'demo', state: 'demo' });
+  const fallingFlux = snap2.positiveSpectralFlux;
+  assert.equal(snap0, snap1, 'snapshot object is reused to avoid per-frame object allocation');
+  assert.equal(snap1.bands, snap2.bands, 'band array is reused');
+  assert.equal(snap1.vec4Views[0].buffer, snap1.vec4Payload.buffer, 'vec4 views share compact payload');
+  assert.ok(risingFlux > 0, 'rising frame produces positive flux');
+  assert.ok(risingOnset > 0, 'rising frame produces onset impulse');
+  assert.equal(fallingFlux, 0, 'falling frame clamps flux to zero');
+  assert.ok(Math.max(...snap2.release) > 0, 'release values are separate from attack values');
+  assert.equal(bus.own('camera-pressure'), bus.own('camera-pressure'), 'structural owners are stable');
+}
+
+function makeRafWindow({ secure = true, AudioContextCtor = null, AudioWorkletNodeCtor = null } = {}) {
+  let rafId = 0;
+  const callbacks = new Map();
+  return {
+    isSecureContext: secure,
+    AudioContext: AudioContextCtor,
+    webkitAudioContext: AudioContextCtor,
+    AudioWorkletNode: AudioWorkletNodeCtor,
+    requestAnimationFrame(callback) { rafId += 1; callbacks.set(rafId, callback); return rafId; },
+    cancelAnimationFrame(id) { callbacks.delete(id); },
+    flushFrame(time = 16) { const next = callbacks.entries().next(); if (!next.done) { callbacks.delete(next.value[0]); next.value[1](time); } },
+  };
+}
+
+function makeTrack() {
+  return { stopped: false, onended: null, stop() { this.stopped = true; } };
+}
+
+function makeStream(track = makeTrack()) {
+  return { track, getTracks() { return [track]; }, getAudioTracks() { return [track]; } };
+}
+
+function makeFallbackAudioContext() {
+  const analyser = {
+    fftSize: 0,
+    smoothingTimeConstant: 1,
+    frequencyBinCount: 2048,
+    disconnected: false,
+    getFloatFrequencyData(target) { target.fill(-90); target.fill(-20, 12, 80); },
+    disconnect() { this.disconnected = true; },
+  };
+  return class MockAudioContext {
+    constructor() { this.state = 'running'; this.sampleRate = 48000; this.audioWorklet = null; this.closed = false; this.analyser = analyser; }
+    createMediaStreamSource() { return { connected: [], connect(node) { this.connected.push(node); }, disconnect() { this.connected = []; } }; }
+    createAnalyser() { return analyser; }
+    async close() { this.closed = true; }
+  };
+}
+
+async function testLiveAudioSecureContextAndPermissionDenial() {
+  const insecureWindow = makeRafWindow({ secure: false });
+  const insecure = new LiveAudioFeatureBridge({ windowObject: insecureWindow, navigatorObject: { mediaDevices: { async getUserMedia() { throw new Error('must not request'); } } } });
+  const rejected = await insecure.startMicrophone({ gesture: true });
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.error.code, 'insecure-context');
+  assert.equal(insecure.getDiagnostics().state, LIVE_AUDIO_STATES.INSECURE);
+  assert.equal(insecure.getDiagnostics().requestCount, 0, 'secure-context rejection must not request permission');
+
+  let requested = 0;
+  const denied = new LiveAudioFeatureBridge({
+    windowObject: makeRafWindow({ secure: true, AudioContextCtor: makeFallbackAudioContext() }),
+    navigatorObject: { mediaDevices: { async getUserMedia() { requested += 1; const err = new Error('denied'); err.name = 'NotAllowedError'; throw err; } } },
+  });
+  const result = await denied.startMicrophone({ gesture: true });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'permission-denied');
+  assert.equal(requested, 1);
+  assert.equal(denied.getDiagnostics().state, LIVE_AUDIO_STATES.DENIED);
+  const retry = await denied.startDemo({ gesture: true });
+  assert.equal(retry.ok, true, 'demo remains recoverable after denial');
+  assert.equal(denied.getDiagnostics().source, 'demo');
+}
+
+async function testLiveAudioFallbackAndStopCleanup() {
+  const track = makeTrack();
+  const stream = makeStream(track);
+  let requested = 0;
+  const win = makeRafWindow({ secure: true, AudioContextCtor: makeFallbackAudioContext() });
+  const bridge = new LiveAudioFeatureBridge({
+    windowObject: win,
+    navigatorObject: { mediaDevices: { async getUserMedia() { requested += 1; return stream; } } },
+    now: () => 1000,
+  });
+  const noGesture = await bridge.startMicrophone({ gesture: false });
+  assert.equal(noGesture.ok, false);
+  assert.equal(requested, 0, 'mic is user-gesture gated');
+  const started = await bridge.startMicrophone({ gesture: true });
+  assert.equal(started.ok, true);
+  assert.equal(bridge.getDiagnostics().state, LIVE_AUDIO_STATES.LIVE_FALLBACK);
+  assert.equal(bridge.getDiagnostics().source, 'live-fallback');
+  win.flushFrame(1016);
+  assert.ok(Math.max(...bridge.getSnapshot().rawBands) > 0, 'fallback analyser feeds reusable feature bus');
+  await bridge.stop();
+  assert.equal(track.stopped, true, 'stop releases media tracks');
+  assert.equal(bridge.stream, null);
+  assert.equal(bridge.audioContext, null);
+  assert.equal(bridge.getDiagnostics().micActive, false);
+  assert.equal(bridge.getDiagnostics().state, LIVE_AUDIO_STATES.STOPPED);
+}
+
+async function testLiveAudioWorkletPathAndDeviceLoss() {
+  const track = makeTrack();
+  const stream = makeStream(track);
+  class MockAudioWorkletNode {
+    constructor() { this.port = { onmessage: null }; this.disconnected = false; }
+    disconnect() { this.disconnected = true; }
+  }
+  class WorkletAudioContext {
+    constructor() { this.state = 'running'; this.audioWorklet = { async addModule() {} }; this.closed = false; }
+    createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    async close() { this.closed = true; }
+  }
+  const win = makeRafWindow({ secure: true, AudioContextCtor: WorkletAudioContext, AudioWorkletNodeCtor: MockAudioWorkletNode });
+  const bridge = new LiveAudioFeatureBridge({
+    windowObject: win,
+    navigatorObject: { mediaDevices: { async getUserMedia() { return stream; } } },
+  });
+  const started = await bridge.startMicrophone({ gesture: true });
+  assert.equal(started.ok, true);
+  assert.equal(bridge.getDiagnostics().state, LIVE_AUDIO_STATES.LIVE_WORKLET);
+  const snapBefore = bridge.getSnapshot();
+  const payload = new Float32Array(AUDIO_BAND_COUNT + 3);
+  payload.fill(0.5, 0, AUDIO_BAND_COUNT);
+  bridge.workletNode.port.onmessage({ data: { payload } });
+  assert.equal(bridge.getSnapshot(), snapBefore, 'worklet messages update the stable snapshot object');
+  assert.ok(Math.max(...bridge.getSnapshot().rawBands) > 0);
+  await track.onended();
+  assert.equal(bridge.getDiagnostics().state, LIVE_AUDIO_STATES.DEVICE_LOST);
+  assert.equal(track.stopped, true);
+}
+
+async function testDemoFlatLabelsCannotBeConfused() {
+  const bridge = new LiveAudioFeatureBridge({ windowObject: makeRafWindow({ secure: true }), navigatorObject: {} });
+  await bridge.startFlat({ gesture: true });
+  assert.equal(bridge.getDiagnostics().source, 'flat');
+  assert.match(bridge.getDiagnostics().label, /FLAT TEST SIGNAL/);
+  await bridge.startDemo({ gesture: true });
+  assert.equal(bridge.getDiagnostics().source, 'demo');
+  assert.match(bridge.getDiagnostics().label, /DEMO SYNTHETIC/);
+  assert.equal(bridge.getDiagnostics().micActive, false);
+}
+
 await testRuntimeUsesLifecycleAndRetryBudget();
 await testExplicitLifecycleBudgetResetOnly();
 await testStalePendingRetryCannotReplaceExplicitReacquire();
@@ -344,5 +508,10 @@ testExecutableRenderGraphSubmission();
 testRenderGraphDeepValidation();
 testSceneManifestDeepValidation();
 await testFallbackCanvasSeparation();
+testAudioFeatureBusLogBandsAndAllocationReuse();
+await testLiveAudioSecureContextAndPermissionDenial();
+await testLiveAudioFallbackAndStopCleanup();
+await testLiveAudioWorkletPathAndDeviceLoss();
+await testDemoFlatLabelsCannotBeConfused();
 console.log('Behavioral v4 runtime tests passed');
-console.log('Covered lifecycle adoption/loss budget/stale retry aborts, fallback status, render-graph refs, manifest refs, and WebGL2/2D canvas separation');
+console.log('Covered lifecycle adoption/loss budget/stale retry aborts, fallback status, render-graph refs, manifest refs, WebGL2/2D canvas separation, live audio worklet/fallback lifecycle, permission/security gates, and allocation reuse');

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visualizer v4 Live Audio Smoke</title>
+  <style>
+    html, body { margin: 0; min-height: 100%; background: #040711; color: #d9f2ff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    main { min-height: 100vh; display: grid; place-items: center; padding: 22px; }
+    section { width: min(940px, 100%); border: 1px solid rgba(99, 210, 255, 0.35); border-radius: 18px; padding: 22px; background: linear-gradient(145deg, rgba(16,29,54,.92), rgba(4,7,15,.96)); box-shadow: 0 28px 90px rgba(0,0,0,.45); }
+    h1 { margin: 0 0 8px; letter-spacing: .08em; }
+    p { color: #9eb8c9; line-height: 1.45; }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+    button { border: 1px solid rgba(134,231,255,.5); color: #d9f2ff; background: rgba(19,45,78,.85); border-radius: 999px; padding: 10px 16px; font: inherit; cursor: pointer; }
+    button:hover, button:focus { outline: 2px solid rgba(134,231,255,.38); }
+    button.stop { border-color: rgba(255,138,138,.55); background: rgba(79,24,38,.85); }
+    canvas { display: block; width: 100%; height: 280px; border-radius: 14px; background: radial-gradient(circle at 50% 50%, #17365a, #03050a 70%); }
+    dl { display: grid; grid-template-columns: 180px 1fr; gap: 8px 16px; margin: 16px 0 0; }
+    dt { color: #86e7ff; }
+    dd { margin: 0; color: #e7fbff; overflow-wrap: anywhere; }
+    #status { color: #86ffce; font-weight: 700; }
+    #errors { color: #ffb9b9; white-space: pre-wrap; min-height: 1.2em; }
+    .note { font-size: 13px; color: #8da4b7; }
+  </style>
+</head>
+<body>
+<main>
+  <section>
+    <h1>V4 LIVE AUDIO SMOKE</h1>
+    <p>This lab never auto-requests microphone access. Use <strong>Start Mic</strong> from a user gesture for live input, or <strong>Demo</strong>/<strong>Flat</strong> for honestly labeled synthetic/no-signal sources.</p>
+    <div class="controls" aria-label="audio source controls">
+      <button id="start-mic" type="button">Start Mic</button>
+      <button id="start-demo" type="button">Demo</button>
+      <button id="start-flat" type="button">Flat</button>
+      <button id="stop" class="stop" type="button">Stop</button>
+    </div>
+    <canvas id="bands" width="960" height="280" aria-label="16 logarithmic audio bands"></canvas>
+    <dl>
+      <dt>State</dt><dd id="status" data-audio-state="idle" data-audio-source="idle">IDLE · microphone has not been requested</dd>
+      <dt>Secure context</dt><dd id="secure"></dd>
+      <dt>Mic active</dt><dd id="mic-active">false</dd>
+      <dt>Worklet support</dt><dd id="worklet">unknown</dd>
+      <dt>Flux / onset</dt><dd id="flux">0.000 / 0.000</dd>
+      <dt>Attack / release</dt><dd id="envelope">0.000 / 0.000</dd>
+      <dt>Errors</dt><dd id="errors"></dd>
+    </dl>
+    <p class="note">The feature snapshot is exported as <code>window.__V4_LIVE_AUDIO__</code> for simulation, geometry, volume, camera and browser-smoke diagnostics.</p>
+  </section>
+</main>
+<script type="module">
+import { createLiveAudioFeatureBridge } from './live-audio-engine.js';
+
+const canvas = document.getElementById('bands');
+const ctx = canvas.getContext('2d');
+const statusElement = document.getElementById('status');
+const secureElement = document.getElementById('secure');
+const micElement = document.getElementById('mic-active');
+const workletElement = document.getElementById('worklet');
+const fluxElement = document.getElementById('flux');
+const envelopeElement = document.getElementById('envelope');
+const errorsElement = document.getElementById('errors');
+
+const bridge = createLiveAudioFeatureBridge();
+window.__V4_LIVE_AUDIO__ = {
+  route: 'v4/live-audio.html',
+  bridge,
+  diagnostics: bridge.getDiagnostics(),
+  snapshot: bridge.getSnapshot(),
+  labels: {
+    live: 'live microphone',
+    demo: 'demo synthetic - no microphone',
+    flat: 'flat test signal - no microphone',
+  },
+};
+
+function draw(snapshot) {
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  const gradient = ctx.createLinearGradient(0, 0, width, height);
+  gradient.addColorStop(0, '#09152c');
+  gradient.addColorStop(1, '#03050a');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+
+  const bands = snapshot.bands;
+  const gap = 8;
+  const barWidth = (width - gap * (bands.length + 1)) / bands.length;
+  for (let i = 0; i < bands.length; i += 1) {
+    const value = Math.max(0.01, bands[i]);
+    const attack = snapshot.attack[i];
+    const x = gap + i * (barWidth + gap);
+    const h = value * (height - 54);
+    const y = height - 30 - h;
+    ctx.fillStyle = `rgba(${80 + i * 8}, ${180 + attack * 60}, 255, 0.86)`;
+    ctx.fillRect(x, y, barWidth, h);
+    ctx.fillStyle = 'rgba(217,242,255,.65)';
+    ctx.fillRect(x, height - 24, barWidth, 2);
+  }
+  ctx.fillStyle = '#d9f2ff';
+  ctx.font = '15px monospace';
+  ctx.fillText(snapshot.source.toUpperCase() + ' · 16 log bands · structural feature snapshot', 18, 24);
+}
+
+function render() {
+  const diagnostics = bridge.getDiagnostics();
+  const snapshot = bridge.getSnapshot();
+  window.__V4_LIVE_AUDIO__.diagnostics = diagnostics;
+  window.__V4_LIVE_AUDIO__.snapshot = snapshot;
+  statusElement.textContent = diagnostics.label;
+  statusElement.dataset.audioState = diagnostics.state;
+  statusElement.dataset.audioSource = diagnostics.source;
+  secureElement.textContent = String(diagnostics.secureContext);
+  micElement.textContent = String(diagnostics.micActive);
+  workletElement.textContent = String(diagnostics.workletSupported);
+  fluxElement.textContent = `${snapshot.positiveSpectralFlux.toFixed(3)} / ${snapshot.onsetImpulse.toFixed(3)}`;
+  const maxAttack = Math.max(...snapshot.attack);
+  const maxRelease = Math.max(...snapshot.release);
+  envelopeElement.textContent = `${maxAttack.toFixed(3)} / ${maxRelease.toFixed(3)}`;
+  errorsElement.textContent = diagnostics.lastError;
+  draw(snapshot);
+}
+
+bridge.onStateChange = render;
+render();
+
+document.getElementById('start-mic').addEventListener('click', async () => { await bridge.startMicrophone({ gesture: true }); render(); });
+document.getElementById('start-demo').addEventListener('click', async () => { await bridge.startDemo({ gesture: true }); render(); });
+document.getElementById('start-flat').addEventListener('click', async () => { await bridge.startFlat({ gesture: true }); render(); });
+document.getElementById('stop').addEventListener('click', async () => { await bridge.stop(); render(); });
+window.addEventListener('pagehide', () => { bridge.stop(); });
+</script>
+</body>
+</html>
