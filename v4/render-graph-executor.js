@@ -26,13 +26,36 @@ function clampDpr(value, cap) {
   return Math.max(1, Math.min(raw || 1, cap));
 }
 
+function finiteLayoutPair(width, height) {
+  const measuredWidth = Number(width);
+  const measuredHeight = Number(height);
+  if (!Number.isFinite(measuredWidth) || !Number.isFinite(measuredHeight)) return null;
+  return { width: measuredWidth, height: measuredHeight };
+}
+
 function cssPixelSize(canvas) {
   const rect = typeof canvas.getBoundingClientRect === 'function' ? canvas.getBoundingClientRect() : null;
-  const attrWidth = Number(canvas.width) || 0;
-  const attrHeight = Number(canvas.height) || 0;
-  const width = Math.max(0, Math.floor(rect?.width || canvas.clientWidth || attrWidth || 0));
-  const height = Math.max(0, Math.floor(rect?.height || canvas.clientHeight || attrHeight || 0));
-  return { width, height };
+  const rectSize = rect ? finiteLayoutPair(rect.width, rect.height) : null;
+  if (rectSize) {
+    const width = Math.floor(rectSize.width);
+    const height = Math.floor(rectSize.height);
+    if (width <= 0 || height <= 0) return { width: 0, height: 0, reason: 'layout-reports-zero', source: 'getBoundingClientRect' };
+    return { width, height, reason: 'layout-available', source: 'getBoundingClientRect' };
+  }
+
+  const hasClientLayout = 'clientWidth' in canvas || 'clientHeight' in canvas;
+  if (hasClientLayout) {
+    const clientSize = finiteLayoutPair(canvas.clientWidth, canvas.clientHeight);
+    if (!clientSize) return { width: 0, height: 0, reason: 'layout-reports-zero', source: 'client-size' };
+    const width = Math.floor(clientSize.width);
+    const height = Math.floor(clientSize.height);
+    if (width <= 0 || height <= 0) return { width: 0, height: 0, reason: 'layout-reports-zero', source: 'client-size' };
+    return { width, height, reason: 'layout-available', source: 'client-size' };
+  }
+
+  const attrWidth = Math.floor(Number(canvas.width) || 0);
+  const attrHeight = Math.floor(Number(canvas.height) || 0);
+  return { width: Math.max(0, attrWidth), height: Math.max(0, attrHeight), reason: 'layout-unavailable', source: 'backing-attributes' };
 }
 
 function bindPassResources(passEncoder, resources, graphPass) {
@@ -72,6 +95,7 @@ export class WebGpuGraphExecutor {
     this.width = 0;
     this.height = 0;
     this.dpr = 1;
+    this.lastCanvasSize = Object.freeze({ width: 0, height: 0, reason: 'not-measured', source: 'none' });
     this.disposed = false;
     this.context.configure({ device, format, alphaMode: 'opaque' });
     this.compiledPasses = this.compile(graph);
@@ -132,7 +156,9 @@ export class WebGpuGraphExecutor {
   }
 
   syncCanvasSize() {
-    const { width: cssWidth, height: cssHeight } = cssPixelSize(this.canvas);
+    const measurement = cssPixelSize(this.canvas);
+    this.lastCanvasSize = measurement;
+    const { width: cssWidth, height: cssHeight } = measurement;
     if (cssWidth === 0 || cssHeight === 0) return false;
     const devicePixelRatio = this.windowObject?.devicePixelRatio || globalThis.devicePixelRatio || 1;
     const dpr = clampDpr(devicePixelRatio, this.dprCap);
@@ -210,7 +236,10 @@ export class WebGpuGraphExecutor {
 
   render(frameContext = {}) {
     if (this.disposed) throw new Error('WebGPU graph executor is disposed.');
-    if (!this.resizeTargets()) return Object.freeze({ submitted: false, skipped: 'zero-size', width: 0, height: 0, graphId: this.graph.id });
+    if (!this.resizeTargets()) {
+      const measurement = this.lastCanvasSize || { reason: 'zero-size', source: 'unknown' };
+      return Object.freeze({ submitted: false, skipped: 'zero-size', reason: measurement.reason, source: measurement.source, width: 0, height: 0, graphId: this.graph.id });
+    }
     const encoder = this.device.createCommandEncoder({ label: `${this.graph.id}:frame` });
     const executed = [];
     for (const compiled of this.compiledPasses) {

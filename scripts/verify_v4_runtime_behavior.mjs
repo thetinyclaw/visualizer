@@ -317,6 +317,71 @@ function smokeGraph() {
     .addPass(compositePass('composite', { layers: ['smoke-color'], output: 'swapchain' }));
 }
 
+function makeExecutorGraph(id = 'executor-smoke') {
+  return new RenderGraph({ id })
+    .addResource(renderTarget('scene-color'))
+    .addPass(renderPass('draw', { pipeline: 'render-pipeline', colorTargets: ['scene-color'], draw: [3, 1, 0, 0] }))
+    .addPass(compositePass('composite', { layers: ['scene-color'], output: 'swapchain', pipeline: 'composite-pipeline', draw: [3, 1, 0, 0] }))
+    .freeze();
+}
+
+function makeExecutor({ canvas, device = makeResourceDevice(), dpr = 1 } = {}) {
+  return { device, executor: new WebGpuGraphExecutor({
+    device,
+    canvas: canvas || makeCanvas(),
+    graph: makeExecutorGraph(),
+    pipelines: new Map([['render-pipeline', { id: 'render' }], ['composite-pipeline', { id: 'composite' }]]),
+    windowObject: { devicePixelRatio: dpr },
+  }) };
+}
+
+function testExecutorCanvasSizingContracts() {
+  const zeroCanvas = makeCanvas();
+  zeroCanvas.width = 300;
+  zeroCanvas.height = 150;
+  zeroCanvas.clientWidth = 0;
+  zeroCanvas.clientHeight = 0;
+  zeroCanvas.getBoundingClientRect = () => ({ width: 0, height: 0 });
+  const zeroDevice = makeResourceDevice();
+  const { executor: zeroExecutor } = makeExecutor({ canvas: zeroCanvas, device: zeroDevice });
+  assert.equal(zeroDevice.calls.textures.length, 0, 'zero CSS layout must not create canvas-sized attachments during construction');
+  const skipped = zeroExecutor.render();
+  assert.equal(skipped.submitted, false, 'zero CSS layout must fail closed instead of using 300x150 backing attributes');
+  assert.equal(skipped.reason, 'layout-reports-zero');
+  assert.equal(skipped.source, 'getBoundingClientRect');
+  assert.equal(zeroCanvas.width, 300, 'zero CSS layout must not resize backing width');
+  assert.equal(zeroCanvas.height, 150, 'zero CSS layout must not resize backing height');
+  assert.equal(zeroDevice.calls.textures.length, 0, 'zero CSS layout must not create/resize attachments');
+  assert.equal(zeroDevice.calls.submissions.length, 0, 'zero CSS layout must not submit commands');
+  assert.equal(zeroDevice.calls.renderPass, undefined, 'zero CSS layout must not encode render passes');
+
+  const headlessCanvas = makeCanvas();
+  const headlessDevice = makeResourceDevice();
+  const { executor: headlessExecutor } = makeExecutor({ canvas: headlessCanvas, device: headlessDevice });
+  const headlessFrame = headlessExecutor.render();
+  assert.equal(headlessFrame.submitted, true, 'headless mocks without layout APIs keep explicit backing-attribute path');
+  assert.equal(headlessFrame.width, 640);
+  assert.equal(headlessFrame.height, 360);
+  assert.equal(headlessDevice.calls.submissions.length, 1);
+
+  const cssCanvas = makeCanvas();
+  cssCanvas.width = 300;
+  cssCanvas.height = 150;
+  cssCanvas.clientWidth = 321;
+  cssCanvas.clientHeight = 123;
+  cssCanvas.getBoundingClientRect = () => ({ width: 321, height: 123 });
+  const cssDevice = makeResourceDevice();
+  const { executor: cssExecutor } = makeExecutor({ canvas: cssCanvas, device: cssDevice, dpr: 2.5 });
+  const cssFrame = cssExecutor.render();
+  assert.equal(cssFrame.submitted, true, 'nonzero CSS layout submits');
+  assert.equal(cssFrame.width, 642, 'CSS width is scaled by capped DPR');
+  assert.equal(cssFrame.height, 246, 'CSS height is scaled by capped DPR');
+  assert.equal(cssFrame.dpr, 2);
+  assert.equal(cssCanvas.width, 642);
+  assert.equal(cssCanvas.height, 246);
+  assert.equal(cssDevice.calls.submissions.length, 1);
+}
+
 function testExecutorFailsClosed() {
   const canvas = makeCanvas();
   const device = makeResourceDevice();
@@ -942,6 +1007,7 @@ await testExplicitLifecycleBudgetResetOnly();
 await testStalePendingRetryCannotReplaceExplicitReacquire();
 await testRuntimeFallbackUpdatesPublicStatusContract();
 testExecutableRenderGraphSubmission();
+testExecutorCanvasSizingContracts();
 testExecutorFailsClosed();
 await testRuntimeNoExecutorWhenUnavailableAndFallbackCleanup();
 await testRuntimeRafLifecycleStopsStaleFrames();
