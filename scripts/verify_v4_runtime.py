@@ -118,7 +118,7 @@ require("bounds: [-1, -1, -1, 1, 1, 1]" in graph, "bounded volume pass missing e
 require("getContext('webgpu')" in executor and "context.configure" in executor, "GPUCanvasContext execution missing")
 require("createCommandEncoder" in executor and "beginRenderPass" in executor, "render-pass command encoding missing")
 require("depth24plus" in executor and "queue.submit" in executor, "depth target or GPU queue submission missing")
-require("new WebGpuGraphExecutor" in runtime and "graphExecutor.render()" in runtime, "runtime does not execute the render graph")
+require("new WebGpuGraphExecutor" in runtime and "graphExecutor.render(" in runtime, "runtime does not execute the render graph")
 
 # Runtime/demo route.
 require("startV4Runtime" in runtime and "probeRenderer" in runtime, "runtime orchestration missing")
@@ -136,9 +136,10 @@ require("Runtime initialization failed safely" in demo, "demo safe failure path 
 require("data-renderer-mode" in demo or "dataset.rendererMode" in runtime, "demo mode reporting hook missing")
 require("import { startV4Runtime } from './runtime.js';" in demo, "demo does not load v4 runtime module")
 
-# Native-density intent: no DPR lowering runtime trick in v4 foundation.
-for source_name, source in [("runtime.js", runtime), ("capability.js", capability), ("render-graph.js", graph), ("render-graph-executor.js", executor), ("resource-manager.js", resources)]:
-    require("devicePixelRatio" not in source and "dpr" not in source.lower(), f"v4 {source_name} should not introduce DPR reduction")
+# DPR resize sync: v4 executor must use CSS size, min DPR 1, cap high DPR, and skip zero-sized canvases.
+require("devicePixelRatio" in executor and "Math.max(1" in executor and "dprCap" in executor, "executor DPR cap/min sync missing")
+require("getBoundingClientRect" in executor and "zero-size" in executor, "executor CSS-size or zero-size safety missing")
+require("canvas.width" in executor and "canvas.height" in executor, "executor backing-store resize missing")
 
 # Deterministic synthetic audio vector checks (independent Python mirror of the documented bus contract).
 def make_edges(count=16, min_hz=20.0, max_hz=20000.0):

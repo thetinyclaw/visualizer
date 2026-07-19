@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Visualizer v4 Runtime Smoke</title>
+  <title>Visualizer v4 Clear/Draw Smoke</title>
   <style>
     html, body { margin: 0; min-height: 100%; background: #05070d; color: #d9f2ff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     main { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
@@ -17,8 +17,8 @@
 <body>
 <main>
   <section>
-    <h1>VISUALIZER V4 RUNTIME</h1>
-    <canvas id="v4-canvas" width="960" height="360" aria-label="v4 runtime smoke canvas"></canvas>
+    <h1>VISUALIZER V4 CLEAR/DRAW SMOKE</h1>
+    <canvas id="v4-canvas" aria-label="v4 authored clear/draw smoke canvas"></canvas>
     <div id="status">Probing renderer…</div>
     <div id="telemetry"></div>
     <div id="errors"></div>
@@ -26,21 +26,62 @@
 </main>
 <script type="module">
 import { startV4Runtime } from './runtime.js';
+import { RenderGraph, renderTarget, depthTarget, renderPass, compositePass } from './render-graph.js';
 
 const smokeManifest = {
   schemaVersion: 1,
-  id: 'runtime-smoke',
-  title: 'Runtime Smoke',
-  assets: [{ id: 'blue-noise', type: 'texture', uri: 'generated://blue-noise' }],
+  id: 'runtime-clear-draw-smoke',
+  title: 'Runtime Clear/Draw Smoke',
+  assets: [],
   pipelines: [
-    { id: 'scene-simulate', kind: 'compute', entryPoint: 'main' },
-    { id: 'scene-volume', kind: 'render', entryPoint: 'main' },
-    { id: 'bloom-tonemap', kind: 'post', entryPoint: 'main' },
+    { id: 'v4-clear-draw-pipeline', kind: 'render', entryPoint: 'main' },
+    { id: 'v4-composite-pipeline', kind: 'render', entryPoint: 'main' },
   ],
-  simulationBuffers: [{ id: 'particles', kind: 'ping-pong', byteLength: 32768 }],
-  controls: [{ id: 'density', type: 'float', min: 0, max: 1, default: 1 }],
-  transitions: [{ id: 'crossfade', type: 'crossfade', durationMs: 900 }],
+  simulationBuffers: [],
+  controls: [],
+  transitions: [],
 };
+
+function makeSmokeGraph() {
+  return new RenderGraph({ id: 'runtime-clear-draw-smoke' })
+    .addResource(renderTarget('smoke-color'))
+    .addResource(depthTarget('smoke-depth'))
+    .addPass(renderPass('draw-smoke-triangle', {
+      pipeline: 'v4-clear-draw-pipeline',
+      colorTargets: ['smoke-color'],
+      depthTarget: 'smoke-depth',
+      draw: [3, 1, 0, 0],
+      clearColor: { r: 0.01, g: 0.015, b: 0.035, a: 1 },
+    }))
+    .addPass(compositePass('composite-to-swapchain', {
+      layers: ['smoke-color'],
+      output: 'swapchain',
+      pipeline: 'v4-composite-pipeline',
+      draw: [3, 1, 0, 0],
+      clearColor: { r: 0.005, g: 0.008, b: 0.015, a: 1 },
+    }));
+}
+
+function makePipelines({ device, format }) {
+  const shader = device.createShaderModule({ code: `
+struct VertexOut { @builtin(position) position: vec4f, @location(0) color: vec3f };
+@vertex fn vs(@builtin(vertex_index) vertexIndex: u32) -> VertexOut {
+  var positions = array<vec2f, 3>(vec2f(-0.82, -0.72), vec2f(0.82, -0.68), vec2f(0.02, 0.78));
+  var colors = array<vec3f, 3>(vec3f(0.08, 0.86, 1.0), vec3f(1.0, 0.16, 0.72), vec3f(0.96, 0.95, 0.24));
+  var out: VertexOut;
+  out.position = vec4f(positions[vertexIndex], 0.0, 1.0);
+  out.color = colors[vertexIndex];
+  return out;
+}
+@fragment fn fs(in: VertexOut) -> @location(0) vec4f {
+  return vec4f(in.color, 1.0);
+}` });
+  const base = { layout: 'auto', vertex: { module: shader, entryPoint: 'vs' }, fragment: { module: shader, entryPoint: 'fs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } };
+  return new Map([
+    ['v4-clear-draw-pipeline', device.createRenderPipeline({ ...base, depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' } })],
+    ['v4-composite-pipeline', device.createRenderPipeline(base)],
+  ]);
+}
 
 const canvas = document.getElementById('v4-canvas');
 const statusElement = document.getElementById('status');
@@ -48,32 +89,28 @@ const telemetryElement = document.getElementById('telemetry');
 const errorsElement = document.getElementById('errors');
 
 try {
-  const runtime = await startV4Runtime({ canvas, statusElement, manifest: smokeManifest });
+  const runtime = await startV4Runtime({ canvas, statusElement, manifest: smokeManifest, graphFactory: makeSmokeGraph, pipelineRegistryFactory: makePipelines });
   let resourceTelemetry = null;
   if (runtime.resourceManager) {
     const bufferUsage = globalThis.GPUBufferUsage ? (GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST) : 0x80 | 0x8;
     const textureUsage = globalThis.GPUTextureUsage ? (GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST) : 0x04 | 0x02;
-    runtime.resourceManager.createBuffer('smoke-particles', { size: 32768, usage: bufferUsage, label: 'runtime-smoke:particles' });
-    runtime.resourceManager.createTexture('smoke-lut', { size: [16, 16, 1], format: 'rgba8unorm', usage: textureUsage, label: 'runtime-smoke:lut' });
+    runtime.resourceManager.createBuffer('smoke-telemetry-particles', { size: 32768, usage: bufferUsage, label: 'runtime-smoke:telemetry-particles' });
+    runtime.resourceManager.createTexture('smoke-telemetry-lut', { size: [16, 16, 1], format: 'rgba8unorm', usage: textureUsage, label: 'runtime-smoke:telemetry-lut' });
     resourceTelemetry = runtime.resourceManager.telemetry();
-    telemetryElement.textContent = `Known manager allocation: ${resourceTelemetry.knownAllocatedBytes} bytes; external browser/driver usage: unknown.`;
+    telemetryElement.textContent = `Known manager allocation: ${resourceTelemetry.knownAllocatedBytes} bytes; external browser/driver GPU usage: unknown. No live GPU telemetry is displayed.`;
   } else {
-    telemetryElement.textContent = 'WebGPU resource manager inactive; no GPU resources allocated on fallback route.';
+    telemetryElement.textContent = 'WebGPU resource manager inactive; no GPU resources allocated on fallback route. No live GPU telemetry is displayed.';
   }
   errorsElement.textContent = runtime.publicErrors.map((error) => `${error.code}: ${error.message}`).join('\n');
+  window.__V4_RUNTIME_SMOKE__ = { label: 'authored colorful clear/draw smoke, not Cathedral or graph parity', mode: runtime.mode, graphId: runtime.graph?.id, passes: runtime.graph?.passes.map((pass) => pass.id), resourcesReady: statusElement.dataset.resourcesReady, frameSubmitted: statusElement.dataset.frameSubmitted, telemetry: resourceTelemetry };
   const ctx = runtime.graphExecutor ? null : canvas.getContext('2d');
   if (ctx) {
+    canvas.width = Math.max(1, canvas.clientWidth || 960); canvas.height = Math.max(1, canvas.clientHeight || 360);
     const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-    gradient.addColorStop(0, '#10284e');
-    gradient.addColorStop(0.5, runtime.mode === 'webgl2-legacy' ? '#4d2d72' : '#166e83');
-    gradient.addColorStop(1, '#05070d');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#d9f2ff';
-    ctx.font = '28px monospace';
-    ctx.fillText(runtime.modeLabel, 34, 72);
-    ctx.font = '16px monospace';
-    ctx.fillText('No live GPU telemetry is displayed on this smoke route.', 34, 112);
+    gradient.addColorStop(0, '#10284e'); gradient.addColorStop(0.5, runtime.mode === 'webgl2-legacy' ? '#4d2d72' : '#166e83'); gradient.addColorStop(1, '#05070d');
+    ctx.fillStyle = gradient; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#d9f2ff'; ctx.font = '28px monospace'; ctx.fillText(runtime.modeLabel, 34, 72);
+    ctx.font = '16px monospace'; ctx.fillText('Clear/draw smoke only; No live GPU telemetry is displayed.', 34, 112);
   }
 } catch (error) {
   statusElement.textContent = 'Runtime initialization failed safely';

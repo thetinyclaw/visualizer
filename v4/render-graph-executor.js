@@ -1,81 +1,232 @@
-// Minimal executable WebGPU render-graph submission for the v4 runtime foundation.
+// Narrow executable WebGPU render-graph foundation for authored draw/dispatch passes.
 
 const RENDER_ATTACHMENT = globalThis.GPUTextureUsage?.RENDER_ATTACHMENT ?? 0x10;
+const TEXTURE_BINDING = globalThis.GPUTextureUsage?.TEXTURE_BINDING ?? 0x04;
+const COPY_SRC = globalThis.GPUTextureUsage?.COPY_SRC ?? 0x01;
+
+const EXECUTABLE_PASS_KINDS = new Set(['render', 'compute', 'composite']);
+const DEFAULT_CLEAR = Object.freeze({ r: 0.015, g: 0.025, b: 0.055, a: 1 });
+
+function fail(message) {
+  const error = new Error(message);
+  error.code = 'render-graph-compile-failed';
+  return error;
+}
 
 function assertExecutableInputs(device, canvas, graph) {
   if (!device || typeof device.createCommandEncoder !== 'function' || !device.queue || typeof device.queue.submit !== 'function') {
     throw new TypeError('WebGpuGraphExecutor requires a GPUDevice-compatible object.');
   }
   if (!canvas || typeof canvas.getContext !== 'function') throw new TypeError('WebGpuGraphExecutor requires a canvas.');
-  if (!graph || !Array.isArray(graph.passes) || !graph.passes.some((pass) => pass.kind === 'composite' && (pass.output || 'swapchain') === 'swapchain')) {
-    throw new TypeError('Executable render graph requires a swapchain composite pass.');
+  if (!graph || !Array.isArray(graph.passes)) throw new TypeError('Executable render graph requires authored passes.');
+}
+
+function clampDpr(value, cap) {
+  const raw = Number.isFinite(value) ? value : 1;
+  return Math.max(1, Math.min(raw || 1, cap));
+}
+
+function cssPixelSize(canvas) {
+  const rect = typeof canvas.getBoundingClientRect === 'function' ? canvas.getBoundingClientRect() : null;
+  const attrWidth = Number(canvas.width) || 0;
+  const attrHeight = Number(canvas.height) || 0;
+  const width = Math.max(0, Math.floor(rect?.width || canvas.clientWidth || attrWidth || 0));
+  const height = Math.max(0, Math.floor(rect?.height || canvas.clientHeight || attrHeight || 0));
+  return { width, height };
+}
+
+function bindPassResources(passEncoder, resources, graphPass) {
+  for (const [slot, id] of (graphPass.resources || []).entries()) {
+    const resource = resources.get(id);
+    if (!resource) throw fail(`Pass ${graphPass.id} references missing bind resource ${id}.`);
+    if (typeof passEncoder.setBindGroup === 'function') passEncoder.setBindGroup(slot, resource);
   }
 }
 
 export class WebGpuGraphExecutor {
-  constructor({ device, canvas, graph, format = 'bgra8unorm' } = {}) {
+  constructor({
+    device,
+    canvas,
+    graph,
+    format = 'bgra8unorm',
+    resources = {},
+    pipelines = {},
+    executors = {},
+    dprCap = 2,
+    windowObject = globalThis,
+  } = {}) {
     assertExecutableInputs(device, canvas, graph);
     const context = canvas.getContext('webgpu');
-    if (!context || typeof context.configure !== 'function' || typeof context.getCurrentTexture !== 'function') {
-      throw new Error('WebGPU canvas context is unavailable.');
-    }
+    if (!context || typeof context.configure !== 'function' || typeof context.getCurrentTexture !== 'function') throw new Error('WebGPU canvas context is unavailable.');
     this.device = device;
     this.canvas = canvas;
     this.graph = graph;
     this.context = context;
     this.format = format;
-    this.depthTexture = null;
+    this.resourceRegistry = resources instanceof Map ? resources : new Map(Object.entries(resources));
+    this.pipelineRegistry = pipelines instanceof Map ? pipelines : new Map(Object.entries(pipelines));
+    this.executorRegistry = executors instanceof Map ? executors : new Map(Object.entries(executors));
+    this.dprCap = dprCap;
+    this.windowObject = windowObject;
+    this.ownedTextures = new Map();
     this.width = 0;
     this.height = 0;
+    this.dpr = 1;
     this.disposed = false;
     this.context.configure({ device, format, alphaMode: 'opaque' });
+    this.compiledPasses = this.compile(graph);
     this.resizeTargets();
+  }
+
+  compile(graph) {
+    const validation = typeof graph.validate === 'function' ? graph.validate() : { ok: true, errors: [] };
+    if (!validation.ok) throw fail(`Invalid render graph: ${validation.errors.join('; ')}`);
+    const hasComposite = graph.passes.some((pass) => pass.kind === 'composite' && (pass.output || 'swapchain') === 'swapchain');
+    if (!hasComposite) throw fail('Executable render graph requires an explicit swapchain composite pass.');
+    const descriptors = new Map((graph.resources || []).map((resource) => [resource.id, resource]));
+    const resolvePipeline = (id, pass) => {
+      if (typeof id !== 'string' || id.length === 0) throw fail(`Pass ${pass.id} requires a pipeline.`);
+      const pipeline = this.pipelineRegistry.get(id);
+      if (!pipeline) throw fail(`Pass ${pass.id} references missing pipeline ${id}.`);
+      return pipeline;
+    };
+    const resolveResource = (id, pass) => {
+      if (id === 'swapchain') return 'swapchain';
+      const descriptor = descriptors.get(id);
+      if (!descriptor) throw fail(`Pass ${pass.id} references graph resource ${id} that is not declared.`);
+      const resource = this.resourceRegistry.get(id);
+      if (!resource && !['render-target', 'depth-target', 'instanced-depth-target'].includes(descriptor.type)) throw fail(`Pass ${pass.id} references missing executable resource ${id}.`);
+      return resource || descriptor;
+    };
+    const resolveExecutor = (name, pass) => {
+      if (!name) return null;
+      const executor = typeof name === 'function' ? name : this.executorRegistry.get(name);
+      if (typeof executor !== 'function') throw fail(`Pass ${pass.id} references missing executor ${name}.`);
+      return executor;
+    };
+    return graph.passes.map((pass) => {
+      if (!EXECUTABLE_PASS_KINDS.has(pass.kind)) throw fail(`Pass ${pass.id} kind ${pass.kind} is not executable in this foundation.`);
+      if (pass.kind === 'compute') {
+        const pipeline = resolvePipeline(pass.pipeline, pass);
+        const executor = resolveExecutor(pass.executor, pass);
+        const resources = [...(pass.inputs || []), ...(pass.outputs || []), ...(pass.resources || [])].map((id) => [id, resolveResource(id, pass)]);
+        return Object.freeze({ kind: 'compute', pass, pipeline, executor, resources: new Map(resources) });
+      }
+      if (pass.kind === 'render') {
+        const pipeline = resolvePipeline(pass.pipeline, pass);
+        const executor = resolveExecutor(pass.executor, pass);
+        if (!executor && !pass.draw && !pass.drawIndexed) throw fail(`Pass ${pass.id} must provide draw, drawIndexed, or executor.`);
+        for (const id of [...(pass.resources || []), ...(pass.vertexBuffers || []), ...(pass.indexBuffer ? [pass.indexBuffer] : [])]) resolveResource(id, pass);
+        return Object.freeze({ kind: 'render', pass, pipeline, executor });
+      }
+      if (pass.kind === 'composite') {
+        if ((pass.output || 'swapchain') !== 'swapchain') throw fail(`Pass ${pass.id} composite output must be swapchain.`);
+        const pipeline = pass.pipeline ? resolvePipeline(pass.pipeline, pass) : null;
+        const executor = resolveExecutor(pass.executor, pass);
+        if ((pass.draw || pass.executor) && !pipeline) throw fail(`Pass ${pass.id} composite draw requires a pipeline.`);
+        for (const id of [...(pass.layers || []), ...(pass.resources || [])]) resolveResource(id, pass);
+        return Object.freeze({ kind: 'composite', pass, pipeline, executor });
+      }
+      throw fail(`Pass ${pass.id} kind ${pass.kind} is not executable.`);
+    });
+  }
+
+  syncCanvasSize() {
+    const { width: cssWidth, height: cssHeight } = cssPixelSize(this.canvas);
+    if (cssWidth === 0 || cssHeight === 0) return false;
+    const devicePixelRatio = this.windowObject?.devicePixelRatio || globalThis.devicePixelRatio || 1;
+    const dpr = clampDpr(devicePixelRatio, this.dprCap);
+    const width = Math.max(1, Math.floor(cssWidth * dpr));
+    const height = Math.max(1, Math.floor(cssHeight * dpr));
+    if (this.canvas.width !== width) this.canvas.width = width;
+    if (this.canvas.height !== height) this.canvas.height = height;
+    this.width = width; this.height = height; this.dpr = dpr;
+    return true;
   }
 
   resizeTargets() {
-    const width = Math.max(1, this.canvas.width | 0);
-    const height = Math.max(1, this.canvas.height | 0);
-    if (this.depthTexture && width === this.width && height === this.height) return;
-    if (this.depthTexture && typeof this.depthTexture.destroy === 'function') this.depthTexture.destroy();
-    this.width = width;
-    this.height = height;
-    this.depthTexture = this.device.createTexture({
-      label: `${this.graph.id}:scene-depth`,
-      size: { width, height, depthOrArrayLayers: 1 },
-      format: 'depth24plus',
-      usage: RENDER_ATTACHMENT,
-    });
+    if (!this.syncCanvasSize()) return false;
+    for (const resource of this.graph.resources || []) {
+      if (!resource.canvasSized || !['render-target', 'depth-target', 'instanced-depth-target'].includes(resource.type)) continue;
+      const existing = this.ownedTextures.get(resource.id);
+      if (existing && existing.width === this.width && existing.height === this.height) continue;
+      if (existing?.texture && typeof existing.texture.destroy === 'function') existing.texture.destroy();
+      const texture = this.device.createTexture({
+        label: `${this.graph.id}:${resource.id}`,
+        size: { width: this.width, height: this.height, depthOrArrayLayers: 1 },
+        format: resource.format || (resource.type === 'render-target' ? this.format : 'depth24plus'),
+        usage: resource.type === 'render-target' ? (RENDER_ATTACHMENT | TEXTURE_BINDING | COPY_SRC) : RENDER_ATTACHMENT,
+      });
+      this.ownedTextures.set(resource.id, { texture, width: this.width, height: this.height });
+    }
+    return true;
   }
 
-  render({ clearColor = { r: 0.015, g: 0.025, b: 0.055, a: 1 } } = {}) {
-    if (this.disposed) throw new Error('WebGPU graph executor is disposed.');
-    this.resizeTargets();
-    const encoder = this.device.createCommandEncoder({ label: `${this.graph.id}:frame` });
-    const pass = encoder.beginRenderPass({
-      label: `${this.graph.id}:composite`,
-      colorAttachments: [{
-        view: this.context.getCurrentTexture().createView(),
-        clearValue: clearColor,
+  textureView(id) {
+    if (id === 'swapchain') return this.context.getCurrentTexture().createView();
+    const owned = this.ownedTextures.get(id)?.texture;
+    const registered = this.resourceRegistry.get(id);
+    const texture = owned || registered;
+    if (!texture || typeof texture.createView !== 'function') throw fail(`Resource ${id} is not a texture view source.`);
+    return texture.createView();
+  }
+
+  encodeCompute(encoder, compiled, frameContext) {
+    const passEncoder = encoder.beginComputePass ? encoder.beginComputePass({ label: `${this.graph.id}:${compiled.pass.id}` }) : null;
+    if (!passEncoder) throw fail(`Compute pass ${compiled.pass.id} is not supported by this device.`);
+    passEncoder.setPipeline(compiled.pipeline);
+    bindPassResources(passEncoder, this.resourceRegistry, compiled.pass);
+    if (compiled.executor) compiled.executor({ pass: passEncoder, device: this.device, resources: compiled.resources, frameContext, graphPass: compiled.pass });
+    const [x, y = 1, z = 1] = compiled.pass.workgroups;
+    passEncoder.dispatchWorkgroups(x, y, z);
+    passEncoder.end();
+  }
+
+  encodeRenderLike(encoder, compiled, frameContext) {
+    const passDef = compiled.pass;
+    const colorIds = compiled.kind === 'composite' ? ['swapchain'] : passDef.colorTargets;
+    const descriptor = {
+      label: `${this.graph.id}:${passDef.id}`,
+      colorAttachments: colorIds.map((id, index) => ({
+        view: this.textureView(id),
+        clearValue: passDef.clearColor || (index === 0 ? DEFAULT_CLEAR : { r: 0, g: 0, b: 0, a: 0 }),
         loadOp: 'clear',
         storeOp: 'store',
-      }],
-      depthStencilAttachment: {
-        view: this.depthTexture.createView(),
-        depthClearValue: 1,
-        depthLoadOp: 'clear',
-        depthStoreOp: 'store',
-      },
-    });
-    pass.end();
+      })),
+    };
+    if (passDef.depthTarget) {
+      descriptor.depthStencilAttachment = { view: this.textureView(passDef.depthTarget), depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' };
+    }
+    const passEncoder = encoder.beginRenderPass(descriptor);
+    if (compiled.pipeline) passEncoder.setPipeline(compiled.pipeline);
+    bindPassResources(passEncoder, this.resourceRegistry, passDef);
+    for (const [slot, id] of (passDef.vertexBuffers || []).entries()) passEncoder.setVertexBuffer(slot, this.resourceRegistry.get(id));
+    if (passDef.indexBuffer) passEncoder.setIndexBuffer(this.resourceRegistry.get(passDef.indexBuffer), passDef.indexFormat || 'uint32');
+    if (compiled.executor) compiled.executor({ pass: passEncoder, device: this.device, resources: this.resourceRegistry, frameContext, graphPass: passDef });
+    if (passDef.drawIndexed) passEncoder.drawIndexed(...passDef.drawIndexed);
+    else if (passDef.draw) passEncoder.draw(...passDef.draw);
+    passEncoder.end();
+  }
+
+  render(frameContext = {}) {
+    if (this.disposed) throw new Error('WebGPU graph executor is disposed.');
+    if (!this.resizeTargets()) return Object.freeze({ submitted: false, skipped: 'zero-size', width: 0, height: 0, graphId: this.graph.id });
+    const encoder = this.device.createCommandEncoder({ label: `${this.graph.id}:frame` });
+    const executed = [];
+    for (const compiled of this.compiledPasses) {
+      if (compiled.kind === 'compute') this.encodeCompute(encoder, compiled, frameContext);
+      else this.encodeRenderLike(encoder, compiled, frameContext);
+      executed.push(compiled.pass.id);
+    }
     this.device.queue.submit([encoder.finish()]);
-    return Object.freeze({ submitted: true, width: this.width, height: this.height, graphId: this.graph.id });
+    return Object.freeze({ submitted: true, width: this.width, height: this.height, dpr: this.dpr, graphId: this.graph.id, passes: Object.freeze(executed) });
   }
 
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    if (this.depthTexture && typeof this.depthTexture.destroy === 'function') this.depthTexture.destroy();
-    this.depthTexture = null;
+    for (const entry of this.ownedTextures.values()) if (entry.texture && typeof entry.texture.destroy === 'function') entry.texture.destroy();
+    this.ownedTextures.clear();
     if (typeof this.context.unconfigure === 'function') this.context.unconfigure();
   }
 }

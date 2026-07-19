@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { probeRenderer, RENDERER_MODES } from '../v4/capability.js';
 import { GpuLifecycle, GPU_LIFECYCLE_STATES } from '../v4/gpu-lifecycle.js';
-import { RenderGraph, storageBuffer, instancedDepthTarget, computePass, boundedVolumePass, feedbackPass, postPass, compositePass } from '../v4/render-graph.js';
+import { RenderGraph, storageBuffer, uniformBuffer, vertexBuffer, indexBuffer, renderTarget, depthTarget, instancedDepthTarget, computePass, renderPass, boundedVolumePass, feedbackPass, postPass, compositePass } from '../v4/render-graph.js';
 import { validateSceneManifest } from '../v4/scene-manifest.js';
 import { startV4Runtime, hydrateRuntimeResources } from '../v4/runtime.js';
 import { DeviceResourceManager } from '../v4/resource-manager.js';
@@ -51,7 +51,8 @@ function makeResourceDevice() {
     },
     createCommandEncoder() {
       return {
-        beginRenderPass(descriptor) { calls.renderPass = descriptor; return { end() {} }; },
+        beginComputePass(descriptor) { calls.computePass = descriptor; return { setPipeline(p) { calls.computePipeline = p; }, setBindGroup(...args) { calls.computeBind = args; }, dispatchWorkgroups(...args) { calls.dispatch = args; }, end() {} }; },
+        beginRenderPass(descriptor) { calls.renderPass = descriptor; return { setPipeline(p) { calls.renderPipeline = p; }, setBindGroup(...args) { calls.renderBind = args; }, setVertexBuffer(...args) { calls.vertexBuffer = args; }, setIndexBuffer(...args) { calls.indexBuffer = args; }, draw(...args) { calls.draw = args; }, drawIndexed(...args) { calls.drawIndexed = args; }, end() {} }; },
         finish() { return { id: 'runtime-command-buffer' }; },
       };
     },
@@ -72,37 +73,52 @@ function makeResourceDevice() {
 }
 
 function testExecutableRenderGraphSubmission() {
-  const calls = { configure: [], passes: [], submissions: [] };
+  const calls = { configure: [], passes: [], computes: [], submissions: [], order: [] };
   const context = {
     configure(descriptor) { calls.configure.push(descriptor); },
     getCurrentTexture() { return { createView: () => ({ id: 'swap-view' }) }; },
     unconfigure() { calls.unconfigured = true; },
   };
-  const canvas = { width: 640, height: 360, getContext: (kind) => kind === 'webgpu' ? context : null };
+  const canvas = { width: 640, height: 360, clientWidth: 640, clientHeight: 360, getBoundingClientRect: () => ({ width: 640, height: 360 }), getContext: (kind) => kind === 'webgpu' ? context : null };
   const device = makeResourceDevice();
   device.createCommandEncoder = () => ({
+    beginComputePass(descriptor) {
+      calls.computes.push(descriptor); calls.order.push('compute');
+      return { setPipeline(p) { calls.computePipeline = p; }, setBindGroup(...args) { calls.computeBind = args; }, dispatchWorkgroups(...args) { calls.dispatch = args; }, end() {} };
+    },
     beginRenderPass(descriptor) {
-      calls.passes.push(descriptor);
-      return { end() { calls.ended = true; } };
+      calls.passes.push(descriptor); calls.order.push(descriptor.label.split(':').pop());
+      return { setPipeline(p) { calls.renderPipeline = p; }, setBindGroup(...args) { calls.renderBind = args; }, setVertexBuffer(...args) { calls.vertex = args; }, setIndexBuffer(...args) { calls.index = args; }, draw(...args) { calls.draw = args; }, drawIndexed(...args) { calls.drawIndexed = args; }, end() { calls.ended = true; } };
     },
     finish() { return { id: 'command-buffer' }; },
   });
   device.queue.submit = (buffers) => calls.submissions.push(buffers);
+  const vertex = { id: 'vertex' };
+  const index = { id: 'index' };
   const graph = new RenderGraph({ id: 'executable' })
-    .addResource(instancedDepthTarget('scene-depth'))
-    .addResource(storageBuffer('post-color', 16))
-    .addPass(compositePass('composite', { layers: ['post-color'], output: 'swapchain' }))
+    .addResource(storageBuffer('state', 16))
+    .addResource(vertexBuffer('vertices', 64))
+    .addResource(indexBuffer('indices', 12))
+    .addResource(renderTarget('scene-color'))
+    .addResource(depthTarget('scene-depth'))
+    .addPass(computePass('simulate', { pipeline: 'compute-pipeline', outputs: ['state'], workgroups: [2, 3, 4] }))
+    .addPass(renderPass('draw-scene', { pipeline: 'render-pipeline', colorTargets: ['scene-color'], depthTarget: 'scene-depth', vertexBuffers: ['vertices'], indexBuffer: 'indices', drawIndexed: [3, 1, 0, 0, 0] }))
+    .addPass(compositePass('composite', { layers: ['scene-color'], output: 'swapchain', pipeline: 'composite-pipeline', draw: [3, 1, 0, 0] }))
     .freeze();
-  const executor = new WebGpuGraphExecutor({ device, canvas, graph, format: 'bgra8unorm' });
+  const executor = new WebGpuGraphExecutor({ device, canvas, graph, format: 'bgra8unorm', resources: new Map([['state', {}], ['vertices', vertex], ['indices', index]]), pipelines: new Map([['compute-pipeline', { id: 'cp' }], ['render-pipeline', { id: 'rp' }], ['composite-pipeline', { id: 'pp' }]]), windowObject: { devicePixelRatio: 3 } });
   assert.equal(calls.configure.length, 1, 'GPUCanvasContext is configured once');
-  const frame = executor.render({ clearColor: { r: 0.02, g: 0.04, b: 0.08, a: 1 } });
+  const frame = executor.render();
   assert.equal(frame.submitted, true);
-  assert.equal(calls.passes.length, 1, 'a real render pass is encoded');
+  assert.deepEqual(frame.passes, ['simulate', 'draw-scene', 'composite'], 'authored order is preserved');
+  assert.deepEqual(calls.dispatch, [2, 3, 4], 'compute dispatchWorkgroups is encoded');
+  assert.deepEqual(calls.drawIndexed, [3, 1, 0, 0, 0], 'drawIndexed is encoded');
+  assert.deepEqual(calls.draw, [3, 1, 0, 0], 'composite draw is encoded');
   assert.equal(calls.passes[0].depthStencilAttachment.view.texture.descriptor.format, 'depth24plus');
+  assert.equal(canvas.width, 1280, 'DPR is capped to 2 for CSS resize sync');
   assert.deepEqual(calls.submissions[0], [{ id: 'command-buffer' }], 'finished commands reach queue.submit');
   executor.dispose();
   assert.equal(calls.unconfigured, true);
-  assert.equal(device.calls.textures[0].destroyed, true, 'owned depth target is destroyed');
+  assert.equal(device.calls.textures.every((texture) => texture.destroyed), true, 'owned canvas-sized targets are destroyed');
 }
 
 async function testResourceManagerAndAssetCache() {
@@ -152,6 +168,7 @@ async function testRuntimeUsesLifecycleAndRetryBudget() {
     canvas: makeCanvas(),
     statusElement,
     manifest: validManifest(),
+    graphFactory: smokeGraph,
     navigatorObject: { gpu: { async requestAdapter() { return adapter; } } },
     gpuLifecycleOptions: { maxRetries: 2, retryDelayMs: 0 },
     createFallbackCanvas: makeCanvas,
@@ -159,9 +176,10 @@ async function testRuntimeUsesLifecycleAndRetryBudget() {
   assert.equal(runtime.mode, RENDERER_MODES.WEBGPU_REDUCED);
   assert.equal(requestCount, 1, 'initial requestDevice should happen during probing only');
   assert.equal(runtime.lifecycle.device, first, 'probed device must be adopted through lifecycle.acquire');
+  assert.ok(runtime.resourceManager, JSON.stringify(runtime.publicErrors));
   assert.equal(runtime.resourceManager.size, 3, 'ping-pong buffers and manifest texture are materialized');
   assert.equal(first.calls.buffers.length, 2);
-  assert.equal(first.calls.textures.length, 2, 'manifest texture and graph depth target are materialized');
+  assert.equal(first.calls.textures.length, 3, 'manifest texture plus graph render/depth targets are materialized');
   assert.equal(first.calls.submissions.length, 1, 'runtime submits an initial WebGPU frame');
   adapter.requestDevice = async () => { requestCount += 1; return requestCount === 2 ? second : third; };
   first.lose('unknown');
@@ -245,6 +263,7 @@ async function testRuntimeFallbackUpdatesPublicStatusContract() {
     canvas: makeCanvas(),
     statusElement,
     manifest: validManifest(),
+    graphFactory: smokeGraph,
     navigatorObject: { gpu: { async requestAdapter() { return adapter; } } },
     gpuLifecycleOptions: { maxRetries: 0, retryDelayMs: 0 },
     createFallbackCanvas: makeCanvas,
@@ -282,11 +301,72 @@ function testRenderGraphDeepValidation() {
   assert.ok(!base().addPass(compositePass('c', { layers: [], output: 'swapchain' })).validate().ok, 'composite layers required');
   assert.ok(!base().addPass(compositePass('c', { layers: ['missing'], output: 'swapchain' })).validate().ok, 'composite layer must exist');
   assert.ok(!base().addPass(boundedVolumePass('v', { pipeline: 'volume', bounds: [-1, -1, -1, 1, 1, 1], inputs: ['input'], outputs: ['output'] })).validate().ok, 'bounded volume depth target required');
-  assert.ok(base().addPass(computePass('ok-compute', { pipeline: 'sim', inputs: ['input'], outputs: ['output'] }))
-    .addPass(boundedVolumePass('ok-volume', { pipeline: 'volume', bounds: [-1, -1, -1, 1, 1, 1], depthTarget: 'depth', inputs: ['input'], outputs: ['output'] }))
-    .addPass(feedbackPass('ok-feedback', { source: 'output', history: 'input', output: 'output' }))
-    .addPass(postPass('ok-post', { pipeline: 'post', inputs: ['output'], output: 'output' }))
-    .addPass(compositePass('ok-composite', { layers: ['output'], output: 'swapchain' })).validate().ok);
+  assert.ok(base().addResource(storageBuffer('out2', 16)).addResource(storageBuffer('out3', 16)).addResource(storageBuffer('out4', 16))
+    .addPass(computePass('ok-compute', { pipeline: 'sim', inputs: ['input'], outputs: ['output'] }))
+    .addPass(boundedVolumePass('ok-volume', { pipeline: 'volume', bounds: [-1, -1, -1, 1, 1, 1], depthTarget: 'depth', inputs: ['input'], outputs: ['out2'] }))
+    .addPass(feedbackPass('ok-feedback', { source: 'output', history: 'input', output: 'out3' }))
+    .addPass(postPass('ok-post', { pipeline: 'post', inputs: ['out3'], output: 'out4' }))
+    .addPass(compositePass('ok-composite', { layers: ['out4'], output: 'swapchain' })).validate().ok);
+}
+
+function smokeGraph() {
+  return new RenderGraph({ id: 'runtime-smoke' })
+    .addResource(renderTarget('smoke-color'))
+    .addResource(depthTarget('smoke-depth'))
+    .addPass(renderPass('draw', { pipeline: 'v4-clear-draw-pipeline', colorTargets: ['smoke-color'], depthTarget: 'smoke-depth', draw: [3, 1, 0, 0] }))
+    .addPass(compositePass('composite', { layers: ['smoke-color'], output: 'swapchain' }));
+}
+
+function testExecutorFailsClosed() {
+  const canvas = makeCanvas();
+  const device = makeResourceDevice();
+  const badKind = new RenderGraph({ id: 'bad-kind' })
+    .addResource(storageBuffer('input', 16))
+    .addResource(renderTarget('out'))
+    .addPass(postPass('post-placeholder', { pipeline: 'post', inputs: ['input'], output: 'out' }))
+    .addPass(compositePass('composite', { layers: ['out'], output: 'swapchain' }))
+    .freeze();
+  assert.throws(() => new WebGpuGraphExecutor({ device, canvas, graph: badKind, pipelines: new Map([['post', {}]]), resources: new Map([['input', {}]]) }), /not executable/, 'post placeholder is rejected until implemented');
+  const missingPipeline = new RenderGraph({ id: 'missing-pipeline' })
+    .addResource(renderTarget('out'))
+    .addPass(renderPass('draw', { pipeline: 'missing', colorTargets: ['out'], draw: [3, 1, 0, 0] }))
+    .addPass(compositePass('composite', { layers: ['out'], output: 'swapchain' }))
+    .freeze();
+  assert.throws(() => new WebGpuGraphExecutor({ device, canvas, graph: missingPipeline }), /missing pipeline/, 'missing pipelines fail at compile time');
+  assert.ok(!new RenderGraph({ id: 'bad-target' }).addResource(storageBuffer('not-target', 16)).addPass(renderPass('draw', { pipeline: 'p', colorTargets: ['not-target'], draw: [3, 1, 0, 0] })).validate().ok, 'invalid target kind rejected');
+  assert.ok(!new RenderGraph({ id: 'hazard' }).addResource(renderTarget('out')).addPass(renderPass('a', { pipeline: 'p', colorTargets: ['out'], draw: [3, 1, 0, 0] })).addPass(renderPass('b', { pipeline: 'p', colorTargets: ['out'], draw: [3, 1, 0, 0] })).validate().ok, 'output hazards are rejected');
+}
+
+async function testRuntimeNoExecutorWhenUnavailableAndFallbackCleanup() {
+  const unavailable = await startV4Runtime({ canvas: makeCanvas(), statusElement: { dataset: {}, textContent: '' }, manifest: validManifest(), graphFactory: smokeGraph, navigatorObject: {}, createFallbackCanvas: makeCanvas });
+  assert.equal(unavailable.graphExecutor, null, 'no executor is exposed when WebGPU is unavailable');
+  assert.equal(await unavailable.resourcesReady, null);
+
+  const first = makeDevice('cleanup');
+  const statusElement = { dataset: {}, textContent: '' };
+  const runtime = await startV4Runtime({ canvas: makeCanvas(), statusElement, manifest: validManifest(), graphFactory: smokeGraph, navigatorObject: { gpu: { async requestAdapter() { return { features: new Set(), limits: { maxStorageBuffersPerShaderStage: 4, maxStorageBufferBindingSize: 1 << 20 }, async requestDevice() { return first; } }; } } }, gpuLifecycleOptions: { maxRetries: 0, retryDelayMs: 0 }, createFallbackCanvas: makeCanvas });
+  assert.ok(runtime.graphExecutor);
+  first.lose('unknown');
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(runtime.graphExecutor, null, 'fallback cleanup hides disposed executor');
+  assert.equal(runtime.resourceManager, null, 'fallback cleanup hides disposed manager');
+  assert.equal(statusElement.dataset.resourcesReady, 'false');
+  assert.equal(statusElement.dataset.frameSubmitted, 'false');
+}
+
+async function testRuntimeRafLifecycleStopsStaleFrames() {
+  const device = makeDevice('raf');
+  let requestId = 0;
+  const callbacks = new Map();
+  const windowObject = { devicePixelRatio: 1, requestAnimationFrame(cb) { const id = ++requestId; callbacks.set(id, cb); return id; }, cancelAnimationFrame(id) { callbacks.delete(id); } };
+  const runtime = await startV4Runtime({ canvas: makeCanvas(), statusElement: { dataset: {}, textContent: '' }, manifest: validManifest(), graphFactory: smokeGraph, frameProvider: ({ time }) => ({ time }), windowObject, navigatorObject: { gpu: { async requestAdapter() { return { features: new Set(), limits: { maxStorageBuffersPerShaderStage: 4, maxStorageBufferBindingSize: 1 << 20 }, async requestDevice() { return device; } }; } } }, createFallbackCanvas: makeCanvas });
+  assert.ok(callbacks.size >= 1, 'RAF loop starts only when frame provider is supplied');
+  const pending = [...callbacks.values()][0];
+  runtime.dispose();
+  const before = device.calls.submissions.length;
+  pending(99);
+  assert.equal(device.calls.submissions.length, before, 'stale queued RAF callback cannot submit after dispose');
+  assert.equal(runtime.graphExecutor, null);
 }
 
 function validManifest() {
@@ -862,6 +942,9 @@ await testExplicitLifecycleBudgetResetOnly();
 await testStalePendingRetryCannotReplaceExplicitReacquire();
 await testRuntimeFallbackUpdatesPublicStatusContract();
 testExecutableRenderGraphSubmission();
+testExecutorFailsClosed();
+await testRuntimeNoExecutorWhenUnavailableAndFallbackCleanup();
+await testRuntimeRafLifecycleStopsStaleFrames();
 await testDeviceResourceManagerBehavior();
 await testAssetLoaderAndCacheContainment();
 await testAssetLoaderAdversarialContainment();
