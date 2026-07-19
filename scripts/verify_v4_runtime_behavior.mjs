@@ -191,6 +191,27 @@ function testExecutablePostStackAndCompositeSubmission() {
   executor.dispose();
   assert.equal(device.calls.textures.every((texture) => texture.destroyed), true, 'dispose destroys recreated offscreen attachments');
   assert.equal(calls.unconfigured, true);
+
+  const customDevice = makeResourceDevice();
+  const customContext = {
+    configure() {},
+    getCurrentTexture() { return { createView() { return { id: 'custom-swapchain' }; } }; },
+    unconfigure() {},
+  };
+  const customCanvas = { width: 320, height: 180, clientWidth: 320, clientHeight: 180, getBoundingClientRect: () => ({ width: 320, height: 180 }), getContext: (kind) => kind === 'webgpu' ? customContext : null };
+  const customGraph = new RenderGraph({ id: 'custom-composite-bindings' })
+    .addResource(renderTarget('custom-color'))
+    .addPass(compositePass('custom-composite', { layers: ['custom-color'], output: 'swapchain', pipeline: 'custom-pipeline', executor: 'custom-bindings', draw: [3, 1, 0, 0] }))
+    .freeze();
+  const customExecutor = new WebGpuGraphExecutor({
+    device: customDevice,
+    canvas: customCanvas,
+    graph: customGraph,
+    pipelines: new Map([['custom-pipeline', makePipeline('custom-four-binding-layout')]]),
+    executors: new Map([['custom-bindings', () => {}]]),
+  });
+  assert.equal(customDevice.calls.bindGroups.length, 0, 'custom pass executors own bindings; generic fullscreen bind groups must not poison scene-specific layouts');
+  customExecutor.dispose();
 }
 
 async function testResourceManagerAndAssetCache() {

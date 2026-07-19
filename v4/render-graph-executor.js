@@ -241,7 +241,10 @@ export class WebGpuGraphExecutor {
   recreateAutoBindGroups() {
     this.autoBindGroups.clear();
     for (const compiled of this.compiledPasses || []) {
-      if (!['post', 'composite'].includes(compiled.kind) || !compiled.pipeline || typeof compiled.pipeline.getBindGroupLayout !== 'function' || typeof this.device.createBindGroup !== 'function') continue;
+      // Passes with a custom executor own their complete binding contract. The
+      // generic fullscreen layout (sampler at 0, texture at 1) must not be
+      // imposed on scene-specific pipelines with different layouts.
+      if (compiled.executor || !['post', 'composite'].includes(compiled.kind) || !compiled.pipeline || typeof compiled.pipeline.getBindGroupLayout !== 'function' || typeof this.device.createBindGroup !== 'function') continue;
       const sourceIds = compiled.kind === 'post' ? (compiled.pass.inputs || []) : (compiled.pass.layers || []);
       if (sourceIds.length !== 1) throw fail(`Pass ${compiled.pass.id} requires exactly one sampled source in this foundation.`);
       const sampler = this.ensureFullscreenSampler();
