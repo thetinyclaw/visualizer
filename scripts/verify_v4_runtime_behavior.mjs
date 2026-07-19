@@ -41,7 +41,7 @@ function makeCanvas() {
 }
 
 function makeResourceDevice() {
-  const calls = { buffers: [], textures: [], writes: [], submissions: [] };
+  const calls = { buffers: [], textures: [], samplers: [], bindGroupLayouts: [], bindGroups: [], writes: [], submissions: [] };
   const created = [];
   return {
     calls,
@@ -70,10 +70,14 @@ function makeResourceDevice() {
       created.push(resource);
       return resource;
     },
-    createSampler(descriptor) { const resource = { descriptor, destroyed: false, destroy() { this.destroyed = true; } }; created.push(resource); return resource; },
-    createBindGroupLayout(descriptor) { const resource = { descriptor, destroyed: false, destroy() { this.destroyed = true; } }; created.push(resource); return resource; },
-    createBindGroup(descriptor) { const resource = { descriptor, destroyed: false, destroy() { this.destroyed = true; } }; created.push(resource); return resource; },
+    createSampler(descriptor) { const resource = { descriptor, destroyed: false, destroy() { this.destroyed = true; } }; calls.samplers.push(resource); created.push(resource); return resource; },
+    createBindGroupLayout(descriptor) { const resource = { descriptor, destroyed: false, destroy() { this.destroyed = true; } }; calls.bindGroupLayouts.push(resource); created.push(resource); return resource; },
+    createBindGroup(descriptor) { const resource = { descriptor, destroyed: false, destroy() { this.destroyed = true; } }; calls.bindGroups.push(resource); created.push(resource); return resource; },
   };
+}
+
+function makePipeline(id) {
+  return { id, getBindGroupLayout(index) { return { id: `${id}:layout:${index}` }; } };
 }
 
 function testExecutableRenderGraphSubmission() {
@@ -123,6 +127,67 @@ function testExecutableRenderGraphSubmission() {
   executor.dispose();
   assert.equal(calls.unconfigured, true);
   assert.equal(device.calls.textures.every((texture) => texture.destroyed), true, 'owned canvas-sized targets are destroyed');
+}
+
+function testExecutablePostStackAndCompositeSubmission() {
+  const calls = { passes: [], order: [], bindGroups: [], draws: [], submissions: [] };
+  const context = {
+    configure() {},
+    getCurrentTexture() { return { createView: () => ({ id: 'swap-view' }) }; },
+    unconfigure() { calls.unconfigured = true; },
+  };
+  const canvas = { width: 320, height: 180, clientWidth: 320, clientHeight: 180, getBoundingClientRect: () => ({ width: 320, height: 180 }), getContext: (kind) => kind === 'webgpu' ? context : null };
+  const device = makeResourceDevice();
+  device.createCommandEncoder = () => ({
+    beginRenderPass(descriptor) {
+      calls.passes.push(descriptor); calls.order.push(descriptor.label.split(':').pop());
+      return {
+        setPipeline(p) { calls.pipeline = p; },
+        setBindGroup(slot, group) { calls.bindGroups.push([descriptor.label, slot, group]); },
+        draw(...args) { calls.draws.push([descriptor.label, args]); },
+        end() {},
+      };
+    },
+    finish() { return { id: 'post-stack-command-buffer' }; },
+  });
+  device.queue.submit = (buffers) => calls.submissions.push(buffers);
+  const graph = new RenderGraph({ id: 'post-stack' })
+    .addResource(renderTarget('scene-color'))
+    .addResource(renderTarget('post-color'))
+    .addResource(depthTarget('scene-depth'))
+    .addPass(renderPass('draw-authored-triangle', { pipeline: 'scene-pipeline', colorTargets: ['scene-color'], depthTarget: 'scene-depth', draw: [3, 1, 0, 0] }))
+    .addPass(postPass('post-tonemap-glow', { pipeline: 'post-pipeline', inputs: ['scene-color'], output: 'post-color' }))
+    .addPass(compositePass('final-composite', { layers: ['post-color'], output: 'swapchain', pipeline: 'composite-pipeline', draw: [3, 1, 0, 0] }))
+    .freeze();
+  const executor = new WebGpuGraphExecutor({
+    device,
+    canvas,
+    graph,
+    pipelines: new Map([['scene-pipeline', { id: 'scene' }], ['post-pipeline', makePipeline('post')], ['composite-pipeline', makePipeline('composite')]]),
+  });
+  assert.equal(device.calls.textures.length, 3, 'scene color, post color, and depth targets are allocated once at construction');
+  assert.equal(device.calls.samplers.length, 1, 'post/composite share one fullscreen sampler');
+  assert.equal(device.calls.bindGroups.length, 2, 'post and composite bind groups are created outside the frame loop');
+  assert.equal(device.calls.bindGroups[0].descriptor.entries[1].resource.texture.descriptor.label, 'post-stack:scene-color');
+  assert.equal(device.calls.bindGroups[1].descriptor.entries[1].resource.texture.descriptor.label, 'post-stack:post-color');
+  const frame = executor.render();
+  assert.deepEqual(frame.passes, ['draw-authored-triangle', 'post-tonemap-glow', 'final-composite'], 'render → post → composite order is preserved');
+  assert.deepEqual(calls.order, ['draw-authored-triangle', 'post-tonemap-glow', 'final-composite']);
+  assert.equal(calls.bindGroups.length, 2, 'post and composite bind groups are bound during fullscreen passes');
+  assert.equal(calls.draws.length, 3, 'scene, post fullscreen, and final composite draw calls are encoded');
+  assert.equal(calls.submissions.length, 1);
+  const bindGroupCountAfterFirstFrame = device.calls.bindGroups.length;
+  executor.render();
+  assert.equal(device.calls.bindGroups.length, bindGroupCountAfterFirstFrame, 'steady frames do not churn post/composite bind groups');
+  canvas.getBoundingClientRect = () => ({ width: 400, height: 200 });
+  const oldTextures = [...device.calls.textures];
+  const resized = executor.render();
+  assert.equal(resized.width, 400);
+  assert.equal(oldTextures.every((texture) => texture.destroyed), true, 'resize destroys old offscreen attachments before recreation');
+  assert.equal(device.calls.bindGroups.length, bindGroupCountAfterFirstFrame + 2, 'resize recreates texture-view bind groups exactly once');
+  executor.dispose();
+  assert.equal(device.calls.textures.every((texture) => texture.destroyed), true, 'dispose destroys recreated offscreen attachments');
+  assert.equal(calls.unconfigured, true);
 }
 
 async function testResourceManagerAndAssetCache() {
@@ -305,10 +370,10 @@ function testRenderGraphDeepValidation() {
   assert.ok(!base().addPass(compositePass('c', { layers: [], output: 'swapchain' })).validate().ok, 'composite layers required');
   assert.ok(!base().addPass(compositePass('c', { layers: ['missing'], output: 'swapchain' })).validate().ok, 'composite layer must exist');
   assert.ok(!base().addPass(boundedVolumePass('v', { pipeline: 'volume', bounds: [-1, -1, -1, 1, 1, 1], inputs: ['input'], outputs: ['output'] })).validate().ok, 'bounded volume depth target required');
-  assert.ok(base().addResource(storageBuffer('out2', 16)).addResource(storageBuffer('out3', 16)).addResource(storageBuffer('out4', 16))
+  assert.ok(base().addResource(storageBuffer('out2', 16)).addResource(renderTarget('out3')).addResource(renderTarget('out4'))
     .addPass(computePass('ok-compute', { pipeline: 'sim', inputs: ['input'], outputs: ['output'] }))
     .addPass(boundedVolumePass('ok-volume', { pipeline: 'volume', bounds: [-1, -1, -1, 1, 1, 1], depthTarget: 'depth', inputs: ['input'], outputs: ['out2'] }))
-    .addPass(feedbackPass('ok-feedback', { source: 'output', history: 'input', output: 'out3' }))
+    .addPass(renderPass('ok-render-source', { pipeline: 'render', colorTargets: ['out3'], draw: [3, 1, 0, 0] }))
     .addPass(postPass('ok-post', { pipeline: 'post', inputs: ['out3'], output: 'out4' }))
     .addPass(compositePass('ok-composite', { layers: ['out4'], output: 'swapchain' })).validate().ok);
 }
@@ -389,13 +454,12 @@ function testExecutorCanvasSizingContracts() {
 function testExecutorFailsClosed() {
   const canvas = makeCanvas();
   const device = makeResourceDevice();
-  const badKind = new RenderGraph({ id: 'bad-kind' })
-    .addResource(storageBuffer('input', 16))
+  const badHistory = new RenderGraph({ id: 'bad-history' })
+    .addResource(renderTarget('input'))
     .addResource(renderTarget('out'))
-    .addPass(postPass('post-placeholder', { pipeline: 'post', inputs: ['input'], output: 'out' }))
-    .addPass(compositePass('composite', { layers: ['out'], output: 'swapchain' }))
-    .freeze();
-  assert.throws(() => new WebGpuGraphExecutor({ device, canvas, graph: badKind, pipelines: new Map([['post', {}]]), resources: new Map([['input', {}]]) }), /not executable/, 'post placeholder is rejected until implemented');
+    .addPass(postPass('post-history-placeholder', { pipeline: 'post', inputs: ['input'], output: 'out', history: 'trail-history' }))
+    .addPass(compositePass('composite', { layers: ['out'], output: 'swapchain' }));
+  assert.throws(() => new WebGpuGraphExecutor({ device, canvas, graph: badHistory, pipelines: new Map([['post', {}]]) }), /history post mode/, 'unsupported history/trail post mode fails closed');
   const missingPipeline = new RenderGraph({ id: 'missing-pipeline' })
     .addResource(renderTarget('out'))
     .addPass(renderPass('draw', { pipeline: 'missing', colorTargets: ['out'], draw: [3, 1, 0, 0] }))
@@ -1011,6 +1075,7 @@ await testExplicitLifecycleBudgetResetOnly();
 await testStalePendingRetryCannotReplaceExplicitReacquire();
 await testRuntimeFallbackUpdatesPublicStatusContract();
 testExecutableRenderGraphSubmission();
+testExecutablePostStackAndCompositeSubmission();
 testExecutorCanvasSizingContracts();
 testExecutorFailsClosed();
 await testRuntimeNoExecutorWhenUnavailableAndFallbackCleanup();

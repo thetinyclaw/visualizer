@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Visualizer v4 Clear/Draw Smoke</title>
+  <title>Visualizer v4 Post/Composite Smoke</title>
   <style>
     html, body { margin: 0; min-height: 100%; background: #05070d; color: #d9f2ff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     main { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
@@ -17,7 +17,7 @@
 <body>
 <main>
   <section>
-    <h1>VISUALIZER V4 CLEAR/DRAW SMOKE</h1>
+    <h1>VISUALIZER V4 POST/COMPOSITOR SMOKE</h1>
     <canvas id="v4-canvas" aria-label="v4 authored clear/draw smoke canvas"></canvas>
     <div id="status">Probing renderer…</div>
     <div id="telemetry"></div>
@@ -26,7 +26,7 @@
 </main>
 <script type="module">
 import { startV4Runtime } from './runtime.js';
-import { RenderGraph, renderTarget, depthTarget, renderPass, compositePass } from './render-graph.js';
+import { RenderGraph, renderTarget, depthTarget, renderPass, postPass, compositePass } from './render-graph.js';
 
 const smokeManifest = {
   schemaVersion: 1,
@@ -35,7 +35,8 @@ const smokeManifest = {
   assets: [],
   pipelines: [
     { id: 'v4-clear-draw-pipeline', kind: 'render', entryPoint: 'main' },
-    { id: 'v4-composite-pipeline', kind: 'render', entryPoint: 'main' },
+    { id: 'v4-post-tonemap-pipeline', kind: 'post', entryPoint: 'fs' },
+    { id: 'v4-composite-pipeline', kind: 'render', entryPoint: 'fs' },
   ],
   simulationBuffers: [],
   controls: [],
@@ -45,6 +46,7 @@ const smokeManifest = {
 function makeSmokeGraph() {
   return new RenderGraph({ id: 'runtime-clear-draw-smoke' })
     .addResource(renderTarget('smoke-color'))
+    .addResource(renderTarget('post-color'))
     .addResource(depthTarget('smoke-depth'))
     .addPass(renderPass('draw-smoke-triangle', {
       pipeline: 'v4-clear-draw-pipeline',
@@ -53,8 +55,14 @@ function makeSmokeGraph() {
       draw: [3, 1, 0, 0],
       clearColor: { r: 0.01, g: 0.015, b: 0.035, a: 1 },
     }))
+    .addPass(postPass('post-tonemap-glow', {
+      pipeline: 'v4-post-tonemap-pipeline',
+      inputs: ['smoke-color'],
+      output: 'post-color',
+      clearColor: { r: 0.004, g: 0.006, b: 0.012, a: 1 },
+    }))
     .addPass(compositePass('composite-to-swapchain', {
-      layers: ['smoke-color'],
+      layers: ['post-color'],
       output: 'swapchain',
       pipeline: 'v4-composite-pipeline',
       draw: [3, 1, 0, 0],
@@ -63,7 +71,7 @@ function makeSmokeGraph() {
 }
 
 function makePipelines({ device, format }) {
-  const shader = device.createShaderModule({ code: `
+  const sceneShader = device.createShaderModule({ label: 'v4-demo-authored-triangle-wgsl', code: `
 struct VertexOut { @builtin(position) position: vec4f, @location(0) color: vec3f };
 @vertex fn vs(@builtin(vertex_index) vertexIndex: u32) -> VertexOut {
   var positions = array<vec2f, 3>(vec2f(-0.82, -0.72), vec2f(0.82, -0.68), vec2f(0.02, 0.78));
@@ -76,10 +84,53 @@ struct VertexOut { @builtin(position) position: vec4f, @location(0) color: vec3f
 @fragment fn fs(in: VertexOut) -> @location(0) vec4f {
   return vec4f(in.color, 1.0);
 }` });
-  const base = { layout: 'auto', vertex: { module: shader, entryPoint: 'vs' }, fragment: { module: shader, entryPoint: 'fs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } };
+  const fullscreenShader = device.createShaderModule({ label: 'v4-demo-post-composite-wgsl', code: `
+struct FullscreenOut { @builtin(position) position: vec4f, @location(0) uv: vec2f };
+@group(0) @binding(0) var sourceSampler: sampler;
+@group(0) @binding(1) var sourceTexture: texture_2d<f32>;
+
+@vertex fn vs(@builtin(vertex_index) vertexIndex: u32) -> FullscreenOut {
+  var positions = array<vec2f, 3>(vec2f(-1.0, -3.0), vec2f(3.0, 1.0), vec2f(-1.0, 1.0));
+  var out: FullscreenOut;
+  let p = positions[vertexIndex];
+  out.position = vec4f(p, 0.0, 1.0);
+  out.uv = p * vec2f(0.5, -0.5) + vec2f(0.5, 0.5);
+  return out;
+}
+
+fn boundedToneMap(color: vec3f) -> vec3f {
+  let bounded = clamp(color, vec3f(0.0), vec3f(4.0));
+  return bounded / (vec3f(1.0) + bounded);
+}
+
+@fragment fn postFs(in: FullscreenOut) -> @location(0) vec4f {
+  let base = textureSample(sourceTexture, sourceSampler, in.uv).rgb;
+  let center = vec2f(0.5, 0.5);
+  let dist = distance(in.uv, center);
+  let glowMask = 1.0 - smoothstep(0.10, 0.72, dist);
+  let restrainedGlow = vec3f(0.08, 0.22, 0.34) * glowMask + base * glowMask * 0.18;
+  let mapped = boundedToneMap(base * 1.18 + restrainedGlow);
+  return vec4f(clamp(mapped, vec3f(0.0), vec3f(0.92)), 1.0);
+}
+
+@fragment fn compositeFs(in: FullscreenOut) -> @location(0) vec4f {
+  let color = textureSample(sourceTexture, sourceSampler, in.uv).rgb;
+  return vec4f(clamp(color, vec3f(0.0), vec3f(1.0)), 1.0);
+}` });
+  const fullscreenLayout = device.createBindGroupLayout({
+    label: 'v4-demo-fullscreen-texture-layout',
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+      { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d' } },
+    ],
+  });
+  const fullscreenPipelineLayout = device.createPipelineLayout({ label: 'v4-demo-fullscreen-pipeline-layout', bindGroupLayouts: [fullscreenLayout] });
+  const sceneBase = { layout: 'auto', vertex: { module: sceneShader, entryPoint: 'vs' }, fragment: { module: sceneShader, entryPoint: 'fs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } };
+  const fullscreenBase = { layout: fullscreenPipelineLayout, vertex: { module: fullscreenShader, entryPoint: 'vs' }, fragment: { module: fullscreenShader, targets: [{ format }] }, primitive: { topology: 'triangle-list' } };
   return new Map([
-    ['v4-clear-draw-pipeline', device.createRenderPipeline({ ...base, depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' } })],
-    ['v4-composite-pipeline', device.createRenderPipeline(base)],
+    ['v4-clear-draw-pipeline', device.createRenderPipeline({ ...sceneBase, depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' } })],
+    ['v4-post-tonemap-pipeline', device.createRenderPipeline({ ...fullscreenBase, fragment: { ...fullscreenBase.fragment, entryPoint: 'postFs' } })],
+    ['v4-composite-pipeline', device.createRenderPipeline({ ...fullscreenBase, fragment: { ...fullscreenBase.fragment, entryPoint: 'compositeFs' } })],
   ]);
 }
 
@@ -102,7 +153,7 @@ try {
     telemetryElement.textContent = 'WebGPU resource manager inactive; no GPU resources allocated on fallback route. No live GPU telemetry is displayed.';
   }
   errorsElement.textContent = runtime.publicErrors.map((error) => `${error.code}: ${error.message}`).join('\n');
-  window.__V4_RUNTIME_SMOKE__ = { label: 'authored colorful clear/draw smoke, not Cathedral or graph parity', mode: runtime.mode, graphId: runtime.graph?.id, passes: runtime.graph?.passes.map((pass) => pass.id), resourcesReady: statusElement.dataset.resourcesReady, frameSubmitted: statusElement.dataset.frameSubmitted, telemetry: resourceTelemetry };
+  window.__V4_RUNTIME_SMOKE__ = { label: 'authored triangle through real offscreen post stack and swapchain compositor; not Cathedral or full bloom parity', mode: runtime.mode, graphId: runtime.graph?.id, passes: runtime.graph?.passes.map((pass) => pass.id), passKinds: runtime.graph?.passes.map((pass) => pass.kind), resources: runtime.graph?.resources.map((resource) => resource.id), postStatus: 'bounded tone map plus restrained center glow, no history/trails', resourcesReady: statusElement.dataset.resourcesReady, frameSubmitted: statusElement.dataset.frameSubmitted, telemetry: resourceTelemetry };
   const ctx = runtime.graphExecutor ? null : canvas.getContext('2d');
   if (ctx) {
     canvas.width = Math.max(1, canvas.clientWidth || 960); canvas.height = Math.max(1, canvas.clientHeight || 360);
@@ -110,7 +161,7 @@ try {
     gradient.addColorStop(0, '#10284e'); gradient.addColorStop(0.5, runtime.mode === 'webgl2-legacy' ? '#4d2d72' : '#166e83'); gradient.addColorStop(1, '#05070d');
     ctx.fillStyle = gradient; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#d9f2ff'; ctx.font = '28px monospace'; ctx.fillText(runtime.modeLabel, 34, 72);
-    ctx.font = '16px monospace'; ctx.fillText('Clear/draw smoke only; No live GPU telemetry is displayed.', 34, 112);
+    ctx.font = '16px monospace'; ctx.fillText('Fallback: post/composite WebGPU path inactive. No live GPU telemetry is displayed.', 34, 112);
   }
 } catch (error) {
   statusElement.textContent = 'Runtime initialization failed safely';

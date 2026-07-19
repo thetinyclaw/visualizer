@@ -76,8 +76,8 @@ export function feedbackPass(id, { source, history, output, blend = 0.92 }) {
   return Object.freeze({ kind: PASS_KINDS.FEEDBACK, id, source, history, output, blend });
 }
 
-export function postPass(id, { pipeline, inputs = [], output }) {
-  return Object.freeze({ kind: PASS_KINDS.POST, id, pipeline, inputs, output });
+export function postPass(id, { pipeline, inputs = [], output, resources = [], draw = [3, 1, 0, 0], executor = null, clearColor = null, history = null } = {}) {
+  return Object.freeze({ kind: PASS_KINDS.POST, id, pipeline, inputs, output, resources, draw, executor, clearColor, history });
 }
 
 export function compositePass(id, { layers = [], transition = null, output = 'swapchain', pipeline = null, resources = [], draw = null, executor = null, clearColor = null }) {
@@ -159,7 +159,10 @@ export class RenderGraph {
           requireResource(pass, 'source', pass.source); requireResource(pass, 'history', pass.history); requireResource(pass, 'output', pass.output); outputs.push(pass.output); break;
         case PASS_KINDS.POST:
           if (typeof pass.pipeline !== 'string' || pass.pipeline.length === 0) errors.push(`pass ${pass.id} requires pipeline`);
-          requireResourceList(pass, 'input', pass.inputs); requireResource(pass, 'output', pass.output); outputs.push(pass.output); break;
+          requireResourceList(pass, 'input', pass.inputs); requireType(pass, 'output', pass.output, [RESOURCE_TYPES.RENDER_TARGET]);
+          for (const input of pass.inputs || []) requireType(pass, 'input', input, [RESOURCE_TYPES.RENDER_TARGET]);
+          if (pass.history !== null) errors.push(`pass ${pass.id} history post mode is not executable in this foundation`);
+          outputs.push(pass.output); break;
         case PASS_KINDS.COMPOSITE:
           requireResourceList(pass, 'layer', pass.layers); requireResource(pass, 'output', pass.output || 'swapchain');
           if ((pass.output || 'swapchain') !== 'swapchain') errors.push(`pass ${pass.id} composite output must be swapchain`);

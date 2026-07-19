@@ -4,7 +4,7 @@ const RENDER_ATTACHMENT = globalThis.GPUTextureUsage?.RENDER_ATTACHMENT ?? 0x10;
 const TEXTURE_BINDING = globalThis.GPUTextureUsage?.TEXTURE_BINDING ?? 0x04;
 const COPY_SRC = globalThis.GPUTextureUsage?.COPY_SRC ?? 0x01;
 
-const EXECUTABLE_PASS_KINDS = new Set(['render', 'compute', 'composite']);
+const EXECUTABLE_PASS_KINDS = new Set(['render', 'compute', 'post', 'composite']);
 const DEFAULT_CLEAR = Object.freeze({ r: 0.015, g: 0.025, b: 0.055, a: 1 });
 
 function fail(message) {
@@ -92,6 +92,8 @@ export class WebGpuGraphExecutor {
     this.dprCap = dprCap;
     this.windowObject = windowObject;
     this.ownedTextures = new Map();
+    this.fullscreenSampler = null;
+    this.autoBindGroups = new Map();
     this.width = 0;
     this.height = 0;
     this.dpr = 1;
@@ -143,6 +145,13 @@ export class WebGpuGraphExecutor {
         for (const id of [...(pass.resources || []), ...(pass.vertexBuffers || []), ...(pass.indexBuffer ? [pass.indexBuffer] : [])]) resolveResource(id, pass);
         return Object.freeze({ kind: 'render', pass, pipeline, executor });
       }
+      if (pass.kind === 'post') {
+        if (pass.history !== null) throw fail(`Pass ${pass.id} history post mode is not executable in this foundation.`);
+        const pipeline = resolvePipeline(pass.pipeline, pass);
+        const executor = resolveExecutor(pass.executor, pass);
+        for (const id of [...(pass.inputs || []), pass.output, ...(pass.resources || [])]) resolveResource(id, pass);
+        return Object.freeze({ kind: 'post', pass, pipeline, executor });
+      }
       if (pass.kind === 'composite') {
         if ((pass.output || 'swapchain') !== 'swapchain') throw fail(`Pass ${pass.id} composite output must be swapchain.`);
         const pipeline = pass.pipeline ? resolvePipeline(pass.pipeline, pass) : null;
@@ -172,6 +181,7 @@ export class WebGpuGraphExecutor {
 
   resizeTargets() {
     if (!this.syncCanvasSize()) return false;
+    let recreated = false;
     for (const resource of this.graph.resources || []) {
       if (!resource.canvasSized || !['render-target', 'depth-target', 'instanced-depth-target'].includes(resource.type)) continue;
       const existing = this.ownedTextures.get(resource.id);
@@ -184,8 +194,32 @@ export class WebGpuGraphExecutor {
         usage: resource.type === 'render-target' ? (RENDER_ATTACHMENT | TEXTURE_BINDING | COPY_SRC) : RENDER_ATTACHMENT,
       });
       this.ownedTextures.set(resource.id, { texture, width: this.width, height: this.height });
+      recreated = true;
     }
+    if (recreated) this.recreateAutoBindGroups();
     return true;
+  }
+
+  ensureFullscreenSampler() {
+    if (!this.fullscreenSampler) this.fullscreenSampler = this.device.createSampler ? this.device.createSampler({ label: `${this.graph.id}:fullscreen-linear`, magFilter: 'linear', minFilter: 'linear' }) : null;
+    return this.fullscreenSampler;
+  }
+
+  recreateAutoBindGroups() {
+    this.autoBindGroups.clear();
+    for (const compiled of this.compiledPasses || []) {
+      if (!['post', 'composite'].includes(compiled.kind) || !compiled.pipeline || typeof compiled.pipeline.getBindGroupLayout !== 'function' || typeof this.device.createBindGroup !== 'function') continue;
+      const sourceIds = compiled.kind === 'post' ? (compiled.pass.inputs || []) : (compiled.pass.layers || []);
+      if (sourceIds.length !== 1) throw fail(`Pass ${compiled.pass.id} requires exactly one sampled source in this foundation.`);
+      const sampler = this.ensureFullscreenSampler();
+      const view = this.textureView(sourceIds[0]);
+      if (!sampler || !view) throw fail(`Pass ${compiled.pass.id} cannot create fullscreen bind group.`);
+      this.autoBindGroups.set(compiled.pass.id, this.device.createBindGroup({
+        label: `${this.graph.id}:${compiled.pass.id}:fullscreen-bind-group`,
+        layout: compiled.pipeline.getBindGroupLayout(0),
+        entries: [{ binding: 0, resource: sampler }, { binding: 1, resource: view }],
+      }));
+    }
   }
 
   textureView(id) {
@@ -210,7 +244,7 @@ export class WebGpuGraphExecutor {
 
   encodeRenderLike(encoder, compiled, frameContext) {
     const passDef = compiled.pass;
-    const colorIds = compiled.kind === 'composite' ? ['swapchain'] : passDef.colorTargets;
+    const colorIds = compiled.kind === 'composite' ? ['swapchain'] : (compiled.kind === 'post' ? [passDef.output] : passDef.colorTargets);
     const descriptor = {
       label: `${this.graph.id}:${passDef.id}`,
       colorAttachments: colorIds.map((id, index) => ({
@@ -225,12 +259,15 @@ export class WebGpuGraphExecutor {
     }
     const passEncoder = encoder.beginRenderPass(descriptor);
     if (compiled.pipeline) passEncoder.setPipeline(compiled.pipeline);
+    const autoBindGroup = this.autoBindGroups.get(passDef.id);
+    if (autoBindGroup && typeof passEncoder.setBindGroup === 'function') passEncoder.setBindGroup(0, autoBindGroup);
     bindPassResources(passEncoder, this.resourceRegistry, passDef);
     for (const [slot, id] of (passDef.vertexBuffers || []).entries()) passEncoder.setVertexBuffer(slot, this.resourceRegistry.get(id));
     if (passDef.indexBuffer) passEncoder.setIndexBuffer(this.resourceRegistry.get(passDef.indexBuffer), passDef.indexFormat || 'uint32');
     if (compiled.executor) compiled.executor({ pass: passEncoder, device: this.device, resources: this.resourceRegistry, frameContext, graphPass: passDef });
     if (passDef.drawIndexed) passEncoder.drawIndexed(...passDef.drawIndexed);
     else if (passDef.draw) passEncoder.draw(...passDef.draw);
+    else if (compiled.kind === 'post' || compiled.kind === 'composite') passEncoder.draw(3, 1, 0, 0);
     passEncoder.end();
   }
 
@@ -256,6 +293,8 @@ export class WebGpuGraphExecutor {
     this.disposed = true;
     for (const entry of this.ownedTextures.values()) if (entry.texture && typeof entry.texture.destroy === 'function') entry.texture.destroy();
     this.ownedTextures.clear();
+    this.autoBindGroups.clear();
+    this.fullscreenSampler = null;
     if (typeof this.context.unconfigure === 'function') this.context.unconfigure();
   }
 }
