@@ -16,7 +16,7 @@ function updateState(state, runtime, scene, frame = null) {
   const summary = scene.lastSummary;
   state.rendererMode = runtime.mode;
   state.webgpuActive = Boolean(runtime.graphExecutor && runtime.mode !== 'webgl2-legacy');
-  state.active = state.webgpuActive;
+  state.active = Boolean(state.webgpuActive && (frame || runtime.lastFrame)?.submitted && state.webgpuValidationErrors.length === 0);
   state.seed = scene.seed; state.mode = scene.mode; state.time = scene.lastTime;
   state.strandCount = FILAMENT_CONTRACT.strandCount;
   state.segmentCount = FILAMENT_CONTRACT.segmentCount;
@@ -24,7 +24,8 @@ function updateState(state, runtime, scene, frame = null) {
   state.drawVertices = FILAMENT_CONTRACT.drawVertices;
   state.computeDispatches = runtime.graphExecutor?._filamentDispatches || state.computeDispatches || 0;
   state.renderDrawCalls = runtime.graphExecutor?._filamentDrawCalls || state.renderDrawCalls || 0;
-  state.buffers = { positions: 'filament-positions persistent storage', velocities: 'filament-velocities persistent storage' };
+  state.buffers = { positions: ['filament-positions-a', 'filament-positions-b'], velocities: ['filament-velocities-a', 'filament-velocities-b'], renderedPosition: scene.pendingPingPong?.nextPositionId || scene.pingPongState?.().previousPositionId };
+  state.pingPong = { parity: scene.pingPongParity, swapCount: scene.pingPongSwapCount, pending: scene.pendingPingPong };
   state.generation = runtime.lifecycle?.generation || scene.generation || 0;
   state.frame = frame || runtime.lastFrame || null;
   state.frameCounters = runtime.frameCounters || null;
@@ -42,7 +43,7 @@ function updateState(state, runtime, scene, frame = null) {
 function writeStatus(status, state) {
   if (!status) return;
   status.textContent = state.webgpuActive
-    ? `WebGPU compute active · ${state.strandCount}×${state.segmentCount} nodes · ${state.computeDispatches} dispatch · ${state.renderDrawCalls} strand draws · ${state.locked ? 'locked single frame' : 'live RAF'}`
+    ? `${state.active ? 'WebGPU compute active' : 'WebGPU compute submitted; awaiting clean visible frame'} · ${state.strandCount}×${state.segmentCount} nodes · ${state.computeDispatches} dispatch · ${state.renderDrawCalls} strand draws · ping-pong parity ${state.pingPong?.parity ?? 0} swaps ${state.pingPong?.swapCount ?? 0} · ${state.locked ? 'locked single frame' : 'live RAF'}`
     : `WebGPU unavailable; old lab fallback linked · ${state.fallbackReason || 'probe unavailable'}`;
 }
 
@@ -63,9 +64,17 @@ export async function startFilamentRoute(windowObject = window) {
     drawVertices: 36108, computeDispatches: 0, renderDrawCalls: 0, graphPasses: [], graphPassIds: [],
     telemetry: null, audio: null, bounds: null, signature: '', buffers: {}, generation: 0,
     lifecycle: 'initializing', lock: locked, locked, fallback: false, fallbackHref: './lab/filament-vortex.html', fallbackReason: '', rafScheduled: false,
+    webgpuValidationErrors: [], pingPong: { parity: 0, swapCount: 0, pending: null },
     structuralAudio: scene.structuralAudioMappings, materialHierarchy: scene.materialHierarchy,
   };
   windowObject.__V4_FILAMENT_WEBGPU__ = state;
+  windowObject.addEventListener?.('uncapturederror', (event) => {
+    const error = event?.error || event;
+    state.webgpuValidationErrors.push({ name: error?.constructor?.name || 'GPUUncapturedErrorEvent', message: String(error?.message || error?.error?.message || 'uncaptured WebGPU error') });
+    state.active = false;
+    if (errors) errors.textContent = state.webgpuValidationErrors.map((entry) => `webgpu-validation: ${entry.message}`).join('\n');
+    writeStatus(status, state);
+  });
   const runtime = await startV4Runtime({
     canvas,
     statusElement: status,
@@ -84,6 +93,13 @@ export async function startFilamentRoute(windowObject = window) {
     executorRegistry: createFilamentVortexExecutors(),
     dprCap: 2,
     windowObject,
+  });
+  runtime.lifecycle?.device?.addEventListener?.('uncapturederror', (event) => {
+    const error = event?.error || event;
+    state.webgpuValidationErrors.push({ name: error?.constructor?.name || 'GPUValidationError', message: String(error?.message || 'uncaptured WebGPU error') });
+    state.active = false;
+    if (errors) errors.textContent = state.webgpuValidationErrors.map((entry) => `webgpu-validation: ${entry.message}`).join('\n');
+    writeStatus(status, state);
   });
   await runtime.resourcesReady;
   let frame = runtime.lastFrame;

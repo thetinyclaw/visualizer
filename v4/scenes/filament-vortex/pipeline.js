@@ -21,8 +21,10 @@ export function createFilamentVortexPipelines({ device, format }) {
     entries: [
       { binding: 0, visibility: stage.COMPUTE, buffer: { type: 'uniform' } },
       { binding: 1, visibility: stage.COMPUTE, buffer: { type: 'uniform' } },
-      { binding: 2, visibility: stage.COMPUTE, buffer: { type: 'storage' } },
-      { binding: 3, visibility: stage.COMPUTE, buffer: { type: 'storage' } },
+      { binding: 2, visibility: stage.COMPUTE, buffer: { type: 'read-only-storage' } },
+      { binding: 3, visibility: stage.COMPUTE, buffer: { type: 'read-only-storage' } },
+      { binding: 4, visibility: stage.COMPUTE, buffer: { type: 'storage' } },
+      { binding: 5, visibility: stage.COMPUTE, buffer: { type: 'storage' } },
     ],
   });
   const renderLayout = device.createBindGroupLayout({
@@ -61,6 +63,9 @@ export function createFilamentVortexPipelines({ device, format }) {
   ]);
   pipelines.computeLayout = computeLayout;
   pipelines.renderLayout = renderLayout;
+  for (const pipeline of pipelines.values()) {
+    try { Object.defineProperty(pipeline, 'layoutBindGroupCount', { value: 1 }); } catch (_) { /* Native GPUPipeline may be non-extensible; browser validation still enforces the layout. */ }
+  }
   return pipelines;
 }
 
@@ -78,7 +83,8 @@ function bindGroupCache(executor) {
 function getComputeBindGroup({ device, resources, executor }) {
   if (!device.createBindGroup) return null;
   const cache = bindGroupCache(executor);
-  const key = `compute:${executor.textureGeneration || 0}`;
+  const sceneState = executor._filamentPendingPingPong || executor._filamentLastPingPong || { parity: 0, nextParity: 1, previousPositionId: 'filament-positions-a', previousVelocityId: 'filament-velocities-a', nextPositionId: 'filament-positions-b', nextVelocityId: 'filament-velocities-b' };
+  const key = `compute:${sceneState.parity}->${sceneState.nextParity}:${executor.textureGeneration || 0}`;
   if (cache.has(key)) return cache.get(key);
   const bindGroup = device.createBindGroup({
     label: 'filament-vortex-compute-bind-group',
@@ -86,8 +92,10 @@ function getComputeBindGroup({ device, resources, executor }) {
     entries: [
       { binding: 0, resource: { buffer: resources.get('filament-uniforms') } },
       { binding: 1, resource: { buffer: resources.get('filament-audio') } },
-      { binding: 2, resource: { buffer: resources.get('filament-positions') } },
-      { binding: 3, resource: { buffer: resources.get('filament-velocities') } },
+      { binding: 2, resource: { buffer: resources.get(sceneState.previousPositionId) } },
+      { binding: 3, resource: { buffer: resources.get(sceneState.previousVelocityId) } },
+      { binding: 4, resource: { buffer: resources.get(sceneState.nextPositionId) } },
+      { binding: 5, resource: { buffer: resources.get(sceneState.nextVelocityId) } },
     ],
   });
   cache.set(key, bindGroup);
@@ -97,7 +105,8 @@ function getRenderBindGroup({ device, resources, executor, graphPass }) {
   if (!device.createBindGroup) return null;
   const cache = bindGroupCache(executor);
   const inputTextureId = graphPass.id === 'filament-post' ? 'filament-scene-color' : (graphPass.id === 'filament-composite' ? 'filament-post-color' : 'asset:filament-pixel');
-  const key = `${graphPass.id}:${inputTextureId}:${executor.textureGeneration || 0}`;
+  const sceneState = executor._filamentPendingPingPong || executor._filamentLastPingPong || { nextParity: 1, nextPositionId: 'filament-positions-b' };
+  const key = `${graphPass.id}:${inputTextureId}:render${sceneState.nextParity}:${executor.textureGeneration || 0}`;
   if (cache.has(key)) return cache.get(key);
   const sampler = ensureSampler(device, executor);
   const textureView = inputTextureId.startsWith('asset:') ? resources.get(inputTextureId)?.createView() : executor.textureView(inputTextureId);
@@ -107,7 +116,7 @@ function getRenderBindGroup({ device, resources, executor, graphPass }) {
     entries: [
       { binding: 0, resource: { buffer: resources.get('filament-uniforms') } },
       { binding: 1, resource: { buffer: resources.get('filament-audio') } },
-      { binding: 2, resource: { buffer: resources.get('filament-positions') } },
+      { binding: 2, resource: { buffer: resources.get(sceneState.nextPositionId) } },
       { binding: 3, resource: sampler },
       { binding: 4, resource: textureView },
     ],
@@ -122,16 +131,22 @@ export function createFilamentVortexExecutors() {
       const scene = frameContext.scene;
       const dt = Number.isFinite(scene?.lastTime) ? Math.max(0, (frameContext.time || 0) - scene.lastTime) : 1 / 60;
       const prepared = scene.prepareFrame({ time: frameContext.time || 0, dt, audio: frameContext.audio, width: executor.width || 1280, height: executor.height || 720, live: !scene.locked });
+      executor._filamentPendingPingPong = prepared.summary.pingPong;
       writeBuffer(device, resources.get('filament-uniforms'), prepared.uniforms);
       writeBuffer(device, resources.get('filament-audio'), prepared.bands);
       const bindGroup = getComputeBindGroup({ device, resources, executor });
       if (bindGroup && typeof pass.setBindGroup === 'function') pass.setBindGroup(0, bindGroup);
+      if (!frameContext.afterSubmit) frameContext.afterSubmit = [];
+      frameContext.afterSubmit.push(() => {
+        executor._filamentLastPingPong = scene.markFrameSubmitted({ live: !scene.locked });
+        executor._filamentPendingPingPong = null;
+      });
       frameContext.filamentSummary = prepared.summary;
       executor._filamentDispatches = (executor._filamentDispatches || 0) + 1;
     }],
     ['filament-render-bind', ({ pass, device, resources, graphPass, executor }) => {
       const bindGroup = getRenderBindGroup({ device, resources, executor, graphPass });
-      if (bindGroup && typeof pass.setBindGroup === 'function') pass.setBindGroup(1, bindGroup);
+      if (bindGroup && typeof pass.setBindGroup === 'function') pass.setBindGroup(0, bindGroup);
       executor._filamentDrawCalls = (executor._filamentDrawCalls || 0) + (graphPass.id === 'filament-strands' ? 1 : 0);
     }],
   ]);

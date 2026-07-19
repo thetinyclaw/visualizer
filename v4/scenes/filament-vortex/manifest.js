@@ -22,15 +22,17 @@ export function makeFilamentVortexGraph() {
   return new RenderGraph({ id: 'filament-vortex-webgpu-graph' })
     .addResource(uniformBuffer('filament-uniforms', FILAMENT_UNIFORM_BYTES))
     .addResource(uniformBuffer('filament-audio', FILAMENT_AUDIO_BYTES))
-    .addResource(storageBuffer('filament-positions', FILAMENT_POSITION_BYTES))
-    .addResource(storageBuffer('filament-velocities', FILAMENT_VELOCITY_BYTES))
+    .addResource(storageBuffer('filament-positions-a', FILAMENT_POSITION_BYTES))
+    .addResource(storageBuffer('filament-positions-b', FILAMENT_POSITION_BYTES))
+    .addResource(storageBuffer('filament-velocities-a', FILAMENT_VELOCITY_BYTES))
+    .addResource(storageBuffer('filament-velocities-b', FILAMENT_VELOCITY_BYTES))
     .addResource(renderTarget('filament-scene-color'))
     .addResource(depthTarget('filament-scene-depth'))
     .addResource(renderTarget('filament-post-color'))
     .addPass(computePass('filament-compute', {
       pipeline: 'filament-compute-pipeline',
-      inputs: ['filament-uniforms', 'filament-audio', 'filament-positions', 'filament-velocities'],
-      outputs: ['filament-positions', 'filament-velocities'],
+      inputs: ['filament-uniforms', 'filament-audio', 'filament-positions-a', 'filament-velocities-a'],
+      outputs: ['filament-positions-b', 'filament-velocities-b'],
       workgroups: [FILAMENT_WORKGROUPS, 1, 1],
       executor: 'filament-compute-bind',
     }))

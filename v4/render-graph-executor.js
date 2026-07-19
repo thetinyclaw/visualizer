@@ -107,6 +107,26 @@ function bindPassResources(passEncoder, resources, graphPass) {
   }
 }
 
+function pipelineBindGroupCount(pipeline) {
+  const count = pipeline?.layoutBindGroupCount ?? pipeline?.bindGroupLayoutCount ?? pipeline?.layout?.bindGroupLayouts?.length;
+  return Number.isInteger(count) && count >= 0 ? count : null;
+}
+
+function bindSlotCheckedPass(passEncoder, pipeline, passId) {
+  const maxGroups = pipelineBindGroupCount(pipeline);
+  if (maxGroups === null || typeof passEncoder?.setBindGroup !== 'function') return passEncoder;
+  return Object.create(passEncoder, {
+    setBindGroup: {
+      value(slot, ...rest) {
+        if (!Number.isInteger(slot) || slot < 0 || slot >= maxGroups) {
+          throw fail(`Pass ${passId} setBindGroup(${slot}) exceeds pipeline layout bind group count ${maxGroups}.`);
+        }
+        return passEncoder.setBindGroup(slot, ...rest);
+      },
+    },
+  });
+}
+
 export class WebGpuGraphExecutor {
   constructor({
     device,
@@ -400,7 +420,7 @@ export class WebGpuGraphExecutor {
     if (!passEncoder) throw fail(`Compute pass ${compiled.pass.id} is not supported by this device.`);
     passEncoder.setPipeline(compiled.pipeline);
     bindPassResources(passEncoder, this.resourceRegistry, compiled.pass);
-    if (compiled.executor) compiled.executor({ pass: passEncoder, device: this.device, resources: compiled.resources, frameContext, graphPass: compiled.pass, executor: this });
+    if (compiled.executor) compiled.executor({ pass: bindSlotCheckedPass(passEncoder, compiled.pipeline, compiled.pass.id), device: this.device, resources: compiled.resources, frameContext, graphPass: compiled.pass, executor: this });
     const [x, y = 1, z = 1] = compiled.pass.workgroups;
     passEncoder.dispatchWorkgroups(x, y, z);
     passEncoder.end();
@@ -432,7 +452,7 @@ export class WebGpuGraphExecutor {
     const callbackContext = compiled.kind === 'history'
       ? { ...frameContext, history: this.historyState(passDef.history), historyReset: this.historyState(passDef.history).pendingReset }
       : frameContext;
-    if (compiled.executor) compiled.executor({ pass: passEncoder, device: this.device, resources: this.resourceRegistry, frameContext: callbackContext, graphPass: passDef, executor: this });
+    if (compiled.executor) compiled.executor({ pass: bindSlotCheckedPass(passEncoder, compiled.pipeline, passDef.id), device: this.device, resources: this.resourceRegistry, frameContext: callbackContext, graphPass: passDef, executor: this });
     if (passDef.drawIndexed) passEncoder.drawIndexed(...passDef.drawIndexed);
     else if (passDef.draw) passEncoder.draw(...passDef.draw);
     else if (compiled.kind === 'post' || compiled.kind === 'history' || compiled.kind === 'composite') passEncoder.draw(3, 1, 0, 0);
@@ -473,6 +493,7 @@ export class WebGpuGraphExecutor {
       state.pendingReset = false;
       state.pendingSwap = false;
     }
+    for (const callback of frameContext.afterSubmit || []) callback();
     return Object.freeze({ submitted: true, width: this.width, height: this.height, dpr: this.dpr, graphId: this.graph.id, passes: Object.freeze(executed) });
   }
 

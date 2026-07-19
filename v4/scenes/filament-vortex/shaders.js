@@ -15,8 +15,10 @@ struct FrameUniforms {
 };
 @group(0) @binding(0) var<uniform> uFrame : FrameUniforms;
 @group(0) @binding(1) var<uniform> uBands : array<vec4<f32>, 4>;
-@group(0) @binding(2) var<storage, read_write> positions : array<vec4<f32>>;
-@group(0) @binding(3) var<storage, read_write> velocities : array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read> previousPositions : array<vec4<f32>>;
+@group(0) @binding(3) var<storage, read> previousVelocities : array<vec4<f32>>;
+@group(0) @binding(4) var<storage, read_write> nextPositions : array<vec4<f32>>;
+@group(0) @binding(5) var<storage, read_write> nextVelocities : array<vec4<f32>>;
 
 fn hash11(n : f32) -> f32 { return fract(sin(n) * 43758.5453123); }
 fn bandAt(i : u32) -> f32 {
@@ -70,16 +72,16 @@ fn csSimulate(@builtin(global_invocation_id) gid : vec3<u32>) {
   let frameIndex = u32(uFrame.params1.x);
   let absolute = basePosition(strand, segment, t);
   if (!live || frameIndex == 0u) {
-    positions[idx] = vec4<f32>(absolute, 1.0);
-    velocities[idx] = vec4<f32>(curlStep(absolute, strand, t), 0.0);
+    nextPositions[idx] = vec4<f32>(absolute, 1.0);
+    nextVelocities[idx] = vec4<f32>(curlStep(absolute, strand, t), 0.0);
     return;
   }
-  let prev = positions[idx].xyz;
-  let v = mix(velocities[idx].xyz, curlStep(prev, strand, t), 0.25);
-  let target = absolute;
+  let prev = previousPositions[idx].xyz;
+  let v = mix(previousVelocities[idx].xyz, curlStep(prev, strand, t), 0.25);
+  let absoluteTarget = absolute;
   let settled = prev + v * dt * 60.0;
-  positions[idx] = vec4<f32>(mix(settled, target, 0.018), 1.0);
-  velocities[idx] = vec4<f32>(v, 0.0);
+  nextPositions[idx] = vec4<f32>(mix(settled, absoluteTarget, 0.018), 1.0);
+  nextVelocities[idx] = vec4<f32>(v, 0.0);
 }
 
 @group(1) @binding(0) var<uniform> uRender : FrameUniforms;
@@ -116,7 +118,7 @@ fn vsStrand(@builtin(vertex_index) vid : u32) -> VOut {
   let owner = rBands[(strand / 8u) % 4u][strand % 4u];
   let width = (0.0022 + owner * 0.0024 + uRender.params2.x * 0.0018 + uRender.params2.w * 0.0012) * (1.25 - f32(seg) / f32(SEGMENTS_PER_STRAND) * 0.45);
   var clip = project(p);
-  clip.xy += normal * sideSign * width * clip.w;
+  clip = vec4<f32>(clip.xy + normal * sideSign * width * clip.w, clip.zw);
   var out : VOut;
   out.clip = clip;
   let lane = f32(strand) / f32(STRAND_COUNT);

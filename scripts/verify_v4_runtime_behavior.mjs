@@ -83,7 +83,7 @@ function makeResourceDevice() {
 }
 
 function makePipeline(id) {
-  return { id, getBindGroupLayout(index) { return { id: `${id}:layout:${index}` }; } };
+  return { id, layoutBindGroupCount: 1, getBindGroupLayout(index) { return { id: `${id}:layout:${index}` }; } };
 }
 
 function testExecutableRenderGraphSubmission() {
@@ -1303,13 +1303,16 @@ function testFilamentExecutorDispatchDrawSubmitAndReuse() {
   const graph = makeFilamentVortexGraph().freeze();
   const scene = createFilamentVortexScene({ seed: 491009, mode: 'demo', locked: false });
   const pipelines = createFilamentVortexPipelines({ device, format: 'bgra8unorm' });
+  for (const pipeline of pipelines.values()) pipeline.layoutBindGroupCount = 1;
   pipelines.computeLayout = { id: 'test-filament-compute-layout' };
   pipelines.renderLayout = { id: 'test-filament-render-layout' };
   const resources = new Map([
     ['filament-uniforms', { id: 'uniforms' }],
     ['filament-audio', { id: 'audio' }],
-    ['filament-positions', { id: 'positions' }],
-    ['filament-velocities', { id: 'velocities' }],
+    ['filament-positions-a', { id: 'positions-a' }],
+    ['filament-positions-b', { id: 'positions-b' }],
+    ['filament-velocities-a', { id: 'velocities-a' }],
+    ['filament-velocities-b', { id: 'velocities-b' }],
     ['asset:filament-pixel', { id: 'filament-pixel', createView: () => ({ id: 'filament-pixel-view' }) }],
   ]);
   const executor = new WebGpuGraphExecutor({ device, canvas, graph, resources, pipelines, executors: createFilamentVortexExecutors(), windowObject: { devicePixelRatio: 1 } });
@@ -1320,10 +1323,37 @@ function testFilamentExecutorDispatchDrawSubmitAndReuse() {
   assert.deepEqual(calls.draws.find(([label]) => label.endsWith(':filament-strands'))[1], [FILAMENT_CONTRACT.drawVertices, 1, 0, 0], 'strand render draws ribbon triangle segment geometry');
   assert.equal(calls.submissions.length, 1, 'commands are submitted');
   assert.equal(device.calls.writes.filter((write) => write[0] === 'buffer').length, 2, 'only small uniform/audio writes occur per frame, no CPU position reupload');
+  assert.equal(calls.computeBinds[0][0], 0, 'compute bind group uses pipeline group 0');
+  assert.ok(calls.renderBinds.every(([, slot]) => slot === 0), 'render/post/composite custom bind groups use valid pipeline group 0');
+  assert.equal(device.calls.bindGroups[0].descriptor.entries[2].resource.buffer.id, 'positions-a', 'compute reads previous position buffer A first');
+  assert.equal(device.calls.bindGroups[0].descriptor.entries[4].resource.buffer.id, 'positions-b', 'compute writes next position buffer B first');
+  assert.equal(device.calls.bindGroups[1].descriptor.entries[2].resource.buffer.id, 'positions-b', 'render samples the just-written next position buffer');
+  assert.equal(scene.pingPongParity, 1, 'successful submit transaction swaps ping-pong parity once');
+  assert.equal(scene.pingPongSwapCount, 1);
   const bindGroupsAfterFirst = device.calls.bindGroups.length;
   executor.render({ time: 18.016, scene, audio: null });
-  assert.equal(device.calls.bindGroups.length, bindGroupsAfterFirst, 'same-size live frames reuse compute/render/post/composite bind groups');
+  assert.equal(scene.pingPongParity, 0, 'live mode alternates physical ping-pong buffers');
+  assert.equal(device.calls.bindGroups.length, bindGroupsAfterFirst + 4, 'second parity creates the alternate cached compute/render/post/composite bind groups');
+  const bindGroupsAfterBothParities = device.calls.bindGroups.length;
+  executor.render({ time: 18.032, scene, audio: null });
+  assert.equal(device.calls.bindGroups.length, bindGroupsAfterBothParities, 'steady live frames reuse bind groups after both parities are cached');
   assert.ok(scene.liveFrame >= 2, 'live mode persistently advances the scene frame counter');
+
+  const failingDevice = makeResourceDevice();
+  failingDevice.queue.submit = () => { throw new Error('submit failed'); };
+  const failingScene = createFilamentVortexScene({ seed: 491009, mode: 'demo', locked: false });
+  const failingExecutor = new WebGpuGraphExecutor({ device: failingDevice, canvas, graph, resources, pipelines, executors: createFilamentVortexExecutors(), windowObject: { devicePixelRatio: 1 } });
+  assert.throws(() => failingExecutor.render({ time: 1, scene: failingScene, audio: null }), /submit failed/);
+  assert.equal(failingScene.pingPongParity, 0, 'failed submit does not advance ping-pong parity');
+  assert.equal(failingScene.pingPongSwapCount, 0, 'failed submit does not count as a swap');
+
+  const badGraph = makeFilamentVortexGraph().freeze();
+  const badExecutors = new Map([['filament-compute-bind', createFilamentVortexExecutors().get('filament-compute-bind')], ['filament-render-bind', ({ pass }) => pass.setBindGroup(1, { id: 'invalid-slot' })]]);
+  const badDevice = makeResourceDevice();
+  badDevice.queue.submit = () => { throw new Error('must not submit invalid slot'); };
+  const badExecutor = new WebGpuGraphExecutor({ device: badDevice, canvas, graph: badGraph, resources, pipelines, executors: badExecutors, windowObject: { devicePixelRatio: 1 } });
+  assert.throws(() => badExecutor.render({ time: 2, scene: createFilamentVortexScene({ seed: 491009, mode: 'demo', locked: false }), audio: null }), /exceeds pipeline layout bind group count 1/, 'fake device rejects custom executor binding slots beyond pipeline layout');
+  assert.equal(badDevice.calls.submissions.length, 0, 'invalid bind slot fails before queue.submit');
 }
 
 async function testRuntimeAutoStartAndFrameCounters() {

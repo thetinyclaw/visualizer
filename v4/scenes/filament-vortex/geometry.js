@@ -69,25 +69,49 @@ export function filamentSignature({ seed = 491009, time = 0, mode = 'demo' } = {
 }
 
 export function createFilamentVortexScene({ seed = 491009, mode = 'demo', locked = false } = {}) {
-  return {
+  const reusableBands = new Float32Array(16);
+  const state = {
     id: 'filament-vortex', seed, mode, locked,
     contract: FILAMENT_CONTRACT,
     liveFrame: 0, generation: 0, lastTime: 0, lastDt: 0, lastAudio: null, lastSignature: filamentSignature({ seed, time: 0, mode }),
+    pingPongParity: 0, pingPongSwapCount: 0, pendingPingPong: null,
     structuralAudioMappings: Object.freeze(['bass → aperture/bundle spacing', 'low-mid → curl field/flow speed', 'high-mid → fray/camera drift', 'treble → ribbon width/capillaries', 'flux/onset → flow pressure/camera roll']),
     materialHierarchy: Object.freeze(['depth-tested translucent ribbon cores', 'additive pearl strand glow', 'post bloom/tonemap', 'swapchain composite vignette']),
+    pingPongState() {
+      const parity = this.pingPongParity & 1;
+      const nextParity = parity ^ 1;
+      return Object.freeze({
+        parity,
+        nextParity,
+        swapCount: this.pingPongSwapCount,
+        previousPositionId: `filament-positions-${parity === 0 ? 'a' : 'b'}`,
+        previousVelocityId: `filament-velocities-${parity === 0 ? 'a' : 'b'}`,
+        nextPositionId: `filament-positions-${nextParity === 0 ? 'a' : 'b'}`,
+        nextVelocityId: `filament-velocities-${nextParity === 0 ? 'a' : 'b'}`,
+      });
+    },
+    markFrameSubmitted({ live = false } = {}) {
+      if (!this.pendingPingPong) return this.pingPongState();
+      this.pingPongParity = this.pendingPingPong.nextParity;
+      this.pingPongSwapCount += 1;
+      if (live) this.liveFrame += 1;
+      this.pendingPingPong = null;
+      return this.pingPongState();
+    },
     prepareFrame({ time = 0, dt = 1 / 60, audio = null, width = 1280, height = 720, live = false } = {}) {
-      const bands = new Float32Array(16);
+      const bands = reusableBands;
       const snap = audio?.bands || audio?.values || null;
       if (snap && snap.length >= 16) bands.set(snap.subarray ? snap.subarray(0, 16) : Array.from(snap).slice(0, 16));
       else demoBands(bands, time, seed, mode);
       if (mode === 'flat') bands.fill(0.12);
       const frameIndex = live ? this.liveFrame : 0;
       const payload = makeUniformPayload({ time, dt, seed, live, frameIndex, width, height, generation: this.generation, bands, mode });
+      this.pendingPingPong = this.pingPongState();
       this.lastTime = time; this.lastDt = dt; this.lastAudio = { ...payload.summary, source: mode, bands: Array.from(bands) };
       this.lastSignature = filamentSignature({ seed, time, mode });
-      this.lastSummary = { strandCount: FILAMENT_STRAND_COUNT, segmentCount: FILAMENT_SEGMENT_COUNT, nodeCount: FILAMENT_NODE_COUNT, drawVertices: FILAMENT_DRAW_VERTICES, workgroups: FILAMENT_WORKGROUPS, signature: this.lastSignature, bounds: { x: [-1.3, 1.3], y: [-1.3, 1.3], z: [-0.8, 0.8] }, audio: this.lastAudio };
-      if (live) this.liveFrame += 1;
+      this.lastSummary = { strandCount: FILAMENT_STRAND_COUNT, segmentCount: FILAMENT_SEGMENT_COUNT, nodeCount: FILAMENT_NODE_COUNT, drawVertices: FILAMENT_DRAW_VERTICES, workgroups: FILAMENT_WORKGROUPS, signature: this.lastSignature, bounds: { x: [-1.3, 1.3], y: [-1.3, 1.3], z: [-0.8, 0.8] }, audio: this.lastAudio, pingPong: this.pendingPingPong };
       return { uniforms: payload.data, bands, summary: this.lastSummary };
     },
   };
+  return state;
 }
