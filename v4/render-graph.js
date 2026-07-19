@@ -78,8 +78,8 @@ export function computePass(id, { pipeline, inputs = [], outputs = [], workgroup
   return Object.freeze({ kind: PASS_KINDS.COMPUTE, id, pipeline, inputs, outputs, workgroups, executor, resources });
 }
 
-export function renderPass(id, { pipeline, colorTargets = [], depthTarget: depthRef = null, vertexBuffers = [], indexBuffer: indexRef = null, resources = [], draw = null, drawIndexed = null, executor = null, clearColor = null }) {
-  return Object.freeze({ kind: PASS_KINDS.RENDER, id, pipeline, colorTargets, depthTarget: depthRef, vertexBuffers, indexBuffer: indexRef, resources, draw, drawIndexed, executor, clearColor });
+export function renderPass(id, { pipeline, colorTargets = [], depthTarget: depthRef = null, vertexBuffers = [], indexBuffer: indexRef = null, indexFormat = 'uint32', resources = [], draw = null, drawIndexed = null, executor = null, clearColor = null }) {
+  return Object.freeze({ kind: PASS_KINDS.RENDER, id, pipeline, colorTargets, depthTarget: depthRef, vertexBuffers, indexBuffer: indexRef, indexFormat, resources, draw, drawIndexed, executor, clearColor });
 }
 
 export function boundedVolumePass(id, { pipeline, bounds, depthTarget: depthRef, inputs = [], outputs = [] }) {

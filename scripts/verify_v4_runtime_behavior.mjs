@@ -15,6 +15,9 @@ import { createPrismaticCathedralPipelines, createPrismaticCathedralExecutors } 
 import { createFilamentVortexScene, filamentSignature, FILAMENT_CONTRACT } from '../v4/scenes/filament-vortex/geometry.js';
 import { filamentVortexManifest, makeFilamentVortexGraph } from '../v4/scenes/filament-vortex/manifest.js';
 import { createFilamentVortexPipelines, createFilamentVortexExecutors } from '../v4/scenes/filament-vortex/pipeline.js';
+import { createNeonVoxelCloudScene, demoVoxelBands, voxelByteSignature, VOXEL_INSTANCE_COUNT, VOXEL_CONTRACT } from '../v4/scenes/neon-voxel-cloud/geometry.js';
+import { neonVoxelCloudManifest, makeNeonVoxelCloudGraph } from '../v4/scenes/neon-voxel-cloud/manifest.js';
+import { createNeonVoxelCloudExecutors } from '../v4/scenes/neon-voxel-cloud/pipeline.js';
 
 function deferred() {
   let resolve;
@@ -1356,6 +1359,80 @@ function testFilamentExecutorDispatchDrawSubmitAndReuse() {
   assert.equal(badDevice.calls.submissions.length, 0, 'invalid bind slot fails before queue.submit');
 }
 
+function testNeonVoxelCloudGeometryContracts() {
+  const sceneA = createNeonVoxelCloudScene({ seed: 582114, mode: 'demo' });
+  const sceneB = createNeonVoxelCloudScene({ seed: 582114, mode: 'demo' });
+  const bands = demoVoxelBands(new Float32Array(16), 12.5, 582114, 'demo');
+  const audio = { bands, positiveSpectralFlux: 0.12, onsetImpulse: 0.7 };
+  const first = sceneA.update({ time: 12.5, audio, width: 1280, height: 720 });
+  sceneA.update({ time: 1.25, audio, width: 1280, height: 720 });
+  const afterHistory = sceneA.update({ time: 12.5, audio, width: 1280, height: 720 });
+  const second = sceneB.update({ time: 12.5, audio, width: 1280, height: 720 });
+  assert.equal(first.instanceCount, 260, 'voxel scene preserves exactly 260 coherent cells');
+  assert.equal(second.instanceCount, 260);
+  assert.equal(voxelByteSignature(sceneA), voxelByteSignature(sceneB), 'locked voxel bytes are history-independent for same seed/time/mode/audio');
+  assert.deepEqual(afterHistory.bounds, second.bounds, 'locked bounds are deterministic after unrelated prior times');
+  const later = sceneB.update({ time: 13.25, audio, width: 1280, height: 720 });
+  assert.notEqual(voxelByteSignature(sceneA), voxelByteSignature(sceneB), 'changed absolute time changes transform/material payload bytes');
+  assert.ok(later.topology.frontCount >= 8 && later.topology.frontCount <= 70, 'scan front selects a bounded coherent slice');
+  assert.ok(later.topology.tunnelOuter > 170, 'topology stays volumetric/tunnel-like rather than generic scattered cubes');
+  assert.ok(later.bounds.min[2] < -27 && later.bounds.max[2] > 7, 'deep camera-traversable z bounds are preserved');
+  assert.ok(later.bounds.max[0] - later.bounds.min[0] > 8, 'wide bounded cloud volume is preserved');
+  assert.equal(sceneA.structuralAudioMappings.midBands.includes('corridor'), true, 'audio mapping includes structural corridor control');
+}
+
+function testNeonVoxelCloudGraphAndManifestContracts() {
+  assert.equal(neonVoxelCloudManifest.id, 'neon-voxel-cloud');
+  assert.equal(neonVoxelCloudManifest.webgpu.contract.instanceCount, 260);
+  const graph = makeNeonVoxelCloudGraph();
+  const validation = graph.validate();
+  assert.equal(validation.ok, true, validation.errors.join('; '));
+  const frozen = graph.freeze();
+  assert.deepEqual(frozen.passes.map((pass) => pass.id), ['voxel-compute', 'voxel-instanced-render', 'voxel-post', 'voxel-composite']);
+  assert.equal(frozen.passes[0].kind, 'compute');
+  assert.deepEqual(frozen.passes[0].workgroups, VOXEL_CONTRACT.computeWorkgroups, 'compute dispatch covers all 260 instances');
+  assert.equal(frozen.passes[1].indexFormat, 'uint16', 'instanced cube renderer uses uint16 cube indices');
+}
+
+function testNeonVoxelCloudExecutorDispatchAndInstancedDrawReuse() {
+  const scene = createNeonVoxelCloudScene({ seed: 582114, mode: 'demo' });
+  const graph = makeNeonVoxelCloudGraph().freeze();
+  const canvas = { width: 800, height: 450, clientWidth: 800, clientHeight: 450, getBoundingClientRect: () => ({ width: 800, height: 450 }), getContext: (kind) => kind === 'webgpu' ? { configure() {}, getCurrentTexture() { return { createView: () => ({ id: 'swap-view' }) }; }, unconfigure() {} } : null };
+  const device = makeResourceDevice();
+  const resources = new Map([
+    ['voxel-frame', { id: 'voxel-frame' }],
+    ['voxel-audio', { id: 'voxel-audio' }],
+    ['voxel-base', { id: 'voxel-base' }],
+    ['voxel-payload', { id: 'voxel-payload' }],
+    ['voxel-cube-vertices', { id: 'voxel-cube-vertices' }],
+    ['voxel-cube-indices', { id: 'voxel-cube-indices' }],
+    ['asset:voxel-pixel', { id: 'voxel-pixel', createView: () => ({ id: 'voxel-pixel-view' }) }],
+  ]);
+  const pipelines = new Map([
+    ['voxel-compute-pipeline', makePipeline('voxel-compute')],
+    ['voxel-render-pipeline', makePipeline('voxel-render')],
+    ['voxel-post-pipeline', makePipeline('voxel-post')],
+    ['voxel-composite-pipeline', makePipeline('voxel-composite')],
+  ]);
+  const executor = new WebGpuGraphExecutor({ device, canvas, graph, resources, pipelines, executors: createNeonVoxelCloudExecutors(), windowObject: { devicePixelRatio: 1 } });
+  const audio = { bands: demoVoxelBands(new Float32Array(16), 4, 582114, 'demo'), positiveSpectralFlux: 0.1, onsetImpulse: 0.4 };
+  const frame = executor.render({ time: 4, scene, audio });
+  assert.equal(frame.submitted, true);
+  assert.deepEqual(frame.passes, ['voxel-compute', 'voxel-instanced-render', 'voxel-post', 'voxel-composite']);
+  assert.deepEqual(device.calls.dispatch, VOXEL_CONTRACT.computeWorkgroups, 'compute dispatchWorkgroups is encoded before rendering');
+  assert.deepEqual(device.calls.drawIndexed, [36, VOXEL_INSTANCE_COUNT, 0, 0, 0], 'instanced cube drawIndexed uses instanceCount 260');
+  assert.equal(device.calls.indexBuffer[1], 'uint16', 'cube index buffer is bound as uint16');
+  assert.equal(device.calls.submissions.length, 1, 'command buffer is submitted');
+  const initialWrites = device.calls.writes.length;
+  const bindGroupsAfterFirstFrame = device.created.filter((resource) => resource.descriptor?.label?.startsWith('neon-voxel-cloud:')).length;
+  executor.render({ time: 4, scene, audio });
+  assert.equal(device.created.filter((resource) => resource.descriptor?.label?.startsWith('neon-voxel-cloud:')).length, bindGroupsAfterFirstFrame, 'same-size frames reuse compute/render/post/composite bind groups');
+  assert.equal(device.calls.writes.length < initialWrites + 8, true, 'steady frame does not reupload immutable base/cube instance data');
+  canvas.getBoundingClientRect = () => ({ width: 1024, height: 512 });
+  executor.render({ time: 4.25, scene, audio });
+  assert.ok(device.created.filter((resource) => resource.descriptor?.label?.startsWith('neon-voxel-cloud:')).length > bindGroupsAfterFirstFrame, 'resize generation recreates stale texture-view bind groups safely');
+}
+
 async function testRuntimeAutoStartAndFrameCounters() {
   const device = makeDevice('locked-frame');
   const runtime = await startV4Runtime({
@@ -1425,6 +1502,9 @@ testPrismaticCathedralGraphAndManifestContracts();
 testPrismaticCathedralExecutorUploadsAndDrawsIndexed();
 testFilamentVortexContracts();
 testFilamentExecutorDispatchDrawSubmitAndReuse();
+testNeonVoxelCloudGeometryContracts();
+testNeonVoxelCloudGraphAndManifestContracts();
+testNeonVoxelCloudExecutorDispatchAndInstancedDrawReuse();
 await testRuntimeAutoStartAndFrameCounters();
 await testFallbackCanvasSeparation();
 testAudioFeatureBusLogBandsAndAllocationReuse();
