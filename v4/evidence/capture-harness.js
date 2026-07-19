@@ -50,6 +50,14 @@ export function installV4CaptureHarness(options = {}) {
     const canvas = document.querySelector('canvas');
     const rect = canvas ? canvas.getBoundingClientRect() : null;
     const perfMemory = performance?.memory || null;
+    const exportedState = {
+      v4RuntimeSmoke: window.__V4_RUNTIME_SMOKE__ || null,
+      v4HeroLab: window.__V4_HERO_LAB__ || null,
+      v4CathedralWebGPU: window.__V4_CATHEDRAL_WEBGPU__ || null,
+      v4CaptureConfig: window.__V4_CAPTURE_CONFIG__,
+      locationSearch: window.location.search,
+    };
+    const gpuTelemetry = exportedState.v4RuntimeSmoke?.gpuTelemetry || exportedState.v4CathedralWebGPU?.gpuTelemetry || null;
     return {
       config,
       frameSamples,
@@ -63,15 +71,19 @@ export function installV4CaptureHarness(options = {}) {
         deviceMemory: navigator.deviceMemory || null,
       },
       consoleLogs: consoleLogs.slice(),
-      exportedState: {
-        v4RuntimeSmoke: window.__V4_RUNTIME_SMOKE__ || null,
-        v4HeroLab: window.__V4_HERO_LAB__ || null,
-        v4CathedralWebGPU: window.__V4_CATHEDRAL_WEBGPU__ || null,
-        v4CaptureConfig: window.__V4_CAPTURE_CONFIG__,
-        locationSearch: window.location.search,
-      },
+      exportedState,
       memory: { jsHeapUsedMB: perfMemory ? perfMemory.usedJSHeapSize / 1048576 : null },
-      gpuTiming: { frameMs: null, unknownReason: 'WebGPU timestamp queries unavailable to this harness' },
+      gpuTiming: gpuTelemetry ? {
+        source: gpuTelemetry.source,
+        frameNs: gpuTelemetry.latestFrameNs ?? null,
+        frameMs: gpuTelemetry.latestFrameMs ?? null,
+        sampleCount: gpuTelemetry.sampleCount ?? 0,
+        sampleAgeFrames: gpuTelemetry.sampleAgeFrames ?? null,
+        sampleAgeMs: gpuTelemetry.sampleAgeMs ?? null,
+        scope: gpuTelemetry.frameScope || 'frame',
+        passScopes: gpuTelemetry.passScopes || [],
+        unavailableReason: gpuTelemetry.unavailableReason || (gpuTelemetry.latestFrameMs === null ? 'timestamp-query-awaiting-sample' : null),
+      } : { source: null, frameNs: null, frameMs: null, sampleCount: 0, sampleAgeFrames: null, sampleAgeMs: null, scope: 'frame', passScopes: [], unavailableReason: 'WebGPU timestamp query telemetry unavailable to this harness' },
       gpuMemory: { mb: null, unknownReason: 'Browser GPU memory unavailable to page JavaScript' },
     };
   };
