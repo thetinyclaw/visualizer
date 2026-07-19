@@ -58,6 +58,36 @@ function cssPixelSize(canvas) {
   return { width: Math.max(0, attrWidth), height: Math.max(0, attrHeight), reason: 'layout-unavailable', source: 'backing-attributes' };
 }
 
+const RESOURCE_ALIAS_FIELDS = Object.freeze(['aliasOf', 'viewOf', 'resourceId', 'sourceResource', 'targetResource']);
+
+function resourceAliasTarget(resource) {
+  for (const field of RESOURCE_ALIAS_FIELDS) {
+    if (typeof resource?.[field] === 'string' && resource[field].length > 0) return resource[field];
+  }
+  return null;
+}
+
+function canonicalResourceId(id, descriptors) {
+  if (id === 'swapchain') return 'swapchain';
+  let current = id;
+  const seen = new Set();
+  while (typeof current === 'string' && descriptors.has(current) && !seen.has(current)) {
+    seen.add(current);
+    const next = resourceAliasTarget(descriptors.get(current));
+    if (!next || next === current) break;
+    current = next;
+  }
+  return current;
+}
+
+function assertNoPostReadWriteHazard(pass, descriptors) {
+  if (pass.kind !== 'post') return;
+  const outputIdentity = canonicalResourceId(pass.output, descriptors);
+  if ((pass.inputs || []).some((input) => canonicalResourceId(input, descriptors) === outputIdentity)) {
+    throw fail(`Pass ${pass.id} post pass cannot sample from and render into the same target.`);
+  }
+}
+
 function bindPassResources(passEncoder, resources, graphPass) {
   for (const [slot, id] of (graphPass.resources || []).entries()) {
     const resource = resources.get(id);
@@ -132,6 +162,7 @@ export class WebGpuGraphExecutor {
     };
     return graph.passes.map((pass) => {
       if (!EXECUTABLE_PASS_KINDS.has(pass.kind)) throw fail(`Pass ${pass.id} kind ${pass.kind} is not executable in this foundation.`);
+      assertNoPostReadWriteHazard(pass, descriptors);
       if (pass.kind === 'compute') {
         const pipeline = resolvePipeline(pass.pipeline, pass);
         const executor = resolveExecutor(pass.executor, pass);

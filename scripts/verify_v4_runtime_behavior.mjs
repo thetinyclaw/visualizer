@@ -364,6 +364,16 @@ function testRenderGraphDeepValidation() {
   assert.ok(!base().addResource(storageBuffer('input', 16)).validate().ok, 'duplicate resource ids rejected');
   assert.ok(!base().addPass(postPass('p', { inputs: ['input'] })).validate().ok, 'post output required');
   assert.ok(!base().addPass(postPass('p', { output: 'output' })).validate().ok, 'post input required');
+  const sameTargetPost = new RenderGraph({ id: 'same-target-post' })
+    .addResource(renderTarget('same'))
+    .addPass(postPass('post', { pipeline: 'post', inputs: ['same'], output: 'same' }));
+  const sameTargetResult = sameTargetPost.validate();
+  assert.equal(sameTargetResult.ok, false, 'postPass({ inputs: [same], output: same }) is invalid');
+  assert.ok(sameTargetResult.errors.some((message) => message.includes('cannot sample from and render into the same target')), 'same-target post hazard is explicit');
+  assert.ok(!new RenderGraph({ id: 'alias-target-post' })
+    .addResource(renderTarget('same'))
+    .addResource({ type: 'render-target', id: 'same-view', viewOf: 'same' })
+    .addPass(postPass('post', { pipeline: 'post', inputs: ['same-view'], output: 'same' })).validate().ok, 'post alias/view read-write hazards are rejected');
   assert.ok(!base().addPass(feedbackPass('f', { source: 'missing', history: 'input', output: 'output' })).validate().ok, 'feedback source must exist');
   assert.ok(!base().addPass(feedbackPass('f', { source: 'input', history: 'missing', output: 'output' })).validate().ok, 'feedback history must exist');
   assert.ok(!base().addPass(feedbackPass('f', { source: 'input', history: 'output' })).validate().ok, 'feedback output required');
@@ -468,6 +478,14 @@ function testExecutorFailsClosed() {
   assert.throws(() => new WebGpuGraphExecutor({ device, canvas, graph: missingPipeline }), /missing pipeline/, 'missing pipelines fail at compile time');
   assert.ok(!new RenderGraph({ id: 'bad-target' }).addResource(storageBuffer('not-target', 16)).addPass(renderPass('draw', { pipeline: 'p', colorTargets: ['not-target'], draw: [3, 1, 0, 0] })).validate().ok, 'invalid target kind rejected');
   assert.ok(!new RenderGraph({ id: 'hazard' }).addResource(renderTarget('out')).addPass(renderPass('a', { pipeline: 'p', colorTargets: ['out'], draw: [3, 1, 0, 0] })).addPass(renderPass('b', { pipeline: 'p', colorTargets: ['out'], draw: [3, 1, 0, 0] })).validate().ok, 'output hazards are rejected');
+  const unsafeSameTargetPost = {
+    id: 'unsafe-same-target-post',
+    resources: [renderTarget('same')],
+    passes: [postPass('post', { pipeline: 'post', inputs: ['same'], output: 'same' }), compositePass('composite', { layers: ['same'], output: 'swapchain', pipeline: 'composite', draw: [3, 1, 0, 0] })],
+    validate: () => ({ ok: true, errors: [] }),
+  };
+  assert.throws(() => new WebGpuGraphExecutor({ device, canvas, graph: unsafeSameTargetPost, pipelines: new Map([['post', makePipeline('post')], ['composite', makePipeline('composite')]]) }), /cannot sample from and render into the same target/, 'executor compile refuses same-target post hazards even if validation is bypassed');
+  assert.equal(device.calls.submissions.length, 0, 'executor refuses to submit unsafe same-target post graph');
 }
 
 async function testRuntimeNoExecutorWhenUnavailableAndFallbackCleanup() {

@@ -84,6 +84,34 @@ export function compositePass(id, { layers = [], transition = null, output = 'sw
   return Object.freeze({ kind: PASS_KINDS.COMPOSITE, id, layers, transition, output, pipeline, resources, draw, executor, clearColor });
 }
 
+const RESOURCE_ALIAS_FIELDS = Object.freeze(['aliasOf', 'viewOf', 'resourceId', 'sourceResource', 'targetResource']);
+
+function resourceAliasTarget(resource) {
+  for (const field of RESOURCE_ALIAS_FIELDS) {
+    if (typeof resource?.[field] === 'string' && resource[field].length > 0) return resource[field];
+  }
+  return null;
+}
+
+function canonicalResourceId(id, resourceById) {
+  if (id === 'swapchain') return 'swapchain';
+  let current = id;
+  const seen = new Set();
+  while (typeof current === 'string' && resourceById.has(current) && !seen.has(current)) {
+    seen.add(current);
+    const next = resourceAliasTarget(resourceById.get(current));
+    if (!next || next === current) break;
+    current = next;
+  }
+  return current;
+}
+
+function hasReadWriteHazard(inputs, output, resourceById) {
+  if (typeof output !== 'string' || output.length === 0 || !Array.isArray(inputs)) return false;
+  const outputIdentity = canonicalResourceId(output, resourceById);
+  return inputs.some((input) => typeof input === 'string' && canonicalResourceId(input, resourceById) === outputIdentity);
+}
+
 export class RenderGraph {
   constructor({ id }) {
     this.id = id;
@@ -161,6 +189,7 @@ export class RenderGraph {
           if (typeof pass.pipeline !== 'string' || pass.pipeline.length === 0) errors.push(`pass ${pass.id} requires pipeline`);
           requireResourceList(pass, 'input', pass.inputs); requireType(pass, 'output', pass.output, [RESOURCE_TYPES.RENDER_TARGET]);
           for (const input of pass.inputs || []) requireType(pass, 'input', input, [RESOURCE_TYPES.RENDER_TARGET]);
+          if (hasReadWriteHazard(pass.inputs, pass.output, resourceById)) errors.push(`pass ${pass.id} post pass cannot sample from and render into the same target`);
           if (pass.history !== null) errors.push(`pass ${pass.id} history post mode is not executable in this foundation`);
           outputs.push(pass.output); break;
         case PASS_KINDS.COMPOSITE:
