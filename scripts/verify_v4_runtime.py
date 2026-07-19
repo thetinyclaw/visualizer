@@ -33,6 +33,7 @@ live_smoke = read("live-audio.html")
 manifest = read("scene-manifest.js")
 graph = read("render-graph.js")
 executor = read("render-graph-executor.js")
+post_stack = read("post-stack.js")
 resources = read("resource-manager.js")
 runtime = read("runtime.js")
 resources = read("resource-manager.js")
@@ -121,6 +122,9 @@ require("depth24plus" in executor and "queue.submit" in executor, "depth target 
 require("'bounded-volume'" in executor and "passDef.outputs" in executor, "bounded volume pass is not executable")
 require("transitionUniforms" in executor and "transitionProgress" in executor and "expectedSources = isCrossfade ? 2 : 1" in executor, "two-layer crossfade compositor is not executable")
 require("transition: { type: 'crossfade', progress: 0.55 }" in demo and "incomingTexture" in demo, "demo does not execute the two-layer crossfade path")
+require("BOUNDED_BLOOM_TAP_COUNT = 9" in post_stack and "textureDimensions(sourceTexture)" in post_stack, "bounded native-density bloom kernel missing")
+require("acesToneMap" in post_stack and "linearToSrgb" in post_stack and "createBoundedPostPipeline" in post_stack, "reusable tone-map/output pipeline missing")
+require("createBoundedPostPipeline({ device, format })" in demo and "bloomTapCount" in demo, "demo does not execute/export bounded bloom post status")
 require("new WebGpuGraphExecutor" in runtime and "graphExecutor.render(" in runtime, "runtime does not execute the render graph")
 
 # Runtime/demo route.

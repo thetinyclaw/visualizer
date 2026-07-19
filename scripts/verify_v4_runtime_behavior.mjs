@@ -18,6 +18,7 @@ import { createFilamentVortexPipelines, createFilamentVortexExecutors } from '..
 import { createNeonVoxelCloudScene, demoVoxelBands, voxelByteSignature, VOXEL_INSTANCE_COUNT, VOXEL_CONTRACT } from '../v4/scenes/neon-voxel-cloud/geometry.js';
 import { neonVoxelCloudManifest, makeNeonVoxelCloudGraph } from '../v4/scenes/neon-voxel-cloud/manifest.js';
 import { createNeonVoxelCloudExecutors, assertNeonVoxelCloudDescriptorContracts } from '../v4/scenes/neon-voxel-cloud/pipeline.js';
+import { BOUNDED_BLOOM_TAP_COUNT, BOUNDED_POST_WGSL, createBoundedPostPipeline } from '../v4/post-stack.js';
 
 function deferred() {
   let resolve;
@@ -389,6 +390,25 @@ function testExecutableTwoLayerCrossfadeComposite() {
   assert.equal(calls.submissions.length, 1);
   executor.dispose();
   assert.equal(progressWrite[1].destroyed, true, 'crossfade uniform is executor-owned and destroyed');
+}
+
+function testBoundedBloomToneMapPipelineContract() {
+  assert.equal(BOUNDED_BLOOM_TAP_COUNT, 9, 'bloom cost stays explicitly bounded');
+  assert.match(BOUNDED_POST_WGSL, /textureDimensions\(sourceTexture\)/, 'bloom offsets are texel-sized');
+  assert.match(BOUNDED_POST_WGSL, /max\(luminance - bloomThreshold, 0\.0\)/, 'only highlights feed bloom');
+  assert.match(BOUNDED_POST_WGSL, /acesToneMap/, 'post output is tone mapped');
+  assert.match(BOUNDED_POST_WGSL, /linearToSrgb/, 'post output is encoded for the swapchain');
+  const calls = [];
+  const device = {
+    createShaderModule(descriptor) { calls.push(['shader', descriptor]); return { descriptor }; },
+    createBindGroupLayout(descriptor) { calls.push(['bind-group-layout', descriptor]); return { descriptor }; },
+    createPipelineLayout(descriptor) { calls.push(['pipeline-layout', descriptor]); return { descriptor }; },
+    createRenderPipeline(descriptor) { calls.push(['pipeline', descriptor]); return { descriptor, getBindGroupLayout: () => ({}) }; },
+  };
+  const pipeline = createBoundedPostPipeline({ device, format: 'bgra8unorm' });
+  assert.equal(pipeline.descriptor.fragment.entryPoint, 'postFs');
+  assert.equal(pipeline.descriptor.fragment.targets[0].format, 'bgra8unorm');
+  assert.equal(calls.filter(([kind]) => kind === 'pipeline').length, 1, 'factory creates one reusable fullscreen pipeline');
 }
 
 async function testResourceManagerAndAssetCache() {
@@ -1591,6 +1611,7 @@ testExecutableHistoryPingPongTransactions();
 testExecutablePostStackAndCompositeSubmission();
 testExecutableBoundedVolumeSubmission();
 testExecutableTwoLayerCrossfadeComposite();
+testBoundedBloomToneMapPipelineContract();
 testExecutorCanvasSizingContracts();
 testExecutorFailsClosed();
 await testRuntimeNoExecutorWhenUnavailableAndFallbackCleanup();
