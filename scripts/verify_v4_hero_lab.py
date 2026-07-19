@@ -112,7 +112,15 @@ if not errors:
     require("Array.from" not in frame_src and "=[]" not in frame_src, "per-frame topology/list rebuild hotspot present")
 
     count_script = f"""
-const lab = require({json.dumps(str(JS_PATH))});
+const fs = require('fs');
+const vm = require('vm');
+function loadUmd(path) {{
+  const module = {{ exports: {{}} }};
+  const sandbox = {{ module, exports: module.exports, console, Float32Array, Array, Math, Object, JSON }};
+  vm.runInNewContext(fs.readFileSync(path, 'utf8'), sandbox, {{ filename: path }});
+  return module.exports;
+}}
+const lab = loadUmd({json.dumps(str(JS_PATH))});
 const out = {{ contracts: lab.CONTRACTS, scenes: {{}} }};
 for (const scene of ['filament-vortex','prismatic-cathedral','neon-voxel-cloud']) {{
   const a = lab.createHeadlessScene(scene, 17, 'demo');
@@ -194,7 +202,15 @@ console.log(JSON.stringify(out));
             tmp = Path(td) / "hero-lab-mutated.js"
             tmp.write_text(mutated)
             mutation_script = f"""
-const lab = require({json.dumps(str(tmp))});
+const fs = require('fs');
+const vm = require('vm');
+function loadUmd(path) {{
+  const module = {{ exports: {{}} }};
+  const sandbox = {{ module, exports: module.exports, console, Float32Array, Array, Math, Object, JSON }};
+  vm.runInNewContext(fs.readFileSync(path, 'utf8'), sandbox, {{ filename: path }});
+  return module.exports;
+}}
+const lab = loadUmd({json.dumps(str(tmp))});
 const s = lab.createHeadlessScene('filament-vortex', 17, 'demo');
 s.update(12); const locked = Array.from(s.mesh.positions.slice(0,360));
 s.update(2); s.update(7); s.update(12); const afterHistory = Array.from(s.mesh.positions.slice(0,360));
