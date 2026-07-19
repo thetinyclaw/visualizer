@@ -50,6 +50,16 @@ export function installV4CaptureHarness(options = {}) {
     const canvas = document.querySelector('canvas');
     const rect = canvas ? canvas.getBoundingClientRect() : null;
     const perfMemory = performance?.memory || null;
+    const compactState = (state) => state ? {
+      sceneId: state.sceneId || null,
+      rendererMode: state.rendererMode || state.mode || null,
+      active: state.active === true,
+      webgpuActive: state.webgpuActive === true,
+      frame: state.frame || null,
+      frameSubmitted: state.frameSubmitted === true,
+      validationErrors: Array.isArray(state.validationErrors) ? state.validationErrors : [],
+      webgpuValidationErrors: Array.isArray(state.webgpuValidationErrors) ? state.webgpuValidationErrors : [],
+    } : null;
     return {
       config,
       frameSamples,
@@ -66,7 +76,10 @@ export function installV4CaptureHarness(options = {}) {
       exportedState: {
         v4RuntimeSmoke: window.__V4_RUNTIME_SMOKE__ || null,
         v4HeroLab: window.__V4_HERO_LAB__ || null,
-        v4CathedralWebGPU: window.__V4_CATHEDRAL_WEBGPU__ || null,
+        v4CathedralWebGPU: compactState(window.__V4_CATHEDRAL_WEBGPU__),
+        v4FilamentWebGPU: compactState(window.__V4_FILAMENT_WEBGPU__),
+        v4VoxelWebGPU: compactState(window.__V4_VOXEL_WEBGPU__),
+        v4HistoryTrails: compactState(window.__V4_HISTORY_TRAILS__),
         v4CaptureConfig: window.__V4_CAPTURE_CONFIG__,
         locationSearch: window.location.search,
       },

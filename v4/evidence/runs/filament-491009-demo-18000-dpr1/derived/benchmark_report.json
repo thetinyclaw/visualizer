@@ -1,0 +1,675 @@
+{
+  "artifact_evidence": [
+    "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+    "v4/evidence/runs/filament-491009-demo-18000-dpr1/derived/motion_sheet.json",
+    "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-0000.png",
+    "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-0060.png",
+    "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-0120.png"
+  ],
+  "backing_store": {
+    "cssHeight": 720,
+    "cssWidth": 1280,
+    "height": 720,
+    "width": 1280
+  },
+  "benchmark_schema_version": "1.0",
+  "browser": {
+    "device": "MacIntel",
+    "headless": false,
+    "launch_args": [
+      "--enable-unsafe-webgpu",
+      "--enable-features=Vulkan,UseSkiaRenderer",
+      "--disable-vulkan-surface"
+    ],
+    "name": "Chromium via Playwright",
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+  },
+  "capture_limitations": [
+    "automation-browser relative evidence only; not target-device acceptance"
+  ],
+  "captured_at": "2026-07-19T08:48:02.713659Z",
+  "console_logs": [],
+  "device_logs": [],
+  "dpr": 1.0,
+  "duration_ms": 12796.033,
+  "effect_id": "filament-vortex",
+  "effective_density": {
+    "x": 1.0,
+    "y": 1.0
+  },
+  "evidence_kind": "real_acceptance",
+  "frame_samples": [
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 0,
+      "frame_ms": 17.399999999999977
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 1,
+      "frame_ms": 34.10000000000002
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 2,
+      "frame_ms": 17.0
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 3,
+      "frame_ms": 16.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 4,
+      "frame_ms": 33.40000000000009
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 5,
+      "frame_ms": 16.699999999999932
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 6,
+      "frame_ms": 16.700000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 7,
+      "frame_ms": 16.600000000000023
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 8,
+      "frame_ms": 16.699999999999932
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 9,
+      "frame_ms": 33.30000000000007
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 10,
+      "frame_ms": 16.699999999999932
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 11,
+      "frame_ms": 16.199999999999932
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 12,
+      "frame_ms": 17.100000000000136
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 13,
+      "frame_ms": 33.299999999999955
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 14,
+      "frame_ms": 16.700000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 15,
+      "frame_ms": 16.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 16,
+      "frame_ms": 16.799999999999955
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 17,
+      "frame_ms": 17.300000000000182
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 18,
+      "frame_ms": 32.69999999999982
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 19,
+      "frame_ms": 34.5
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 20,
+      "frame_ms": 30.600000000000136
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 21,
+      "frame_ms": 18.200000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 22,
+      "frame_ms": 32.0
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 23,
+      "frame_ms": 18.0
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 24,
+      "frame_ms": 16.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 25,
+      "frame_ms": 16.700000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 26,
+      "frame_ms": 16.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 27,
+      "frame_ms": 16.700000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 28,
+      "frame_ms": 33.40000000000009
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 29,
+      "frame_ms": 16.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 30,
+      "frame_ms": 16.700000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 31,
+      "frame_ms": 16.700000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 32,
+      "frame_ms": 33.5
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 33,
+      "frame_ms": 33.09999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 34,
+      "frame_ms": 33.299999999999955
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 35,
+      "frame_ms": 20.90000000000009
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 36,
+      "frame_ms": 29.200000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 37,
+      "frame_ms": 16.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 38,
+      "frame_ms": 16.700000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 39,
+      "frame_ms": 33.299999999999955
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 40,
+      "frame_ms": 16.700000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 41,
+      "frame_ms": 16.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 42,
+      "frame_ms": 33.40000000000009
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 43,
+      "frame_ms": 16.700000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 44,
+      "frame_ms": 16.699999999999818
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 45,
+      "frame_ms": 33.200000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 46,
+      "frame_ms": 16.700000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 47,
+      "frame_ms": 16.700000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 48,
+      "frame_ms": 32.799999999999955
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 49,
+      "frame_ms": 33.200000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 50,
+      "frame_ms": 17.299999999999955
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 51,
+      "frame_ms": 31.799999999999955
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 52,
+      "frame_ms": 18.200000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 53,
+      "frame_ms": 16.700000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 54,
+      "frame_ms": 16.700000000000045
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 55,
+      "frame_ms": 16.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 56,
+      "frame_ms": 16.800000000000182
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 57,
+      "frame_ms": 16.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 58,
+      "frame_ms": 16.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 59,
+      "frame_ms": 16.699999999999818
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 60,
+      "frame_ms": 16.700000000000273
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 61,
+      "frame_ms": 33.29999999999973
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 62,
+      "frame_ms": 33.30000000000018
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 63,
+      "frame_ms": 16.699999999999818
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 64,
+      "frame_ms": 16.700000000000273
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 65,
+      "frame_ms": 16.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 66,
+      "frame_ms": 16.699999999999818
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 67,
+      "frame_ms": 16.600000000000364
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 68,
+      "frame_ms": 16.799999999999727
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 69,
+      "frame_ms": 32.20000000000027
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 70,
+      "frame_ms": 17.699999999999818
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 71,
+      "frame_ms": 16.699999999999818
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 72,
+      "frame_ms": 33.30000000000018
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 73,
+      "frame_ms": 33.30000000000018
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 74,
+      "frame_ms": 16.799999999999727
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 75,
+      "frame_ms": 16.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 76,
+      "frame_ms": 16.700000000000273
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 77,
+      "frame_ms": 32.0
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 78,
+      "frame_ms": 17.90000000000009
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 79,
+      "frame_ms": 33.399999999999636
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 80,
+      "frame_ms": 16.700000000000273
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 81,
+      "frame_ms": 33.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 82,
+      "frame_ms": 18.09999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 83,
+      "frame_ms": 31.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 84,
+      "frame_ms": 20.90000000000009
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 85,
+      "frame_ms": 34.40000000000009
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 86,
+      "frame_ms": 28.0
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 87,
+      "frame_ms": 16.800000000000182
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 88,
+      "frame_ms": 16.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 89,
+      "frame_ms": 33.29999999999973
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 90,
+      "frame_ms": 16.700000000000273
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 91,
+      "frame_ms": 32.69999999999982
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 92,
+      "frame_ms": 17.300000000000182
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 93,
+      "frame_ms": 16.699999999999818
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 94,
+      "frame_ms": 33.30000000000018
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 95,
+      "frame_ms": 16.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 96,
+      "frame_ms": 16.699999999999818
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 97,
+      "frame_ms": 16.700000000000273
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 98,
+      "frame_ms": 33.29999999999973
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 99,
+      "frame_ms": 33.30000000000018
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 100,
+      "frame_ms": 17.09999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 101,
+      "frame_ms": 19.09999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 102,
+      "frame_ms": 30.600000000000364
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 103,
+      "frame_ms": 32.399999999999636
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 104,
+      "frame_ms": 17.600000000000364
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 105,
+      "frame_ms": 31.399999999999636
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 106,
+      "frame_ms": 19.5
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 107,
+      "frame_ms": 31.40000000000009
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 108,
+      "frame_ms": 34.30000000000018
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 109,
+      "frame_ms": 16.59999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 110,
+      "frame_ms": 31.40000000000009
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 111,
+      "frame_ms": 17.0
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 112,
+      "frame_ms": 17.90000000000009
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 113,
+      "frame_ms": 17.09999999999991
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 114,
+      "frame_ms": 33.0
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 115,
+      "frame_ms": 33.29999999999973
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 116,
+      "frame_ms": 33.70000000000027
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 117,
+      "frame_ms": 16.699999999999818
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 118,
+      "frame_ms": 33.5
+    },
+    {
+      "evidence_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json",
+      "frame_index": 119,
+      "frame_ms": 33.09999999999991
+    }
+  ],
+  "gpu_timing": {
+    "frame_ms": {
+      "unit": "ms",
+      "unknown_reason": "WebGPU timestamp queries are not exposed by this route/controller",
+      "value": null
+    }
+  },
+  "memory": {
+    "gpu_memory_mb": {
+      "unit": "MB",
+      "unknown_reason": "Browser GPU memory is not exposed to page JavaScript",
+      "value": null
+    },
+    "js_heap_used_mb": {
+      "unit": "MB",
+      "unknown_reason": "",
+      "value": 1.2376527786254883
+    }
+  },
+  "requested_dpr": 1.0,
+  "route": "v4/filament.html",
+  "run_id": "filament-491009-demo-18000-dpr1",
+  "run_manifest_ref": "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/run-manifest.raw.json",
+  "seed": 491009,
+  "summary": {
+    "p50_frame_ms": 17.300000000000182,
+    "p95_frame_ms": 33.504999999999995
+  },
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  }
+}

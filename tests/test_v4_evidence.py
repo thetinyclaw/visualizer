@@ -196,7 +196,8 @@ class EvidenceValidationTests(unittest.TestCase):
         self.assertIn("gpuMemory: { mb: null", harness)
         locked = ev.locked_capture_url("v4/demo.html?foo=bar", seed=7, time_ms=1234.5, mode="demo")
         self.assertIn("seed=7", locked)
-        self.assertIn("time=1234.5", locked)
+        self.assertIn("time=1.2345", locked)
+        self.assertIn("--enable-unsafe-webgpu", ev.PLAYWRIGHT_WEBGPU_ARGS)
         self.assertIn("mode=demo", locked)
         with self.assertRaises(ev.EvidenceError):
             ev.locked_capture_url("v4/demo.html?seed=8", seed=7, time_ms=0, mode="demo")

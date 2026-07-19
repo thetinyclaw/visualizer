@@ -1,0 +1,16 @@
+{
+  "artifact_sha256": {
+    "v4/evidence/runs/cathedral-491009-demo-18000-dpr1/derived/benchmark_report.json": "ebdcf252daee2cdb5ecbd4acd912781f0d32e76518cbda040c0f1c56db234c47",
+    "v4/evidence/runs/cathedral-491009-demo-18000-dpr1/derived/motion_sheet.json": "543c783b6cbe55dbdd0166e457e2af01a8a51ba2b3af05f81712793f484544ae",
+    "v4/evidence/runs/cathedral-491009-demo-18000-dpr1/raw/frame-0000.png": "3cad033d384ee552b0149bb0322b0e89264b3847b361d858e7411729c045f7c1",
+    "v4/evidence/runs/cathedral-491009-demo-18000-dpr1/raw/frame-0060.png": "9ebe0c9ebcdebe817ffa09f875a82d569e380a77cbca7ba0f7d235f4246afbdc",
+    "v4/evidence/runs/cathedral-491009-demo-18000-dpr1/raw/frame-0120.png": "dd4f57eef898ab5e4cdf95b01bda8475842463302f12855768cb97d2c490618c",
+    "v4/evidence/runs/cathedral-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json": "428399f9783cde7f340d54950fdb17d30380707beabb1c81bd144ceadef15149"
+  },
+  "benchmark_report": "v4/evidence/runs/cathedral-491009-demo-18000-dpr1/derived/benchmark_report.json",
+  "created_at": "2026-07-19T08:47:40.458803Z",
+  "motion_sheet": "v4/evidence/runs/cathedral-491009-demo-18000-dpr1/derived/motion_sheet.json",
+  "route": "v4/cathedral.html",
+  "run_id": "cathedral-491009-demo-18000-dpr1",
+  "run_manifest_version": "1.0"
+}

@@ -1,0 +1,16 @@
+{
+  "artifact_sha256": {
+    "v4/evidence/runs/voxel-582114-demo-18000-dpr1/derived/benchmark_report.json": "31b1f68ca165dede8b6ac5efb9affe530198b6857e86938505c3d9b690e4221f",
+    "v4/evidence/runs/voxel-582114-demo-18000-dpr1/derived/motion_sheet.json": "236c06b204a3fcc51db508bfd14c36a24017ec36570972d9bafb4c685d66bc32",
+    "v4/evidence/runs/voxel-582114-demo-18000-dpr1/raw/frame-0000.png": "01ec008562f14b10c04dfaa2c1f7b56d3864ec8effe07687d5d20c1d1071a0f9",
+    "v4/evidence/runs/voxel-582114-demo-18000-dpr1/raw/frame-0060.png": "37c91b1b530cb9ab7ec8dd78f460d34abb77a42958a9525f9b580104e7246b46",
+    "v4/evidence/runs/voxel-582114-demo-18000-dpr1/raw/frame-0120.png": "a323b1f078dd9c04279fd18bd6a4b92590e5b0425b55794113ad51ce25c5edfb",
+    "v4/evidence/runs/voxel-582114-demo-18000-dpr1/raw/frame-telemetry.raw.json": "af9c3c7903d5ea98d3e52f71ef1582c370472f0a862bd356f625d7616c2aad33"
+  },
+  "benchmark_report": "v4/evidence/runs/voxel-582114-demo-18000-dpr1/derived/benchmark_report.json",
+  "created_at": "2026-07-19T08:48:23.638545Z",
+  "motion_sheet": "v4/evidence/runs/voxel-582114-demo-18000-dpr1/derived/motion_sheet.json",
+  "route": "v4/voxel.html",
+  "run_id": "voxel-582114-demo-18000-dpr1",
+  "run_manifest_version": "1.0"
+}

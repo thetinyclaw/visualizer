@@ -1,0 +1,16 @@
+{
+  "artifact_sha256": {
+    "v4/evidence/runs/filament-491009-demo-18000-dpr1/derived/benchmark_report.json": "67326d56f6d6d224f2f2c7f155c7d9f76423c25d07543baea8f4acbd738135ca",
+    "v4/evidence/runs/filament-491009-demo-18000-dpr1/derived/motion_sheet.json": "dcd2af9238567eef816857701b2d55f696261bf25db9e6a5a25a2bd5be087b7e",
+    "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-0000.png": "0888385e6cac33ba889d5ee3ee35dbb6ceee7f96fb89adf7c98af2f67896081e",
+    "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-0060.png": "4ecdd9cc7758ebbccb918a1144a6f4b117ae82accaaed505c943a58a051acc3e",
+    "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-0120.png": "9223d29301a00ae46e8a300d0c15f7c8a9924b4a4cc7e82ca89e7615302b9df2",
+    "v4/evidence/runs/filament-491009-demo-18000-dpr1/raw/frame-telemetry.raw.json": "079af0a5238ef3e52907082e768fa7073cda45b1188f15dfefdf6e7913cee482"
+  },
+  "benchmark_report": "v4/evidence/runs/filament-491009-demo-18000-dpr1/derived/benchmark_report.json",
+  "created_at": "2026-07-19T08:48:02.714972Z",
+  "motion_sheet": "v4/evidence/runs/filament-491009-demo-18000-dpr1/derived/motion_sheet.json",
+  "route": "v4/filament.html",
+  "run_id": "filament-491009-demo-18000-dpr1",
+  "run_manifest_version": "1.0"
+}

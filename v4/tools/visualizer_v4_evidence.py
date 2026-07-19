@@ -30,6 +30,11 @@ DEFAULT_FIXTURES = ROOT / "v4" / "evidence" / "fixtures"
 DEFAULT_RAW_ROOT = DEFAULT_FIXTURES / "raw"
 DEFAULT_DERIVED_ROOT = ROOT / "v4" / "evidence" / "derived"
 DEFAULT_CAPTURE_ROOT = ROOT / "v4" / "evidence" / "local-runs"
+PLAYWRIGHT_WEBGPU_ARGS = (
+    "--enable-unsafe-webgpu",
+    "--enable-features=Vulkan,UseSkiaRenderer",
+    "--disable-vulkan-surface",
+)
 TERMINAL_STATES = {"approved_for_release", "rejected", "discarded", "branched_for_learning"}
 FACTORY_STATES = [
     "ingested_reference",
@@ -353,7 +358,7 @@ def locked_capture_url(route: str, *, seed: int, time_ms: float, mode: str) -> s
     validate_local_route(route)
     parsed = urlparse(route)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
-    locks = {"seed": str(int(seed)), "time": format(float(time_ms), ".6f").rstrip("0").rstrip("."), "mode": mode}
+    locks = {"seed": str(int(seed)), "time": format(float(time_ms) / 1000.0, ".6f").rstrip("0").rstrip("."), "mode": mode}
     for key, value in locks.items():
         if key in query and query[key] != value:
             raise EvidenceError(f"route already contains conflicting {key}={query[key]!r}; deterministic lock requires {value!r}")
@@ -441,10 +446,23 @@ def browser_harness_script(seed: int, time_ms: float, mode: str, min_frames: int
     const rect = canvas ? canvas.getBoundingClientRect() : null;
     const nav = navigator || {{}};
     const perfMemory = performance && performance.memory ? performance.memory : null;
+    const compactState = (state) => state ? {{
+      sceneId: state.sceneId || null,
+      rendererMode: state.rendererMode || state.mode || null,
+      active: state.active === true,
+      webgpuActive: state.webgpuActive === true,
+      frame: state.frame || null,
+      frameSubmitted: state.frameSubmitted === true,
+      validationErrors: Array.isArray(state.validationErrors) ? state.validationErrors : [],
+      webgpuValidationErrors: Array.isArray(state.webgpuValidationErrors) ? state.webgpuValidationErrors : [],
+    }} : null;
     const exportedState = {{
       v4RuntimeSmoke: window.__V4_RUNTIME_SMOKE__ || null,
       v4HeroLab: window.__V4_HERO_LAB__ || null,
-      v4CathedralWebGPU: window.__V4_CATHEDRAL_WEBGPU__ || null,
+      v4CathedralWebGPU: compactState(window.__V4_CATHEDRAL_WEBGPU__),
+      v4FilamentWebGPU: compactState(window.__V4_FILAMENT_WEBGPU__),
+      v4VoxelWebGPU: compactState(window.__V4_VOXEL_WEBGPU__),
+      v4HistoryTrails: compactState(window.__V4_HISTORY_TRAILS__),
       v4CaptureConfig: window.__V4_CAPTURE_CONFIG__,
       locationSearch: window.location.search,
     }};
@@ -540,6 +558,9 @@ def attested_page_time_ms(page: Any, requested_time_ms: float, *, tolerance_ms: 
   const hero = window.__V4_HERO_LAB__ || null;
   const smoke = window.__V4_RUNTIME_SMOKE__ || null;
   const cathedral = window.__V4_CATHEDRAL_WEBGPU__ || null;
+  const filament = window.__V4_FILAMENT_WEBGPU__ || null;
+  const voxel = window.__V4_VOXEL_WEBGPU__ || null;
+  const history = window.__V4_HISTORY_TRAILS__ || null;
   return {
     queryTime: params.has('time') ? Number(params.get('time')) : null,
     heroLockedTime: hero && Number.isFinite(Number(hero.lockedTime)) ? Number(hero.lockedTime) : null,
@@ -547,23 +568,33 @@ def attested_page_time_ms(page: Any, requested_time_ms: float, *, tolerance_ms: 
     cathedralLockedTime: cathedral && Number.isFinite(Number(cathedral.lockedTime)) ? Number(cathedral.lockedTime) : null,
     cathedralTime: cathedral && Number.isFinite(Number(cathedral.time)) ? Number(cathedral.time) : null,
     cathedralObservedLock: cathedral ? Boolean(cathedral.lockedTime !== undefined || cathedral.locked === true || cathedral.lockedMode === true) : false,
+    filamentLockedTime: filament && Number.isFinite(Number(filament.lockedTime)) ? Number(filament.lockedTime) : null,
+    filamentTime: filament && Number.isFinite(Number(filament.time)) ? Number(filament.time) : null,
+    voxelLockedTime: voxel && Number.isFinite(Number(voxel.lockedTime)) ? Number(voxel.lockedTime) : null,
+    voxelTime: voxel && Number.isFinite(Number(voxel.time)) ? Number(voxel.time) : null,
+    historyLockedTime: history && Number.isFinite(Number(history.lockedTime)) ? Number(history.lockedTime) : null,
     heroSeed: hero && Number.isFinite(Number(hero.seed)) ? Number(hero.seed) : null,
     heroMode: hero && hero.inputMode || null,
   };
 }
 """)
     require(isinstance(attestation, Mapping), "page lock attestation must be an object")
+    requested_time_seconds = float(requested_time_ms) / 1000.0
+    tolerance_seconds = float(tolerance_ms) / 1000.0
     query_time = attestation.get("queryTime")
-    require(query_time is not None and abs(float(query_time) - float(requested_time_ms)) <= tolerance_ms,
+    require(query_time is not None and abs(float(query_time) - requested_time_seconds) <= tolerance_seconds,
             "page URL does not carry requested locked time")
-    candidates = [attestation.get("heroLockedTime"), attestation.get("smokeLockedTime")]
+    candidates = [attestation.get("heroLockedTime"), attestation.get("smokeLockedTime"),
+                  attestation.get("filamentLockedTime"), attestation.get("filamentTime"),
+                  attestation.get("voxelLockedTime"), attestation.get("voxelTime"),
+                  attestation.get("historyLockedTime")]
     for value in candidates:
-        if value is not None and abs(float(value) - float(requested_time_ms)) <= tolerance_ms:
-            return float(value)
+        if value is not None and abs(float(value) - requested_time_seconds) <= tolerance_seconds:
+            return float(value) * 1000.0
     if attestation.get("cathedralObservedLock"):
         for value in (attestation.get("cathedralLockedTime"), attestation.get("cathedralTime")):
-            if value is not None and abs(float(value) - float(requested_time_ms)) <= tolerance_ms:
-                return float(value)
+            if value is not None and abs(float(value) - requested_time_seconds) <= tolerance_seconds:
+                return float(value) * 1000.0
     raise EvidenceError("page did not attest the requested locked time via exported runtime state")
 
 
@@ -684,7 +715,7 @@ def run_local_browser_capture(*, route: str, effect_id: str, seed: int, time_ms:
     page_errors: List[Mapping[str, Any]] = []
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=False, args=list(PLAYWRIGHT_WEBGPU_ARGS))
             context = browser.new_context(viewport={"width": int(viewport["width"]), "height": int(viewport["height"])}, device_scale_factor=float(dpr))
             previous_sha = None
             previous_observed_time = None
@@ -704,8 +735,23 @@ def run_local_browser_capture(*, route: str, effect_id: str, seed: int, time_ms:
                 page.add_init_script(browser_harness_script(seed, requested_time_ms, mode, 120))
                 page.goto(browser_url, wait_until="networkidle", timeout=timeout_ms)
                 observed_time_ms = attested_page_time_ms(page, requested_time_ms)
-                telemetry = page.evaluate("window.__V4_CAPTURE_SAMPLE__ && window.__V4_CAPTURE_SAMPLE__()")
-                require(isinstance(telemetry, Mapping), "browser harness did not export telemetry")
+                telemetry = require_mapping(page.evaluate("window.__V4_CAPTURE_SAMPLE__ && window.__V4_CAPTURE_SAMPLE__()"),
+                                            "browser harness telemetry")
+                exported_state = require_mapping(telemetry.get("exportedState"), "browser harness exportedState")
+                renderer_attestation = require_mapping(next((exported_state.get(key) for key in (
+                    "v4CathedralWebGPU", "v4FilamentWebGPU", "v4VoxelWebGPU", "v4HistoryTrails"
+                ) if isinstance(exported_state.get(key), Mapping)), None),
+                    "capture route attested v4 renderer state")
+                require(renderer_attestation.get("rendererMode") == "webgpu-full",
+                        f"capture route did not run WebGPU full mode: {renderer_attestation.get('rendererMode')}")
+                require(renderer_attestation.get("active") is True or renderer_attestation.get("webgpuActive") is True
+                        or renderer_attestation.get("frameSubmitted") is True,
+                        "capture route did not attest an active WebGPU frame")
+                frame_attestation = renderer_attestation.get("frame")
+                if isinstance(frame_attestation, Mapping):
+                    require(frame_attestation.get("submitted") is True, "capture route frame was not submitted")
+                require(not renderer_attestation.get("validationErrors") and not renderer_attestation.get("webgpuValidationErrors"),
+                        "capture route reported WebGPU validation errors")
                 observed_dpr = float(telemetry.get("dpr", 0))
                 require(abs(observed_dpr - float(dpr)) <= 0.05, f"observed DPR {observed_dpr} does not match requested DPR {dpr}")
                 require(previous_observed_time is None or observed_time_ms > previous_observed_time,
@@ -723,6 +769,7 @@ def run_local_browser_capture(*, route: str, effect_id: str, seed: int, time_ms:
                     "observed_time_ms": observed_time_ms,
                     "time_ms": observed_time_ms,
                     "role": "spatial" if position == 0 else "chronological",
+                    "renderer_attestation": renderer_attestation,
                     "capture_path": raw_ref(final_raw_dir / capture_path.name), "capture_sha256": capture_sha,
                 })
                 page.close()
@@ -735,6 +782,7 @@ def run_local_browser_capture(*, route: str, effect_id: str, seed: int, time_ms:
             final_raw_telemetry_path = final_raw_dir / raw_telemetry_path.name
             raw_payload = {"captured_at": iso_now(), "route": route, "seed": seed, "mode": mode,
                            "requested_dpr": float(dpr), "observed_dpr": float(telemetry["dpr"]),
+                           "playwright_headless": False, "playwright_launch_args": list(PLAYWRIGHT_WEBGPU_ARGS),
                            "captures": captures, "telemetry": telemetry, "console_logs": all_console}
             atomic_write_json(raw_telemetry_path, raw_payload)
             motion = build_real_motion_sheet_from_captures(effect_id=effect_id, route=route, seed=seed,
@@ -759,7 +807,7 @@ def run_local_browser_capture(*, route: str, effect_id: str, seed: int, time_ms:
                     "js_heap_used_mb": {"value": telemetry["memory"].get("jsHeapUsedMB"), "unknown_reason": "browser performance.memory unavailable" if telemetry["memory"].get("jsHeapUsedMB") is None else "", "unit": "MB"},
                     "gpu_memory_mb": {"value": telemetry["gpuMemory"].get("mb"), "unknown_reason": telemetry["gpuMemory"].get("unknownReason"), "unit": "MB"},
                 },
-                "browser": {"name": "Chromium via Playwright", "user_agent": telemetry["browser"].get("userAgent", "unknown"), "device": telemetry["browser"].get("platform", "automation browser") or "automation browser"},
+                "browser": {"name": "Chromium via Playwright", "user_agent": telemetry["browser"].get("userAgent", "unknown"), "device": telemetry["browser"].get("platform", "automation browser") or "automation browser", "headless": False, "launch_args": list(PLAYWRIGHT_WEBGPU_ARGS)},
                 "console_logs": all_console, "device_logs": [],
                 "capture_limitations": ["automation-browser relative evidence only; not target-device acceptance"],
                 "duration_ms": round((time.time() - started) * 1000, 3),
