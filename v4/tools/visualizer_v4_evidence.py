@@ -12,6 +12,8 @@ import hashlib
 import http.server
 import json
 import math
+import os
+import shutil
 import shlex
 import sys
 import threading
@@ -247,13 +249,22 @@ def validate_scene_recipe(recipe: Mapping[str, Any]) -> None:
 
 def validate_local_route(route: str) -> None:
     parsed = urlparse(route)
+    repo_real = ROOT.resolve(strict=True)
     if parsed.scheme in {"http", "https"}:
         require(parsed.hostname in {"127.0.0.1", "localhost"}, f"route must be local-only, got {route}")
     elif parsed.scheme == "file":
         require(bool(parsed.path), f"file route must include a path: {route}")
+        path = Path(parsed.path)
+        require(path.exists(), f"file route does not exist: {route}")
+        require(not path_has_symlink_component(path), "file route must not include symlink components")
+        realpath_under(path, repo_real, "file route")
     else:
-        require(not route.startswith("//") and ".." not in Path(route.split("?", 1)[0]).parts,
-                f"route must be local/repo-relative, got {route}")
+        require(not route.startswith("//"), f"route must be local/repo-relative, got {route}")
+        rel = repo_relative_path(parsed.path, "route")
+        target = ROOT / rel
+        require(not path_has_symlink_component(target), "repo-relative route must not include symlink components")
+        if target.exists():
+            realpath_under(target, repo_real, "repo-relative route")
 
 
 def validate_capture_spec(spec: Mapping[str, Any]) -> None:
@@ -371,7 +382,9 @@ def safe_run_directory(out_root: Path, run_id: str, *, allow_existing: bool = Fa
 
 
 def local_capture_plan(*, route: str, seed: int, time_ms: float, mode: str, viewport: Mapping[str, int],
-                       frame_indices: Sequence[int], out_root: Path, run_id: str, timeout_ms: int) -> Mapping[str, Any]:
+                       frame_indices: Sequence[int], out_root: Path, run_id: str, timeout_ms: int,
+                       dpr: float = 1.0) -> Mapping[str, Any]:
+    require(float(dpr) >= 1.0, "dpr must be >= 1")
     locked = locked_capture_url(route, seed=seed, time_ms=time_ms, mode=mode)
     run_dir = safe_run_directory(out_root, run_id, allow_existing=False)
     return {
@@ -383,6 +396,7 @@ def local_capture_plan(*, route: str, seed: int, time_ms: float, mode: str, view
         "time_ms": time_ms,
         "mode": mode,
         "viewport": {"width": int(viewport["width"]), "height": int(viewport["height"])},
+        "dpr": float(dpr),
         "minimum_frame_samples": 120,
         "warmup_raf_frames": 10,
         "capture_frame_indices": list(frame_indices),
@@ -430,7 +444,9 @@ def browser_harness_script(seed: int, time_ms: float, mode: str, min_frames: int
     const exportedState = {{
       v4RuntimeSmoke: window.__V4_RUNTIME_SMOKE__ || null,
       v4HeroLab: window.__V4_HERO_LAB__ || null,
+      v4CathedralWebGPU: window.__V4_CATHEDRAL_WEBGPU__ || null,
       v4CaptureConfig: window.__V4_CAPTURE_CONFIG__,
+      locationSearch: window.location.search,
     }};
     return {{
       config,
@@ -467,6 +483,8 @@ def build_real_motion_sheet_from_captures(*, effect_id: str, route: str, seed: i
         spatial.append({
             "frame_index": capture["frame_index"],
             "time_ms": capture["time_ms"],
+            "requested_time_ms": capture.get("requested_time_ms", capture["time_ms"]),
+            "observed_time_ms": capture.get("observed_time_ms", capture["time_ms"]),
             "role": capture.get("role", "sample"),
             "capture_path": capture["capture_path"],
             "capture_sha256": capture["capture_sha256"],
@@ -490,115 +508,324 @@ def build_real_motion_sheet_from_captures(*, effect_id: str, route: str, seed: i
     }
 
 
+def fsync_path(path: Path) -> None:
+    fd = os.open(str(path), os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def atomic_write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp-{uuid.uuid4().hex}")
+    try:
+        with tmp.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+        fsync_path(path.parent)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def attested_page_time_ms(page: Any, requested_time_ms: float, *, tolerance_ms: float = 0.01) -> float:
+    """Require the page's own exported state to attest the locked time, not the controller script alone."""
+    attestation = page.evaluate("""
+() => {
+  const params = new URLSearchParams(window.location.search);
+  const hero = window.__V4_HERO_LAB__ || null;
+  const smoke = window.__V4_RUNTIME_SMOKE__ || null;
+  const cathedral = window.__V4_CATHEDRAL_WEBGPU__ || null;
+  return {
+    queryTime: params.has('time') ? Number(params.get('time')) : null,
+    heroLockedTime: hero && Number.isFinite(Number(hero.lockedTime)) ? Number(hero.lockedTime) : null,
+    smokeLockedTime: smoke && Number.isFinite(Number(smoke.lockedTime)) ? Number(smoke.lockedTime) : null,
+    cathedralLockedTime: cathedral && Number.isFinite(Number(cathedral.lockedTime)) ? Number(cathedral.lockedTime) : null,
+    cathedralTime: cathedral && Number.isFinite(Number(cathedral.time)) ? Number(cathedral.time) : null,
+    cathedralObservedLock: cathedral ? Boolean(cathedral.lockedTime !== undefined || cathedral.locked === true || cathedral.lockedMode === true) : false,
+    heroSeed: hero && Number.isFinite(Number(hero.seed)) ? Number(hero.seed) : null,
+    heroMode: hero && hero.inputMode || null,
+  };
+}
+""")
+    require(isinstance(attestation, Mapping), "page lock attestation must be an object")
+    query_time = attestation.get("queryTime")
+    require(query_time is not None and abs(float(query_time) - float(requested_time_ms)) <= tolerance_ms,
+            "page URL does not carry requested locked time")
+    candidates = [attestation.get("heroLockedTime"), attestation.get("smokeLockedTime")]
+    for value in candidates:
+        if value is not None and abs(float(value) - float(requested_time_ms)) <= tolerance_ms:
+            return float(value)
+    if attestation.get("cathedralObservedLock"):
+        for value in (attestation.get("cathedralLockedTime"), attestation.get("cathedralTime")):
+            if value is not None and abs(float(value) - float(requested_time_ms)) <= tolerance_ms:
+                return float(value)
+    raise EvidenceError("page did not attest the requested locked time via exported runtime state")
+
+
+def cleanup_temp_run(temp_dir: Path) -> None:
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+
+
+def publish_atomic_run(temp_dir: Path, final_dir: Path) -> None:
+    require(not final_dir.exists(), f"final run directory already exists: {final_dir}")
+    final_dir.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(temp_dir, final_dir)
+    fsync_path(final_dir.parent)
+
+
+def quarantine_or_remove_run(run_dir: Path) -> None:
+    """Remove a post-publish-invalid run so it cannot be mistaken for complete evidence."""
+    if not run_dir.exists():
+        return
+    quarantine = run_dir.parent / f".{run_dir.name}.quarantine-{uuid.uuid4().hex}"
+    try:
+        os.replace(run_dir, quarantine)
+        shutil.rmtree(quarantine)
+    except Exception:
+        shutil.rmtree(run_dir, ignore_errors=True)
+
+
+PathResolver = Callable[[Path], Path]
+
+
+def identity_path_resolver(path: Path) -> Path:
+    return path
+
+
+def logical_final_to_physical_staging_resolver(final_dir: Path, temp_dir: Path) -> PathResolver:
+    final_realish = final_dir.resolve()
+
+    def resolve(logical_path: Path) -> Path:
+        try:
+            rel = logical_path.resolve().relative_to(final_realish)
+        except ValueError:
+            return logical_path
+        return temp_dir / rel
+    return resolve
+
+
+def resolved_repo_path(root: Path, ref: str, field_name: str, resolver: PathResolver = identity_path_resolver) -> tuple[Path, Path]:
+    rel = repo_relative_path(ref, field_name)
+    logical_path = root / rel
+    return logical_path, resolver(logical_path)
+
+
+def resolve_route_for_browser(route: str, locked_url: str) -> tuple[str, Any, Any]:
+    """Return browser URL plus optional local HTTP server/thread for repo-relative routes."""
+    parsed = urlparse(locked_url)
+    if parsed.scheme == "file":
+        validate_local_route(locked_url)
+        return locked_url, None, None
+    if parsed.scheme:
+        validate_local_route(locked_url)
+        return locked_url, None, None
+    rel = repo_relative_path(parsed.path, "route")
+    target = ROOT / rel
+    require(target.exists(), f"repo-relative route does not exist: {route}")
+    require(not path_has_symlink_component(target), "repo-relative route must not include symlink components")
+    realpath_under(target, ROOT.resolve(strict=True), "repo-relative route")
+
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *handler_args: Any, **handler_kwargs: Any) -> None:
+            super().__init__(*handler_args, directory=str(ROOT), **handler_kwargs)
+
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    browser_url = f"http://127.0.0.1:{server.server_address[1]}/{rel.as_posix()}?{parsed.query}"
+    return browser_url, server, server_thread
+
+
 def run_local_browser_capture(*, route: str, effect_id: str, seed: int, time_ms: float, mode: str, viewport: Mapping[str, int],
                               out_root: Path, run_id: Optional[str] = None, frame_indices: Sequence[int] = (0, 60),
-                              timeout_ms: int = 30000) -> Mapping[str, Any]:
+                              timeout_ms: int = 30000, dpr: float = 1.0) -> Mapping[str, Any]:
+    require(float(dpr) >= 1.0, "dpr must be >= 1")
     run_id = run_id or f"capture-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
     plan = local_capture_plan(route=route, seed=seed, time_ms=time_ms, mode=mode, viewport=viewport,
-                              frame_indices=frame_indices, out_root=out_root, run_id=run_id, timeout_ms=timeout_ms)
+                              frame_indices=frame_indices, out_root=out_root, run_id=run_id, timeout_ms=timeout_ms,
+                              dpr=dpr)
     try:
         from playwright.sync_api import sync_playwright  # type: ignore
     except Exception as exc:
         return {**plan, "status": "unsupported", "unsupported_reason": f"python Playwright unavailable: {exc.__class__.__name__}", "artifacts_written": []}
 
-    run_dir = safe_run_directory(out_root, run_id, allow_existing=False)
-    raw_dir = run_dir / "raw"
-    derived_dir = run_dir / "derived"
+    final_dir = safe_run_directory(out_root, run_id, allow_existing=False)
+    temp_dir = final_dir.parent / f".{run_id}.tmp-{uuid.uuid4().hex}"
+    require(not temp_dir.exists(), f"temporary run directory already exists: {temp_dir}")
+    require(not path_has_symlink_component(temp_dir), "temporary run directory must not include symlink components")
+    raw_dir = temp_dir / "raw"
+    derived_dir = temp_dir / "derived"
+    final_raw_dir = final_dir / "raw"
+    final_derived_dir = final_dir / "derived"
+    final_manifest_path = final_raw_dir / "run-manifest.raw.json"
+    final_benchmark_path = final_derived_dir / "benchmark_report.json"
+    final_motion_path = final_derived_dir / "motion_sheet.json"
+    staging_resolver = logical_final_to_physical_staging_resolver(final_dir, temp_dir)
     raw_dir.mkdir(parents=True)
     derived_dir.mkdir(parents=True)
-    locked = str(plan["locked_url"])
+    started = time.time()
     server = None
     server_thread = None
-    parsed = urlparse(locked)
-    if not parsed.scheme:
-        rel = repo_relative_path(parsed.path, "route")
-        target = ROOT / rel
-        require(target.exists(), f"repo-relative route does not exist: {route}")
-        class Handler(http.server.SimpleHTTPRequestHandler):
-            def __init__(self, *handler_args: Any, **handler_kwargs: Any) -> None:
-                super().__init__(*handler_args, directory=str(ROOT), **handler_kwargs)
-
-            def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
-                pass
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
-        server_thread.start()
-        locked = f"http://127.0.0.1:{server.server_address[1]}/{rel.as_posix()}?{parsed.query}"
-    started = time.time()
+    browser = None
+    context = None
+    page = None
+    telemetry: Optional[Mapping[str, Any]] = None
+    captures: List[Mapping[str, Any]] = []
     console_logs: List[Mapping[str, Any]] = []
     page_errors: List[Mapping[str, Any]] = []
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            context = browser.new_context(viewport={"width": int(viewport["width"]), "height": int(viewport["height"])}, device_scale_factor=1)
-            page = context.new_page()
-            page.on("console", lambda msg: console_logs.append({"type": msg.type, "text": msg.text}))
-            page.on("pageerror", lambda err: page_errors.append({"type": "error", "text": str(err)}))
-            page.add_init_script(browser_harness_script(seed, time_ms, mode, 120))
-            page.goto(locked, wait_until="networkidle", timeout=timeout_ms)
-            telemetry = page.evaluate("window.__V4_CAPTURE_SAMPLE__ && window.__V4_CAPTURE_SAMPLE__()")
-            require(isinstance(telemetry, Mapping), "browser harness did not export telemetry")
-            dpr = float(telemetry.get("dpr", 0))
-            require(dpr >= 1.0, "native browser DPR must be >= 1")
-            frame_samples = telemetry["frameSamples"]
-            summary = summarize_samples(frame_samples)
-            captures = []
-            for frame_index in frame_indices:
+            context = browser.new_context(viewport={"width": int(viewport["width"]), "height": int(viewport["height"])}, device_scale_factor=float(dpr))
+            previous_sha = None
+            previous_observed_time = None
+            for position, frame_index in enumerate(frame_indices):
+                requested_time_ms = float(time_ms) + (1000.0 / 60.0) * int(frame_index)
+                locked_url = locked_capture_url(route, seed=seed, time_ms=requested_time_ms, mode=mode)
+                parsed_locked = urlparse(locked_url)
+                if server is not None and not parsed_locked.scheme:
+                    browser_url = f"http://127.0.0.1:{server.server_address[1]}/{repo_relative_path(parsed_locked.path, 'route').as_posix()}?{parsed_locked.query}"
+                else:
+                    browser_url, maybe_server, maybe_thread = resolve_route_for_browser(route, locked_url)
+                    if maybe_server is not None:
+                        server, server_thread = maybe_server, maybe_thread
+                page = context.new_page()
+                page.on("console", lambda msg: console_logs.append({"type": msg.type, "text": msg.text}))
+                page.on("pageerror", lambda err: page_errors.append({"type": "error", "text": str(err)}))
+                page.add_init_script(browser_harness_script(seed, requested_time_ms, mode, 120))
+                page.goto(browser_url, wait_until="networkidle", timeout=timeout_ms)
+                observed_time_ms = attested_page_time_ms(page, requested_time_ms)
+                telemetry = page.evaluate("window.__V4_CAPTURE_SAMPLE__ && window.__V4_CAPTURE_SAMPLE__()")
+                require(isinstance(telemetry, Mapping), "browser harness did not export telemetry")
+                observed_dpr = float(telemetry.get("dpr", 0))
+                require(abs(observed_dpr - float(dpr)) <= 0.05, f"observed DPR {observed_dpr} does not match requested DPR {dpr}")
+                require(previous_observed_time is None or observed_time_ms > previous_observed_time,
+                        "observed page time did not advance chronologically")
                 capture_path = raw_dir / f"frame-{int(frame_index):04d}.png"
                 page.screenshot(path=str(capture_path), full_page=False)
+                capture_sha = compute_file_sha256(capture_path)
+                if previous_sha is not None:
+                    require(capture_sha != previous_sha, "adjacent requested motion captures are byte-identical; refusing mislabeled chronology")
+                previous_sha = capture_sha
+                previous_observed_time = observed_time_ms
                 captures.append({
-                    "frame_index": int(frame_index), "time_ms": float(time_ms) + (1000.0 / 60.0) * int(frame_index),
-                    "role": "spatial" if frame_index == frame_indices[0] else "chronological",
-                    "capture_path": raw_ref(capture_path), "capture_sha256": compute_file_sha256(capture_path),
+                    "frame_index": int(frame_index),
+                    "requested_time_ms": requested_time_ms,
+                    "observed_time_ms": observed_time_ms,
+                    "time_ms": observed_time_ms,
+                    "role": "spatial" if position == 0 else "chronological",
+                    "capture_path": raw_ref(final_raw_dir / capture_path.name), "capture_sha256": capture_sha,
                 })
-            browser.close()
+                page.close()
+                page = None
+            require(telemetry is not None, "no telemetry captured")
+            frame_samples = telemetry["frameSamples"]
+            summary = summarize_samples(frame_samples)
+            all_console = console_logs + page_errors + list(telemetry.get("consoleLogs", []))
+            raw_telemetry_path = raw_dir / "frame-telemetry.raw.json"
+            final_raw_telemetry_path = final_raw_dir / raw_telemetry_path.name
+            raw_payload = {"captured_at": iso_now(), "route": route, "seed": seed, "mode": mode,
+                           "requested_dpr": float(dpr), "observed_dpr": float(telemetry["dpr"]),
+                           "captures": captures, "telemetry": telemetry, "console_logs": all_console}
+            atomic_write_json(raw_telemetry_path, raw_payload)
+            motion = build_real_motion_sheet_from_captures(effect_id=effect_id, route=route, seed=seed,
+                                                           viewport=telemetry["viewport"], dpr=float(telemetry["dpr"]),
+                                                           captures=captures)
+            motion_path = derived_dir / "motion_sheet.json"
+            atomic_write_json(motion_path, motion)
+            validate_motion_sheet(motion, require_real=True, evidence_root=temp_dir, path_resolver=staging_resolver)
+            benchmark_path = derived_dir / "benchmark_report.json"
+            manifest_path = raw_dir / "run-manifest.raw.json"
+            benchmark = {
+                "benchmark_schema_version": "1.0", "evidence_kind": "real_acceptance", "effect_id": effect_id,
+                "seed": seed, "captured_at": iso_now(), "run_id": run_id, "route": route,
+                "run_manifest_ref": raw_ref(final_manifest_path),
+                "artifact_evidence": [raw_ref(final_raw_telemetry_path), raw_ref(final_motion_path)] + [c["capture_path"] for c in captures],
+                "viewport": telemetry["viewport"], "backing_store": telemetry.get("backing"), "dpr": float(telemetry["dpr"]),
+                "requested_dpr": float(dpr), "effective_density": {"x": float(telemetry["dpr"]), "y": float(telemetry["dpr"])},
+                "frame_samples": [{"frame_index": int(s["frame_index"]), "frame_ms": float(s["frame_ms"]), "evidence_ref": raw_ref(final_raw_telemetry_path)} for s in frame_samples],
+                "summary": summary,
+                "gpu_timing": {"frame_ms": {"value": None, "unknown_reason": telemetry["gpuTiming"]["unknownReason"], "unit": "ms"}},
+                "memory": {
+                    "js_heap_used_mb": {"value": telemetry["memory"].get("jsHeapUsedMB"), "unknown_reason": "browser performance.memory unavailable" if telemetry["memory"].get("jsHeapUsedMB") is None else "", "unit": "MB"},
+                    "gpu_memory_mb": {"value": telemetry["gpuMemory"].get("mb"), "unknown_reason": telemetry["gpuMemory"].get("unknownReason"), "unit": "MB"},
+                },
+                "browser": {"name": "Chromium via Playwright", "user_agent": telemetry["browser"].get("userAgent", "unknown"), "device": telemetry["browser"].get("platform", "automation browser") or "automation browser"},
+                "console_logs": all_console, "device_logs": [],
+                "capture_limitations": ["automation-browser relative evidence only; not target-device acceptance"],
+                "duration_ms": round((time.time() - started) * 1000, 3),
+            }
+            atomic_write_json(benchmark_path, benchmark)
+            manifest = {"run_manifest_version": "1.0", "run_id": run_id, "route": route,
+                        "created_at": iso_now(), "benchmark_report": raw_ref(final_benchmark_path),
+                        "motion_sheet": raw_ref(final_motion_path), "artifact_sha256": {}}
+            for base in (raw_dir, derived_dir):
+                for path in sorted(base.rglob("*")):
+                    if path.is_file():
+                        logical_path = (final_raw_dir if base == raw_dir else final_derived_dir) / path.relative_to(base)
+                        if logical_path == final_manifest_path:
+                            continue
+                        manifest["artifact_sha256"][raw_ref(logical_path)] = compute_file_sha256(path)
+            atomic_write_json(manifest_path, manifest)
+            validate_run_manifest(manifest, root=ROOT, evidence_root=temp_dir, validate_linked=True,
+                                  manifest_ref=raw_ref(final_manifest_path), path_resolver=staging_resolver)
+            validate_benchmark(benchmark, require_real=True, root=ROOT, validate_manifest_binding=True,
+                               benchmark_ref=raw_ref(final_benchmark_path), evidence_root=temp_dir,
+                               path_resolver=staging_resolver)
+            if page is not None:
+                page.close()
+            if context is not None:
+                context.close()
+            if browser is not None:
+                browser.close()
+            publish_atomic_run(temp_dir, final_dir)
+            final_manifest_ref = raw_ref(final_manifest_path)
+            try:
+                final_manifest = require_mapping(load_json(final_manifest_path), "run_manifest")
+                final_benchmark = require_mapping(load_json(final_benchmark_path), "benchmark_report")
+                validate_run_manifest(final_manifest, root=ROOT, evidence_root=final_dir, validate_linked=True,
+                                      manifest_ref=final_manifest_ref)
+                validate_benchmark(final_benchmark, require_real=True, root=ROOT, validate_manifest_binding=True,
+                                   benchmark_ref=raw_ref(final_benchmark_path), evidence_root=final_dir)
+            except Exception:
+                quarantine_or_remove_run(final_dir)
+                raise
+            return {**plan, "status": "completed", "run_manifest": final_manifest_ref,
+                    "benchmark_report": raw_ref(final_benchmark_path),
+                    "motion_sheet": raw_ref(final_motion_path),
+                    "artifacts_written": sorted(manifest["artifact_sha256"].keys())}
+    except Exception:
+        if page is not None:
+            try: page.close()
+            except Exception: pass
+        if context is not None:
+            try: context.close()
+            except Exception: pass
+        if browser is not None:
+            try: browser.close()
+            except Exception: pass
+        cleanup_temp_run(temp_dir)
+        raise
     finally:
         if server is not None:
             server.shutdown()
+            server.server_close()
             if server_thread is not None:
                 server_thread.join(timeout=2)
-    all_console = console_logs + page_errors + list(telemetry.get("consoleLogs", []))
-    raw_telemetry_path = raw_dir / "frame-telemetry.raw.json"
-    raw_payload = {"captured_at": iso_now(), "locked_url": locked, "telemetry": telemetry, "console_logs": all_console}
-    write_json(raw_telemetry_path, raw_payload)
-    motion = build_real_motion_sheet_from_captures(effect_id=effect_id, route=locked, seed=seed, viewport=telemetry["viewport"], dpr=float(telemetry["dpr"]), captures=captures)
-    motion_path = derived_dir / "motion_sheet.json"
-    write_json(motion_path, motion)
-    validate_motion_sheet(motion, require_real=True)
-    benchmark = {
-        "benchmark_schema_version": "1.0", "evidence_kind": "real_acceptance", "effect_id": effect_id,
-        "seed": seed, "captured_at": iso_now(), "run_id": run_id, "route": locked,
-        "artifact_evidence": [raw_ref(raw_telemetry_path), raw_ref(motion_path)] + [c["capture_path"] for c in captures],
-        "viewport": telemetry["viewport"], "backing_store": telemetry.get("backing"), "dpr": float(telemetry["dpr"]),
-        "effective_density": {"x": float(telemetry["dpr"]), "y": float(telemetry["dpr"])},
-        "frame_samples": [{"frame_index": int(s["frame_index"]), "frame_ms": float(s["frame_ms"]), "evidence_ref": raw_ref(raw_telemetry_path)} for s in frame_samples],
-        "summary": summary,
-        "gpu_timing": {"frame_ms": {"value": None, "unknown_reason": telemetry["gpuTiming"]["unknownReason"], "unit": "ms"}},
-        "memory": {
-            "js_heap_used_mb": {"value": telemetry["memory"].get("jsHeapUsedMB"), "unknown_reason": "browser performance.memory unavailable" if telemetry["memory"].get("jsHeapUsedMB") is None else "", "unit": "MB"},
-            "gpu_memory_mb": {"value": telemetry["gpuMemory"].get("mb"), "unknown_reason": telemetry["gpuMemory"].get("unknownReason"), "unit": "MB"},
-        },
-        "browser": {"name": "Chromium via Playwright", "user_agent": telemetry["browser"].get("userAgent", "unknown"), "device": telemetry["browser"].get("platform", "automation browser") or "automation browser"},
-        "console_logs": all_console, "device_logs": [],
-        "capture_limitations": ["automation-browser relative evidence only; not target-device acceptance"],
-        "duration_ms": round((time.time() - started) * 1000, 3),
-    }
-    benchmark_path = derived_dir / "benchmark_report.json"
-    write_json(benchmark_path, benchmark)
-    validate_benchmark(benchmark, require_real=True)
-    manifest = {"run_id": run_id, "route": locked, "raw_artifacts": {}, "derived_artifacts": {}, "created_at": iso_now()}
-    for path in sorted(raw_dir.iterdir()):
-        if path.is_file():
-            manifest["raw_artifacts"][raw_ref(path)] = compute_file_sha256(path)
-    for path in sorted(derived_dir.iterdir()):
-        if path.is_file():
-            manifest["derived_artifacts"][raw_ref(path)] = compute_file_sha256(path)
-    manifest_path = raw_dir / "run-manifest.raw.json"
-    write_json(manifest_path, manifest)
-    return {**plan, "status": "completed", "locked_url": locked, "benchmark_report": raw_ref(benchmark_path), "motion_sheet": raw_ref(motion_path), "raw_manifest": raw_ref(manifest_path), "artifacts_written": list(manifest["raw_artifacts"].keys()) + list(manifest["derived_artifacts"].keys())}
 
 
-def validate_motion_sheet(sheet: Mapping[str, Any], *, root: Path = ROOT, require_real: bool = False) -> None:
+def validate_motion_sheet(sheet: Mapping[str, Any], *, root: Path = ROOT, require_real: bool = False,
+                          evidence_root: Optional[Path] = None,
+                          path_resolver: PathResolver = identity_path_resolver) -> None:
     require_nonempty_string(sheet.get("motion_sheet_version"), "motion_sheet_version")
     require_nonempty_string(sheet.get("effect_id"), "effect_id")
     validate_local_route(require_nonempty_string(sheet.get("route"), "route"))
@@ -615,6 +842,7 @@ def validate_motion_sheet(sheet: Mapping[str, Any], *, root: Path = ROOT, requir
         require(claim == "real_browser_capture_completed",
                 "acceptance motion sheet requires capture_claim == real_browser_capture_completed")
     spatial_by_index: Dict[int, Mapping[str, Any]] = {}
+    seen_capture_hashes: Dict[str, int] = {}
     last_time = -math.inf
     for i, cell in enumerate(spatial):
         cell = require_mapping(cell, f"spatial_sheet[{i}]")
@@ -627,14 +855,23 @@ def validate_motion_sheet(sheet: Mapping[str, Any], *, root: Path = ROOT, requir
         spatial_by_index[idx] = cell
         if claim == "real_browser_capture_completed":
             require(cell.get("status") == "captured", f"spatial_sheet[{i}].status must be captured for real claims")
-            rel = repo_relative_path(cell.get("capture_path"), f"spatial_sheet[{i}].capture_path")
-            path = root / rel
+            requested_time = float(cell.get("requested_time_ms", t))
+            observed_time = float(cell.get("observed_time_ms", t))
+            require(abs(observed_time - t) < 0.0001, f"spatial_sheet[{i}].time_ms must equal observed_time_ms")
+            require(abs(observed_time - requested_time) <= 0.01, f"spatial_sheet[{i}] observed time must match requested locked time")
+            capture_ref = require_nonempty_string(cell.get("capture_path"), f"spatial_sheet[{i}].capture_path")
+            logical_path, path = resolved_repo_path(root, capture_ref, f"spatial_sheet[{i}].capture_path", path_resolver)
             require(path.exists() and path.is_file(), f"spatial_sheet[{i}].capture_path must exist")
+            require(not path_has_symlink_component(logical_path), f"spatial_sheet[{i}].capture_path logical path must not use symlinks")
             require(not path_has_symlink_component(path), f"spatial_sheet[{i}].capture_path must not use symlinks")
-            realpath_under(path, root, f"spatial_sheet[{i}].capture_path")
+            realpath_under(path, evidence_root or root, f"spatial_sheet[{i}].capture_path")
             validate_sha256(cell.get("capture_sha256"), f"spatial_sheet[{i}].capture_sha256")
             actual_hash = compute_file_sha256(path)
             require(actual_hash == cell.get("capture_sha256"), f"spatial_sheet[{i}].capture_sha256 mismatch")
+            if actual_hash in seen_capture_hashes and observed_time > float(spatial_by_index[seen_capture_hashes[actual_hash]]["time_ms"]):
+                require(sheet.get("static_scene_contract") is True,
+                        f"duplicate PNG bytes reused for distinct chronological frame {idx}")
+            seen_capture_hashes[actual_hash] = idx
         else:
             require(cell.get("capture_path") is None and cell.get("status") == "pending_real_capture",
                     f"spatial_sheet[{i}] fixture scaffold must keep capture_path null and pending")
@@ -696,7 +933,60 @@ def percentile(sorted_values: Sequence[float], pct: float) -> float:
     return sorted_values[floor] * (ceil - k) + sorted_values[ceil] * (k - floor)
 
 
-def validate_benchmark(report: Mapping[str, Any], *, require_real: bool = False) -> None:
+def validate_run_manifest(manifest: Mapping[str, Any], *, root: Path = ROOT, evidence_root: Path = DEFAULT_CAPTURE_ROOT,
+                          validate_linked: bool = True, manifest_ref: Optional[str] = None,
+                          path_resolver: PathResolver = identity_path_resolver) -> None:
+    require_nonempty_string(manifest.get("run_manifest_version"), "run_manifest_version")
+    require_nonempty_string(manifest.get("run_id"), "run_id")
+    validate_local_route(require_nonempty_string(manifest.get("route"), "route"))
+    require_iso8601(manifest.get("created_at"), "created_at")
+    artifact_sha256 = require_mapping(manifest.get("artifact_sha256"), "artifact_sha256")
+    require(artifact_sha256, "artifact_sha256 must be non-empty")
+    if manifest_ref is not None:
+        repo_relative_path(manifest_ref, "manifest_ref")
+        require(str(manifest.get("benchmark_report")) != manifest_ref, "manifest benchmark_report must not reference the run manifest itself")
+        require(str(manifest.get("motion_sheet")) != manifest_ref, "manifest motion_sheet must not reference the run manifest itself")
+    evidence_real = evidence_root.resolve(strict=True)
+    for ref, expected_sha in artifact_sha256.items():
+        ref_text = str(ref)
+        if manifest_ref is not None:
+            require(ref_text != manifest_ref, "run manifest must not include its own sha256 in artifact_sha256")
+        require(Path(ref_text).name != "run-manifest.raw.json", "run manifest self-reference is forbidden in artifact_sha256")
+        logical_path, path = resolved_repo_path(root, ref_text, "artifact_sha256 ref", path_resolver)
+        require(path.exists() and path.is_file(), f"manifest artifact does not exist: {ref}")
+        require(not path_has_symlink_component(logical_path), f"manifest artifact logical path must not use symlinks: {ref}")
+        require(not path_has_symlink_component(path), f"manifest artifact must not use symlinks: {ref}")
+        realpath_under(path, evidence_real, f"manifest artifact {ref}")
+        validate_sha256(expected_sha, f"artifact_sha256[{ref}]")
+        require(compute_file_sha256(path) == expected_sha, f"manifest artifact sha mismatch: {ref}")
+    benchmark_ref = require_nonempty_string(manifest.get("benchmark_report"), "benchmark_report")
+    motion_ref = require_nonempty_string(manifest.get("motion_sheet"), "motion_sheet")
+    for label, ref in (("benchmark_report", benchmark_ref), ("motion_sheet", motion_ref)):
+        require(ref in artifact_sha256, f"{label} must be bound in artifact_sha256")
+    if validate_linked:
+        benchmark_logical, benchmark_path = resolved_repo_path(root, benchmark_ref, "benchmark_report", path_resolver)
+        motion_logical, motion_path = resolved_repo_path(root, motion_ref, "motion_sheet", path_resolver)
+        require(not path_has_symlink_component(benchmark_logical), "benchmark_report logical path must not use symlinks")
+        require(not path_has_symlink_component(motion_logical), "motion_sheet logical path must not use symlinks")
+        benchmark = require_mapping(load_json(benchmark_path), "benchmark_report")
+        if manifest_ref is not None:
+            require(benchmark.get("run_manifest_ref") == manifest_ref, "benchmark run_manifest_ref must match this run manifest path")
+        else:
+            require_nonempty_string(benchmark.get("run_manifest_ref"), "benchmark.run_manifest_ref")
+        require(benchmark.get("run_id") == manifest.get("run_id"), "benchmark run_id must match run manifest")
+        require(benchmark.get("route") == manifest.get("route"), "benchmark route must match run manifest")
+        validate_benchmark(benchmark, require_real=True, root=root, validate_manifest_binding=False,
+                           benchmark_ref=benchmark_ref, evidence_root=evidence_root, path_resolver=path_resolver)
+        validate_motion_sheet(require_mapping(load_json(motion_path), "motion_sheet"), root=root, require_real=True,
+                              evidence_root=evidence_root, path_resolver=path_resolver)
+        for ref in benchmark.get("artifact_evidence", []):
+            require(str(ref) in artifact_sha256, f"benchmark artifact_evidence not bound in run manifest: {ref}")
+
+
+def validate_benchmark(report: Mapping[str, Any], *, require_real: bool = False, root: Path = ROOT,
+                       validate_manifest_binding: bool = True, benchmark_ref: Optional[str] = None,
+                       evidence_root: Optional[Path] = None,
+                       path_resolver: PathResolver = identity_path_resolver) -> None:
     evidence_kind = require_nonempty_string(report.get("evidence_kind"), "evidence_kind")
     require(evidence_kind in {"fixture_scaffold", "real_acceptance"}, "evidence_kind must distinguish fixture_scaffold from real_acceptance")
     if evidence_kind == "real_acceptance":
@@ -713,6 +1003,23 @@ def validate_benchmark(report: Mapping[str, Any], *, require_real: bool = False)
     require(isinstance(artifact_evidence, list) and artifact_evidence, "artifact_evidence must bind samples/artifacts")
     for i, item in enumerate(artifact_evidence):
         require_nonempty_string(item, f"artifact_evidence[{i}]")
+    if evidence_kind == "real_acceptance":
+        manifest_ref = report.get("run_manifest_ref")
+        if validate_manifest_binding:
+            manifest_ref = require_nonempty_string(manifest_ref, "run_manifest_ref")
+            logical_manifest_path, manifest_path = resolved_repo_path(root, manifest_ref, "run_manifest_ref", path_resolver)
+            require(manifest_path.exists() and manifest_path.is_file(), "run_manifest_ref must exist")
+            require(not path_has_symlink_component(logical_manifest_path), "run_manifest_ref logical path must not use symlinks")
+            require(not path_has_symlink_component(manifest_path), "run_manifest_ref must not use symlinks")
+            manifest_root = evidence_root or manifest_path.parents[1]
+            manifest = require_mapping(load_json(manifest_path), "run_manifest")
+            validate_run_manifest(manifest, root=root, evidence_root=manifest_root, validate_linked=True,
+                                  manifest_ref=manifest_ref, path_resolver=path_resolver)
+            if benchmark_ref is not None:
+                require(manifest.get("benchmark_report") == benchmark_ref,
+                        "run manifest benchmark_report must reference this benchmark")
+            require(manifest.get("run_id") == report.get("run_id"), "run_manifest run_id must match benchmark")
+            require(manifest.get("route") == report.get("route"), "run_manifest route must match benchmark")
     viewport = require_mapping(report.get("viewport"), "viewport")
     require(int(viewport.get("width", 0)) > 0 and int(viewport.get("height", 0)) > 0, "viewport width/height must be positive")
     require(float(report.get("dpr", 0)) >= 1.0, "DPR must be >= 1")
@@ -776,7 +1083,7 @@ def validate_target_matrix(matrix: Mapping[str, Any], *, evidence_root: Path = D
         require(target.exists() and target.is_file(), f"devices[{i}].benchmark_evidence_ref does not exist: {ref}")
         require(not path_has_symlink_component(target), f"devices[{i}].benchmark_evidence_ref must not use symlinks")
         realpath_under(target, evidence_root, f"devices[{i}].benchmark_evidence_ref")
-        validate_benchmark(load_json(target), require_real=require_real)
+        validate_benchmark(load_json(target), require_real=require_real, benchmark_ref=ref, evidence_root=evidence_root)
 
 
 def validator_for_payload(data: Mapping[str, Any], *, require_real_benchmark: bool = False,
@@ -789,6 +1096,7 @@ def validator_for_payload(data: Mapping[str, Any], *, require_real_benchmark: bo
         ("capture_spec", "capture_spec_version", validate_capture_spec),
         ("motion", "motion_sheet_version", lambda payload: validate_motion_sheet(payload, require_real=require_real_motion)),
         ("benchmark", "benchmark_schema_version", lambda payload: validate_benchmark(payload, require_real=require_real_benchmark)),
+        ("run_manifest", "run_manifest_version", lambda payload: validate_run_manifest(payload, evidence_root=DEFAULT_CAPTURE_ROOT, validate_linked=True)),
         ("candidate_factory", "factory_schema_version", validate_candidate_factory),
         ("release", "release_manifest_version", validate_release_manifest),
     ]
@@ -814,7 +1122,14 @@ def validate_evidence_ref(ref: str, *, evidence_root: Path, seen: Optional[Set[P
                                             require_real_motion=require_real_motion)
     if real not in seen:
         seen.add(real)
-        validator(data)
+        if kind == "benchmark":
+            validate_benchmark(data, require_real=require_real_benchmark, benchmark_ref=ref, evidence_root=evidence_root)
+        elif kind == "motion":
+            validate_motion_sheet(data, require_real=require_real_motion, evidence_root=evidence_root)
+        elif kind == "run_manifest":
+            validate_run_manifest(data, evidence_root=evidence_root, validate_linked=True, manifest_ref=ref)
+        else:
+            validator(data)
     return kind
 
 
@@ -838,7 +1153,8 @@ def validate_gates(gate_manifest: Mapping[str, Any], *, evidence_root: Path = DE
         has_scene = "scene" in validated_kinds
         has_benchmark = "benchmark" in validated_kinds
         has_motion = "motion" in validated_kinds
-        computed = has_provenance and has_scene and (gate_name == "gate_1" or has_benchmark) and (gate_name == "gate_1" or has_motion)
+        has_run_manifest = "run_manifest" in validated_kinds
+        computed = has_provenance and has_scene and (gate_name == "gate_1" or (has_benchmark and has_motion and has_run_manifest))
         if mode == "scaffold" and gate_name in {"gate_2", "gate_3"}:
             # Fixture/scaffold artifacts may validate structurally, but never become
             # Gate 2/3 acceptance passes without real benchmark/capture evidence.
@@ -1028,6 +1344,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--time-ms", type=float, default=0.0)
     p.add_argument("--mode", default="demo")
     p.add_argument("--viewport", default="1280x720")
+    p.add_argument("--dpr", type=float, default=1.0)
     p.add_argument("--frames", default="0,60")
     p.add_argument("--out-root", type=Path, default=DEFAULT_CAPTURE_ROOT)
     p.add_argument("--run-id", default="dry-run")
@@ -1039,6 +1356,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--time-ms", type=float, default=0.0)
     p.add_argument("--mode", default="demo")
     p.add_argument("--viewport", default="1280x720")
+    p.add_argument("--dpr", type=float, default=1.0)
     p.add_argument("--frames", default="0,60")
     p.add_argument("--out-root", type=Path, default=DEFAULT_CAPTURE_ROOT)
     p.add_argument("--run-id")
@@ -1080,7 +1398,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             plan = local_capture_plan(route=args.route, seed=args.seed, time_ms=args.time_ms, mode=args.mode,
                                       viewport={"width": width, "height": height},
                                       frame_indices=parse_frame_indices(args.frames), out_root=args.out_root,
-                                      run_id=args.run_id, timeout_ms=args.timeout_ms)
+                                      run_id=args.run_id, timeout_ms=args.timeout_ms, dpr=args.dpr)
             print(json.dumps(plan, indent=2, sort_keys=True))
         elif args.command == "capture-local":
             width, height = [int(part) for part in args.viewport.lower().split("x", 1)]
@@ -1089,7 +1407,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                                viewport={"width": width, "height": height},
                                                out_root=args.out_root, run_id=args.run_id,
                                                frame_indices=parse_frame_indices(args.frames),
-                                               timeout_ms=args.timeout_ms)
+                                               timeout_ms=args.timeout_ms, dpr=args.dpr)
             print(json.dumps(result, indent=2, sort_keys=True))
             if result.get("status") == "unsupported":
                 return 2

@@ -66,7 +66,9 @@ export function installV4CaptureHarness(options = {}) {
       exportedState: {
         v4RuntimeSmoke: window.__V4_RUNTIME_SMOKE__ || null,
         v4HeroLab: window.__V4_HERO_LAB__ || null,
+        v4CathedralWebGPU: window.__V4_CATHEDRAL_WEBGPU__ || null,
         v4CaptureConfig: window.__V4_CAPTURE_CONFIG__,
+        locationSearch: window.location.search,
       },
       memory: { jsHeapUsedMB: perfMemory ? perfMemory.usedJSHeapSize / 1048576 : null },
       gpuTiming: { frameMs: null, unknownReason: 'WebGPU timestamp queries unavailable to this harness' },

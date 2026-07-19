@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import subprocess
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -61,6 +62,9 @@ def real_motion_sheet_with_captures(tmp):
 
 
 class EvidenceValidationTests(unittest.TestCase):
+    def setUp(self):
+        (ROOT / "v4" / "evidence" / "local-runs").mkdir(parents=True, exist_ok=True)
+
     def test_all_fixtures_validate_as_honest_scaffold(self):
         results = ev.verify_all(FIXTURES)
         self.assertTrue(all(r.ok for r in results), results)
@@ -180,7 +184,7 @@ class EvidenceValidationTests(unittest.TestCase):
         data = realish_benchmark()
         data["gpu_timing"]["frame_ms"] = {"value": None, "unknown_reason": "Timestamp query unavailable in browser", "unit": "ms"}
         data["memory"]["gpu_memory_mb"] = {"value": None, "unknown_reason": "Browser GPU memory unavailable", "unit": "MB"}
-        ev.validate_benchmark(data, require_real=True)
+        ev.validate_benchmark(data, require_real=True, validate_manifest_binding=False)
         data["console_logs"] = [{"type": "error", "text": "Shader compile failed"}]
         with self.assertRaises(ev.EvidenceError):
             ev.validate_benchmark(data, require_real=True)
@@ -200,6 +204,115 @@ class EvidenceValidationTests(unittest.TestCase):
             ev.local_capture_plan(route="v4/demo.html", seed=1, time_ms=0, mode="demo",
                                   viewport={"width": 640, "height": 360}, frame_indices=[0, 60],
                                   out_root=Path("/tmp"), run_id="bad", timeout_ms=1000)
+        plan = ev.local_capture_plan(route="v4/demo.html", seed=1, time_ms=0, mode="demo",
+                                     viewport={"width": 640, "height": 360}, frame_indices=[0, 60],
+                                     out_root=ROOT / "v4" / "evidence" / "local-runs", run_id="dpr-plan",
+                                     timeout_ms=1000, dpr=2.0)
+        self.assertEqual(plan["dpr"], 2.0)
+        with self.assertRaises(ev.EvidenceError):
+            ev.local_capture_plan(route="v4/demo.html", seed=1, time_ms=0, mode="demo",
+                                  viewport={"width": 640, "height": 360}, frame_indices=[0, 60],
+                                  out_root=ROOT / "v4" / "evidence" / "local-runs", run_id="bad-dpr",
+                                  timeout_ms=1000, dpr=0.5)
+
+    def test_file_routes_resolve_under_repo_and_reject_symlink_escape(self):
+        ev.validate_local_route((ROOT / "v4" / "demo.html").as_uri())
+        with self.assertRaises(ev.EvidenceError):
+            ev.validate_local_route(Path("/etc/passwd").as_uri())
+        with tempfile.TemporaryDirectory(dir=ROOT) as td:
+            link = Path(td) / "escape.html"
+            link.symlink_to("/etc/passwd")
+            with self.assertRaises(ev.EvidenceError):
+                ev.validate_local_route(link.as_uri())
+
+    def test_motion_sheet_rejects_duplicate_pngs_and_mislabeled_observed_chronology(self):
+        with tempfile.TemporaryDirectory(dir=FIXTURES) as td:
+            tmp = Path(td)
+            sheet = real_motion_sheet_with_captures(tmp)
+            for cell in sheet["spatial_sheet"]:
+                cell["requested_time_ms"] = cell["time_ms"]
+                cell["observed_time_ms"] = cell["time_ms"]
+            ev.validate_motion_sheet(sheet, require_real=True)
+            duplicate = json.loads(json.dumps(sheet))
+            duplicate["spatial_sheet"][1]["capture_path"] = duplicate["spatial_sheet"][0]["capture_path"]
+            duplicate["spatial_sheet"][1]["capture_sha256"] = duplicate["spatial_sheet"][0]["capture_sha256"]
+            duplicate["chronological_sheet"][0]["to_capture_path"] = duplicate["spatial_sheet"][1]["capture_path"]
+            with self.assertRaises(ev.EvidenceError):
+                ev.validate_motion_sheet(duplicate, require_real=True)
+            mislabeled = json.loads(json.dumps(sheet))
+            mislabeled["spatial_sheet"][1]["observed_time_ms"] = mislabeled["spatial_sheet"][0]["observed_time_ms"]
+            mislabeled["spatial_sheet"][1]["time_ms"] = mislabeled["spatial_sheet"][0]["time_ms"]
+            with self.assertRaises(ev.EvidenceError):
+                ev.validate_motion_sheet(mislabeled, require_real=True)
+
+    def test_run_manifest_hash_binding_is_required_for_real_benchmark_acceptance(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / "v4" / "evidence" / "local-runs") as td:
+            run = Path(td)
+            raw = run / "raw"; derived = run / "derived"
+            raw.mkdir(); derived.mkdir()
+            (raw / "frame-a.png").write_bytes(b"frame-a")
+            (raw / "frame-b.png").write_bytes(b"frame-b")
+            telemetry = raw / "frame-telemetry.raw.json"
+            telemetry.write_text("{}\n", encoding="utf-8")
+            captures = [
+                {"frame_index": 0, "time_ms": 0.0, "requested_time_ms": 0.0, "observed_time_ms": 0.0, "capture_path": str((raw / "frame-a.png").relative_to(ROOT)), "capture_sha256": ev.compute_file_sha256(raw / "frame-a.png")},
+                {"frame_index": 60, "time_ms": 1000.0, "requested_time_ms": 1000.0, "observed_time_ms": 1000.0, "capture_path": str((raw / "frame-b.png").relative_to(ROOT)), "capture_sha256": ev.compute_file_sha256(raw / "frame-b.png")},
+            ]
+            motion = ev.build_real_motion_sheet_from_captures(effect_id="manifest-test", route="v4/lab/filament-vortex.html", seed=1, viewport={"width": 640, "height": 360}, dpr=1.0, captures=captures)
+            motion_path = derived / "motion_sheet.json"; motion_path.write_text(json.dumps(motion), encoding="utf-8")
+            samples = [{"frame_index": i, "frame_ms": 16.0 + (i % 3), "evidence_ref": str(telemetry.relative_to(ROOT))} for i in range(120)]
+            summary = ev.summarize_samples(samples)
+            manifest_path = raw / "run-manifest.raw.json"
+            bench = realish_benchmark()
+            bench["gpu_timing"]["frame_ms"] = {"value": None, "unknown_reason": "Timestamp query unavailable in browser", "unit": "ms"}
+            bench["memory"]["gpu_memory_mb"] = {"value": None, "unknown_reason": "Browser GPU memory unavailable", "unit": "MB"}
+            bench.update({"effect_id": "manifest-test", "run_id": run.name, "route": "v4/lab/filament-vortex.html", "run_manifest_ref": str(manifest_path.relative_to(ROOT)), "artifact_evidence": [str(telemetry.relative_to(ROOT)), str(motion_path.relative_to(ROOT)), captures[0]["capture_path"], captures[1]["capture_path"]], "frame_samples": samples, "summary": summary})
+            bench_path = derived / "benchmark_report.json"; bench_path.write_text(json.dumps(bench), encoding="utf-8")
+            manifest = {"run_manifest_version":"1.0","run_id":run.name,"route":"v4/lab/filament-vortex.html","created_at":"2026-07-18T21:31:00Z","benchmark_report":str(bench_path.relative_to(ROOT)),"motion_sheet":str(motion_path.relative_to(ROOT)),"artifact_sha256":{}}
+            for path in [raw / "frame-a.png", raw / "frame-b.png", telemetry, motion_path, bench_path]:
+                manifest["artifact_sha256"][str(path.relative_to(ROOT))] = ev.compute_file_sha256(path)
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            manifest_ref = str(manifest_path.relative_to(ROOT))
+            benchmark_ref = str(bench_path.relative_to(ROOT))
+            ev.validate_run_manifest(manifest, evidence_root=run, manifest_ref=manifest_ref)
+            ev.validate_benchmark(bench, require_real=True, benchmark_ref=benchmark_ref, evidence_root=run)
+            self_ref = json.loads(json.dumps(manifest))
+            self_ref["artifact_sha256"][manifest_ref] = ev.compute_file_sha256(manifest_path)
+            with self.assertRaises(ev.EvidenceError):
+                ev.validate_run_manifest(self_ref, evidence_root=run, manifest_ref=manifest_ref)
+            broken = json.loads(json.dumps(manifest))
+            broken["artifact_sha256"][captures[0]["capture_path"]] = "0" * 64
+            with self.assertRaises(ev.EvidenceError):
+                ev.validate_run_manifest(broken, evidence_root=run, manifest_ref=manifest_ref)
+
+    def test_capture_local_goto_error_removes_temporary_artifacts(self):
+        class FakePage:
+            def on(self, *args, **kwargs): pass
+            def add_init_script(self, *args, **kwargs): pass
+            def goto(self, *args, **kwargs): raise RuntimeError("goto failed")
+            def close(self): pass
+        class FakeContext:
+            def new_page(self): return FakePage()
+            def close(self): pass
+        class FakeBrowser:
+            def new_context(self, *args, **kwargs): return FakeContext()
+            def close(self): pass
+        class FakeChromium:
+            def launch(self, *args, **kwargs): return FakeBrowser()
+        class FakePlaywright:
+            chromium = FakeChromium()
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+        fake_module = types.SimpleNamespace(sync_playwright=lambda: FakePlaywright())
+        with tempfile.TemporaryDirectory(dir=ROOT) as td, mock.patch.dict("sys.modules", {"playwright": types.SimpleNamespace(sync_api=fake_module), "playwright.sync_api": fake_module}):
+            out_root = Path(td) / "runs"
+            with self.assertRaises(RuntimeError):
+                ev.run_local_browser_capture(route="v4/lab/filament-vortex.html", effect_id="demo", seed=1,
+                                             time_ms=0, mode="demo", viewport={"width": 640, "height": 360},
+                                             out_root=out_root, run_id="goto-fail", frame_indices=[0, 60],
+                                             timeout_ms=1000, dpr=1.5)
+            self.assertFalse((out_root / "goto-fail").exists())
+            self.assertEqual(list(out_root.glob("*")), [])
 
     def test_capture_local_reports_unsupported_without_creating_artifacts_when_playwright_missing(self):
         with tempfile.TemporaryDirectory(dir=ROOT) as td:
