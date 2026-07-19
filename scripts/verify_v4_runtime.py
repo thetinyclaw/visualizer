@@ -35,6 +35,8 @@ graph = read("render-graph.js")
 executor = read("render-graph-executor.js")
 resources = read("resource-manager.js")
 runtime = read("runtime.js")
+resources = read("resource-manager.js")
+assets = read("asset-loader.js")
 demo = read("demo.html")
 
 # Capability probing and deterministic selection.
@@ -120,7 +122,16 @@ require("new WebGpuGraphExecutor" in runtime and "graphExecutor.render()" in run
 
 # Runtime/demo route.
 require("startV4Runtime" in runtime and "probeRenderer" in runtime, "runtime orchestration missing")
+require("DeviceResourceManager" in runtime and "resourceManager" in runtime, "runtime resource manager integration missing")
+for token in ["createBuffer", "createTexture", "createSampler", "createBindGroupLayout", "createBindGroup", "knownAllocatedBytes", "externalUsageKnown", "stale", "generation"]:
+    require(token in resources, f"resource manager contract {token} missing")
+require("resource-memory-budget-exceeded" in resources, "resource manager budget guard missing")
+require("Only resources created through DeviceResourceManager" in resources, "honest resource telemetry note missing")
+for token in ["AssetLoader", "AssetCache", "asset-cross-origin-rejected", "asset-too-large", "asset-content-type-rejected", "inflight", "same-origin", "credentials: 'same-origin'"]:
+    require(token in assets, f"asset loader/cache contract {token} missing")
 require("No live GPU telemetry" in demo, "demo must not fake live GPU telemetry")
+require("createBuffer('smoke-particles'" in demo and "createTexture('smoke-lut'" in demo, "demo does not allocate real WebGPU smoke resources")
+require("external browser/driver usage: unknown" in demo, "demo telemetry must report external usage as unknown")
 require("Runtime initialization failed safely" in demo, "demo safe failure path missing")
 require("data-renderer-mode" in demo or "dataset.rendererMode" in runtime, "demo mode reporting hook missing")
 require("import { startV4Runtime } from './runtime.js';" in demo, "demo does not load v4 runtime module")

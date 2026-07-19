@@ -47,7 +47,7 @@ Safari does not expose an AirPlay picker for a WebGL canvas, so the television i
 
 For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Example: `index.html?pattern=8&seed=491009` opens and locks a repeatable **Cosmic Mycelium** scene without auto-transitioning.
 
-Visualizer v4 runtime foundation lives in the isolated `v4/` module surface. Open `http://127.0.0.1:8789/v4/demo.html` for a smoke route that probes full WebGPU, reduced WebGPU, or WebGL2 legacy fallback and visibly reports the selected mode without displaying fake live GPU telemetry.
+Visualizer v4 runtime foundation lives in the isolated `v4/` module surface. Open `http://127.0.0.1:8789/v4/demo.html` for a smoke route that probes full WebGPU, reduced WebGPU, or WebGL2 legacy fallback and visibly reports the selected mode. When WebGPU is active the route creates real managed smoke buffer/texture resources and reports only manager-known allocation bytes while labeling browser/driver/external GPU usage as unknown; fallback mode allocates no fake resources.
 
 The six reference-informed effects are part of the automatic main cycle at indices `13–18` and remain available as standalone candidate pages. Every route accepts deterministic `?seed=...`; append `?benchmark=1&seed=491009&frames=120` for native-density telemetry:
 

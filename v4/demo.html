@@ -11,7 +11,7 @@
     h1 { letter-spacing: .08em; margin: 0 0 12px; }
     canvas { width: 100%; height: 260px; display: block; border-radius: 14px; background: radial-gradient(circle at 50% 50%, #17365a, #03050a 70%); }
     #status { margin: 16px 0 8px; color: #86e7ff; }
-    #errors { color: #8da4b7; font-size: 13px; white-space: pre-wrap; }
+    #errors, #telemetry { color: #8da4b7; font-size: 13px; white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -20,6 +20,7 @@
     <h1>VISUALIZER V4 RUNTIME</h1>
     <canvas id="v4-canvas" width="960" height="360" aria-label="v4 runtime smoke canvas"></canvas>
     <div id="status">Probing renderer…</div>
+    <div id="telemetry"></div>
     <div id="errors"></div>
   </section>
 </main>
@@ -43,10 +44,22 @@ const smokeManifest = {
 
 const canvas = document.getElementById('v4-canvas');
 const statusElement = document.getElementById('status');
+const telemetryElement = document.getElementById('telemetry');
 const errorsElement = document.getElementById('errors');
 
 try {
   const runtime = await startV4Runtime({ canvas, statusElement, manifest: smokeManifest });
+  let resourceTelemetry = null;
+  if (runtime.resourceManager) {
+    const bufferUsage = globalThis.GPUBufferUsage ? (GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST) : 0x80 | 0x8;
+    const textureUsage = globalThis.GPUTextureUsage ? (GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST) : 0x04 | 0x02;
+    runtime.resourceManager.createBuffer('smoke-particles', { size: 32768, usage: bufferUsage, label: 'runtime-smoke:particles' });
+    runtime.resourceManager.createTexture('smoke-lut', { size: [16, 16, 1], format: 'rgba8unorm', usage: textureUsage, label: 'runtime-smoke:lut' });
+    resourceTelemetry = runtime.resourceManager.telemetry();
+    telemetryElement.textContent = `Known manager allocation: ${resourceTelemetry.knownAllocatedBytes} bytes; external browser/driver usage: unknown.`;
+  } else {
+    telemetryElement.textContent = 'WebGPU resource manager inactive; no GPU resources allocated on fallback route.';
+  }
   errorsElement.textContent = runtime.publicErrors.map((error) => `${error.code}: ${error.message}`).join('\n');
   const ctx = runtime.graphExecutor ? null : canvas.getContext('2d');
   if (ctx) {

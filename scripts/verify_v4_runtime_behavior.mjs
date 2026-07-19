@@ -4,7 +4,8 @@ import { GpuLifecycle, GPU_LIFECYCLE_STATES } from '../v4/gpu-lifecycle.js';
 import { RenderGraph, storageBuffer, instancedDepthTarget, computePass, boundedVolumePass, feedbackPass, postPass, compositePass } from '../v4/render-graph.js';
 import { validateSceneManifest } from '../v4/scene-manifest.js';
 import { startV4Runtime } from '../v4/runtime.js';
-import { AssetCache, GpuResourceManager } from '../v4/resource-manager.js';
+import { DeviceResourceManager } from '../v4/resource-manager.js';
+import { AssetCache, AssetLoader } from '../v4/asset-loader.js';
 import { WebGpuGraphExecutor } from '../v4/render-graph-executor.js';
 import { AudioFeatureBus, AUDIO_BAND_COUNT, makeLogBandEdges } from '../v4/audio-feature-bus.js';
 import { LiveAudioFeatureBridge, LIVE_AUDIO_STATES } from '../v4/live-audio-engine.js';
@@ -64,6 +65,9 @@ function makeResourceDevice() {
       calls.textures.push(resource);
       return resource;
     },
+    createSampler(descriptor) { return { descriptor, destroyed: false, destroy() { this.destroyed = true; } }; },
+    createBindGroupLayout(descriptor) { return { descriptor, destroyed: false, destroy() { this.destroyed = true; } }; },
+    createBindGroup(descriptor) { return { descriptor, destroyed: false, destroy() { this.destroyed = true; } }; },
   };
 }
 
@@ -300,6 +304,109 @@ function validManifest() {
     controls: [{ id: 'density', type: 'float', min: 0, max: 1, default: 1, pipeline: 'scene-volume' }],
     transitions: [{ id: 'crossfade', type: 'crossfade', durationMs: 900, from: 'scene-volume', to: 'bloom-tonemap' }],
   };
+}
+
+async function testDeviceResourceManagerBehavior() {
+  const first = makeDevice('resources-a');
+  const second = makeDevice('resources-b');
+  let index = 0;
+  const lifecycle = new GpuLifecycle({ maxRetries: 1, retryDelayMs: 0 });
+  await lifecycle.acquire(async () => [first, second][index++]);
+  const manager = new DeviceResourceManager(lifecycle, { memoryBudgetBytes: 40960, labelPrefix: 'test' });
+
+  const a = manager.createBuffer('particles', { size: 1024, usage: 1 });
+  const reused = manager.createBuffer('particles', { size: 1024, usage: 1 });
+  assert.equal(reused.resource, a.resource, 'same descriptor is reused within a generation');
+  assert.equal(manager.telemetry().knownAllocatedBytes, 1024);
+
+  const texture = manager.createTexture('lut', { size: [4, 4, 1], format: 'rgba8unorm', usage: 1 });
+  assert.equal(texture.knownBytes, 64, 'texture allocation uses known format byte accounting');
+  const sampler = manager.createSampler('linear', { magFilter: 'linear', minFilter: 'linear' });
+  const layout = manager.createBindGroupLayout('layout', { entries: [{ binding: 0, visibility: 1, sampler: {} }] });
+  const bindGroup = manager.createBindGroup('bind-group', { layout: layout.resource, entries: [{ binding: 0, resource: sampler.resource }] });
+  assert.equal(bindGroup.kind, 'bind-group', 'bind group descriptors with GPU object refs are supported');
+  assert.equal(manager.telemetry().externalUsageKnown, false, 'external GPU usage is reported honestly as unknown');
+
+  assert.throws(() => manager.createBuffer('too-big', { size: 10_000_000, usage: 1 }), /Known GPU resource allocations would exceed/);
+
+  first.lose('unknown');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(lifecycle.device, second);
+  assert.equal(manager.isHandleCurrent(a), false, 'pre-loss handles become stale');
+  assert.equal(a.resource.destroyed, true, 'device-loss disposal destroys old GPU handles');
+  assert.equal(manager.telemetry().knownAllocatedBytes, 0);
+
+  const recreated = manager.createBuffer('particles', { size: 1024, usage: 1 });
+  assert.notEqual(recreated.resource, a.resource, 'resource is recreated on the new generation');
+  assert.equal(recreated.generation, lifecycle.generation);
+  assert.equal(manager.release('particles'), true);
+  assert.equal(manager.get('particles'), null);
+  manager.clear();
+  assert.equal(manager.telemetry().resources.length, 0);
+}
+
+function makeHeaders(values) {
+  const lower = new Map(Object.entries(values).map(([key, value]) => [key.toLowerCase(), String(value)]));
+  return { get(name) { return lower.get(String(name).toLowerCase()) || null; } };
+}
+
+function makeJsonResponse(body, headers = {}) {
+  const text = JSON.stringify(body);
+  return {
+    ok: true,
+    headers: makeHeaders({ 'content-type': 'application/json', 'content-length': String(text.length), ...headers }),
+    async json() { return body; },
+    async text() { return text; },
+    async arrayBuffer() { return new TextEncoder().encode(text).buffer; },
+  };
+}
+
+async function testAssetLoaderAndCacheContainment() {
+  let fetchCount = 0;
+  const loader = new AssetLoader({
+    baseUrl: 'https://example.test/v4/demo.html',
+    timeoutMs: 50,
+    maxBytes: 128,
+    fetchImpl: async () => {
+      fetchCount += 1;
+      await Promise.resolve();
+      return makeJsonResponse({ mesh: [1, 2, 3] });
+    },
+  });
+  const cache = new AssetCache(loader);
+  const [one, two] = await Promise.all([
+    cache.load('./assets/mesh.json'),
+    cache.load('/v4/assets/mesh.json'),
+  ]);
+  assert.equal(fetchCount, 1, 'equivalent same-origin loads are in-flight deduplicated');
+  assert.equal(one, two);
+  assert.equal(cache.telemetry().knownBytes > 0, true);
+  assert.equal(cache.release(one.key), true);
+  assert.equal(cache.get(one.key), null);
+
+  await assert.rejects(() => cache.load('https://evil.test/mesh.json'), /Cross-origin assets are rejected/);
+
+  const hugeLoader = new AssetLoader({
+    baseUrl: 'https://example.test/',
+    maxBytes: 4,
+    fetchImpl: async () => makeJsonResponse({ too: 'large' }, { 'content-length': '99' }),
+  });
+  await assert.rejects(() => hugeLoader.load('/huge.json'), /Asset exceeds configured size bound/);
+
+  const badTypeLoader = new AssetLoader({
+    baseUrl: 'https://example.test/',
+    fetchImpl: async () => makeJsonResponse({ ok: true }, { 'content-type': 'text/html' }),
+  });
+  await assert.rejects(() => badTypeLoader.load('/page.html'), /Asset content type is not allowed/);
+
+  const timeoutLoader = new AssetLoader({
+    baseUrl: 'https://example.test/',
+    timeoutMs: 1,
+    fetchImpl: async (_url, init) => new Promise((_resolve, reject) => {
+      init.signal.addEventListener('abort', () => reject(new Error('network abort detail should be sanitized')), { once: true });
+    }),
+  });
+  await assert.rejects(() => timeoutLoader.load('/slow.bin'), /Asset request was aborted or timed out/);
 }
 
 function testSceneManifestDeepValidation() {
@@ -596,8 +703,9 @@ await testRuntimeUsesLifecycleAndRetryBudget();
 await testExplicitLifecycleBudgetResetOnly();
 await testStalePendingRetryCannotReplaceExplicitReacquire();
 await testRuntimeFallbackUpdatesPublicStatusContract();
-await testResourceManagerAndAssetCache();
 testExecutableRenderGraphSubmission();
+await testDeviceResourceManagerBehavior();
+await testAssetLoaderAndCacheContainment();
 testRenderGraphDeepValidation();
 testSceneManifestDeepValidation();
 await testFallbackCanvasSeparation();
