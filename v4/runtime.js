@@ -25,6 +25,18 @@ export async function startV4Runtime({
     ...gpuLifecycleOptions,
     onStateChange: (event) => {
       if (statusElement) statusElement.dataset.gpuState = event.state;
+      if (event.state === 'fallback-required') {
+        selectedMode = RENDERER_MODES.WEBGL2_LEGACY;
+        publicErrors.push(Object.freeze({
+          code: event.publicError || 'gpu-fallback-required',
+          message: 'GPU lifecycle entered terminal fallback; WebGPU is inactive.',
+        }));
+        if (statusElement) {
+          statusElement.textContent = `${describeRendererMode(selectedMode)} fallback required`;
+          statusElement.dataset.rendererMode = selectedMode;
+          statusElement.dataset.webgpuActive = 'false';
+        }
+      }
       if (typeof gpuLifecycleOptions.onStateChange === 'function') gpuLifecycleOptions.onStateChange(event);
     },
   });
@@ -48,8 +60,8 @@ export async function startV4Runtime({
   }
 
   const runtime = Object.freeze({
-    mode: selectedMode,
-    modeLabel: describeRendererMode(selectedMode),
+    get mode() { return selectedMode; },
+    get modeLabel() { return describeRendererMode(selectedMode); },
     manifest: safeManifest,
     graph,
     audioBus,
@@ -60,7 +72,7 @@ export async function startV4Runtime({
   if (statusElement) {
     statusElement.textContent = `${runtime.modeLabel} selected`;
     statusElement.dataset.rendererMode = runtime.mode;
-    statusElement.dataset.webgpuActive = String(runtime.mode !== RENDERER_MODES.WEBGL2_LEGACY);
+    statusElement.dataset.webgpuActive = String(runtime.mode !== RENDERER_MODES.WEBGL2_LEGACY && lifecycle.state !== 'fallback-required');
   }
 
   return runtime;

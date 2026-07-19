@@ -82,6 +82,78 @@ async function testExplicitLifecycleBudgetResetOnly() {
   assert.equal(lifecycle.retryCount, 0, 'explicit reset boundary clears retry count');
 }
 
+async function testStalePendingRetryCannotReplaceExplicitReacquire() {
+  const initial = makeDevice('initial');
+  const explicit = makeDevice('explicit-reacquire');
+  const staleRetry = makeDevice('stale-retry');
+  const retryDelay = deferred();
+  let retryRequests = 0;
+  const lifecycle = new GpuLifecycle({
+    maxRetries: 3,
+    retryDelayMs: 50,
+    retryScheduler: () => retryDelay.promise,
+  });
+  const originalRequestDevice = async () => {
+    retryRequests += 1;
+    return retryRequests === 1 ? initial : staleRetry;
+  };
+
+  await lifecycle.acquire(originalRequestDevice);
+  initial.lose('unknown');
+  await Promise.resolve();
+  assert.equal(lifecycle.state, GPU_LIFECYCLE_STATES.RETRYING, 'loss should park in delayed retry state');
+
+  await lifecycle.acquire(async () => explicit);
+  assert.equal(lifecycle.device, explicit, 'explicit reacquire installs the newer device');
+  assert.equal(lifecycle.generation, 2);
+
+  retryDelay.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(retryRequests, 1, 'stale delayed retry must abort before requesting another device');
+  assert.equal(lifecycle.device, explicit, 'finalDevice must stay the explicit device, not the stale retry');
+  assert.notEqual(lifecycle.device, staleRetry);
+}
+
+async function testRuntimeFallbackUpdatesPublicStatusContract() {
+  const first = makeDevice('terminal-loss');
+  let requestCount = 0;
+  const adapter = {
+    features: new Set(['timestamp-query', 'texture-compression-bc']),
+    limits: { maxStorageBuffersPerShaderStage: 4, maxStorageBufferBindingSize: 1 << 20 },
+    async requestDevice() {
+      requestCount += 1;
+      return first;
+    },
+  };
+  const statusElement = { dataset: {}, textContent: '' };
+  const runtime = await startV4Runtime({
+    canvas: makeCanvas(),
+    statusElement,
+    manifest: validManifest(),
+    navigatorObject: { gpu: { async requestAdapter() { return adapter; } } },
+    gpuLifecycleOptions: { maxRetries: 0, retryDelayMs: 0 },
+    createFallbackCanvas: makeCanvas,
+  });
+  assert.equal(runtime.mode, RENDERER_MODES.WEBGPU_FULL);
+  assert.equal(statusElement.dataset.rendererMode, RENDERER_MODES.WEBGPU_FULL);
+  assert.equal(statusElement.dataset.webgpuActive, 'true');
+
+  first.lose('unknown');
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(requestCount, 1, 'terminal fallback must not request another device');
+  assert.equal(runtime.lifecycle.state, GPU_LIFECYCLE_STATES.FALLBACK);
+  assert.equal(runtime.mode, RENDERER_MODES.WEBGL2_LEGACY, 'runtime mode becomes honest fallback mode');
+  assert.equal(statusElement.dataset.rendererMode, RENDERER_MODES.WEBGL2_LEGACY);
+  assert.equal(statusElement.dataset.webgpuActive, 'false');
+  assert.equal(statusElement.dataset.gpuState, GPU_LIFECYCLE_STATES.FALLBACK);
+  assert.ok(!statusElement.textContent.includes('WebGPU selected'), 'visible status must not keep stale WebGPU selected copy');
+  assert.match(statusElement.textContent, /fallback required/i);
+  assert.ok(runtime.publicErrors.some((error) => error.code === 'gpu-retry-limit-exceeded'), 'public runtime errors record terminal fallback reason');
+}
+
 function testRenderGraphDeepValidation() {
   const base = () => new RenderGraph({ id: 'bad' })
     .addResource(storageBuffer('input', 16))
@@ -157,8 +229,10 @@ async function testFallbackCanvasSeparation() {
 
 await testRuntimeUsesLifecycleAndRetryBudget();
 await testExplicitLifecycleBudgetResetOnly();
+await testStalePendingRetryCannotReplaceExplicitReacquire();
+await testRuntimeFallbackUpdatesPublicStatusContract();
 testRenderGraphDeepValidation();
 testSceneManifestDeepValidation();
 await testFallbackCanvasSeparation();
 console.log('Behavioral v4 runtime tests passed');
-console.log('Covered lifecycle adoption/loss budget, render-graph refs, manifest refs, and WebGL2/2D canvas separation');
+console.log('Covered lifecycle adoption/loss budget/stale retry aborts, fallback status, render-graph refs, manifest refs, and WebGL2/2D canvas separation');

@@ -17,7 +17,7 @@ function sanitizeDeviceLoss(reason) {
 }
 
 export class GpuLifecycle {
-  constructor({ maxRetries = 2, retryDelayMs = 250, onStateChange = () => {} } = {}) {
+  constructor({ maxRetries = 2, retryDelayMs = 250, onStateChange = () => {}, retryScheduler = null } = {}) {
     this.maxRetries = maxRetries;
     this.retryDelayMs = retryDelayMs;
     this.onStateChange = onStateChange;
@@ -25,26 +25,31 @@ export class GpuLifecycle {
     this.device = null;
     this.retryCount = 0;
     this.generation = 0;
+    this.lifecycleEpoch = 0;
     this.resources = new Set();
     this.disposed = false;
+    this.retryScheduler = retryScheduler || ((delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)));
   }
 
   resetLossBudget(reason = 'explicit-reset-boundary') {
+    this.lifecycleEpoch += 1;
     this.retryCount = 0;
     this.transition(this.state, { budgetReset: reason });
   }
 
   transition(state, detail = {}) {
     this.state = state;
-    this.onStateChange(Object.freeze({ state, generation: this.generation, retryCount: this.retryCount, ...detail }));
+    this.onStateChange(Object.freeze({ state, generation: this.generation, lifecycleEpoch: this.lifecycleEpoch, retryCount: this.retryCount, ...detail }));
   }
 
-  async acquire(requestDevice) {
+  async acquire(requestDevice, retryToken = null) {
     if (this.disposed) return null;
+    if (!retryToken) this.lifecycleEpoch += 1;
+    if (!this.isRetryTokenCurrent(retryToken)) return null;
     this.transition(GPU_LIFECYCLE_STATES.REQUESTING);
     try {
       const device = await requestDevice();
-      if (this.disposed) {
+      if (this.disposed || !this.isRetryTokenCurrent(retryToken)) {
         if (device && typeof device.destroy === 'function') device.destroy();
         return null;
       }
@@ -58,6 +63,13 @@ export class GpuLifecycle {
       this.transition(GPU_LIFECYCLE_STATES.FALLBACK, { publicError: 'gpu-device-request-failed' });
       return null;
     }
+  }
+
+  isRetryTokenCurrent(retryToken) {
+    if (!retryToken) return true;
+    return !this.disposed &&
+      retryToken.generation === this.generation &&
+      retryToken.lifecycleEpoch === this.lifecycleEpoch;
   }
 
   registerResource(resource) {
@@ -92,13 +104,16 @@ export class GpuLifecycle {
       return null;
     }
     this.retryCount += 1;
+    const retryToken = Object.freeze({ generation: this.generation, lifecycleEpoch: this.lifecycleEpoch });
     this.transition(GPU_LIFECYCLE_STATES.RETRYING);
-    await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs));
-    return this.acquire(requestDevice);
+    await this.retryScheduler(this.retryDelayMs);
+    if (!this.isRetryTokenCurrent(retryToken)) return null;
+    return this.acquire(requestDevice, retryToken);
   }
 
   dispose() {
     this.disposed = true;
+    this.lifecycleEpoch += 1;
     this.disposeResources();
     if (this.device && typeof this.device.destroy === 'function') this.device.destroy();
     this.device = null;
