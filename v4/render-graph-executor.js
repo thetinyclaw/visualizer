@@ -3,6 +3,8 @@
 const RENDER_ATTACHMENT = globalThis.GPUTextureUsage?.RENDER_ATTACHMENT ?? 0x10;
 const TEXTURE_BINDING = globalThis.GPUTextureUsage?.TEXTURE_BINDING ?? 0x04;
 const COPY_SRC = globalThis.GPUTextureUsage?.COPY_SRC ?? 0x01;
+const UNIFORM = globalThis.GPUBufferUsage?.UNIFORM ?? 0x40;
+const COPY_DST = globalThis.GPUBufferUsage?.COPY_DST ?? 0x08;
 
 const EXECUTABLE_PASS_KINDS = new Set(['render', 'bounded-volume', 'compute', 'post', 'history', 'composite']);
 const DEFAULT_CLEAR = Object.freeze({ r: 0.015, g: 0.025, b: 0.055, a: 1 });
@@ -155,6 +157,7 @@ export class WebGpuGraphExecutor {
     this.ownedTextures = new Map();
     this.fullscreenSampler = null;
     this.autoBindGroups = new Map();
+    this.transitionUniforms = new Map();
     this.historyStates = new Map();
     this.textureGeneration = 0;
     this.width = 0;
@@ -363,15 +366,27 @@ export class WebGpuGraphExecutor {
       // imposed on scene-specific pipelines with different layouts.
       if (compiled.executor || !['post', 'composite'].includes(compiled.kind) || !compiled.pipeline || typeof compiled.pipeline.getBindGroupLayout !== 'function' || typeof this.device.createBindGroup !== 'function') continue;
       const sourceIds = compiled.kind === 'post' ? (compiled.pass.inputs || []) : (compiled.pass.layers || []);
-      if (sourceIds.length !== 1) throw fail(`Pass ${compiled.pass.id} requires exactly one sampled source in this foundation.`);
+      const isCrossfade = compiled.kind === 'composite' && compiled.pass.transition?.type === 'crossfade';
+      const expectedSources = isCrossfade ? 2 : 1;
+      if (sourceIds.length !== expectedSources) throw fail(`Pass ${compiled.pass.id} requires exactly ${expectedSources} sampled source${expectedSources === 1 ? '' : 's'}.`);
       if (this.historyStates.has(sourceIds[0])) continue;
       const sampler = this.ensureFullscreenSampler();
-      const view = this.textureView(sourceIds[0]);
-      if (!sampler || !view) throw fail(`Pass ${compiled.pass.id} cannot create fullscreen bind group.`);
+      const views = sourceIds.map((id) => this.textureView(id));
+      if (!sampler || views.some((view) => !view)) throw fail(`Pass ${compiled.pass.id} cannot create fullscreen bind group.`);
+      let entries = [{ binding: 0, resource: sampler }, { binding: 1, resource: views[0] }];
+      if (isCrossfade) {
+        let transition = this.transitionUniforms.get(compiled.pass.id);
+        if (!transition) {
+          const buffer = this.device.createBuffer({ label: `${this.graph.id}:${compiled.pass.id}:crossfade-progress`, size: 16, usage: UNIFORM | COPY_DST });
+          transition = { buffer, values: new Float32Array(4) };
+          this.transitionUniforms.set(compiled.pass.id, transition);
+        }
+        entries = [...entries, { binding: 2, resource: views[1] }, { binding: 3, resource: { buffer: transition.buffer } }];
+      }
       this.autoBindGroups.set(compiled.pass.id, this.device.createBindGroup({
         label: `${this.graph.id}:${compiled.pass.id}:fullscreen-bind-group`,
         layout: compiled.pipeline.getBindGroupLayout(0),
-        entries: [{ binding: 0, resource: sampler }, { binding: 1, resource: view }],
+        entries,
       }));
     }
   }
@@ -451,6 +466,13 @@ export class WebGpuGraphExecutor {
     }
     const passEncoder = encoder.beginRenderPass(descriptor);
     if (compiled.pipeline) passEncoder.setPipeline(compiled.pipeline);
+    if (compiled.kind === 'composite' && passDef.transition?.type === 'crossfade') {
+      const transition = this.transitionUniforms.get(passDef.id);
+      if (!transition) throw fail(`Pass ${passDef.id} crossfade uniform is unavailable.`);
+      const requested = Number.isFinite(frameContext.transitionProgress) ? frameContext.transitionProgress : passDef.transition.progress;
+      transition.values[0] = Math.max(0, Math.min(1, Number(requested) || 0));
+      this.device.queue.writeBuffer(transition.buffer, 0, transition.values, 0, transition.values.byteLength);
+    }
     const autoBindGroup = this.autoBindGroups.get(passDef.id) || this.dynamicHistoryBindGroup(compiled);
     if (autoBindGroup && typeof passEncoder.setBindGroup === 'function') passEncoder.setBindGroup(0, autoBindGroup);
     bindPassResources(passEncoder, this.resourceRegistry, passDef);
@@ -514,6 +536,8 @@ export class WebGpuGraphExecutor {
     this.ownedTextures.clear();
     this.historyStates.clear();
     this.autoBindGroups.clear();
+    for (const transition of this.transitionUniforms.values()) if (typeof transition.buffer?.destroy === 'function') transition.buffer.destroy();
+    this.transitionUniforms.clear();
     this.fullscreenSampler = null;
     this.textureGeneration += 1;
     if (typeof this.context.unconfigure === 'function') this.context.unconfigure();

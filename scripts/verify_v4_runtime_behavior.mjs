@@ -344,6 +344,53 @@ function testExecutableBoundedVolumeSubmission() {
   assert.equal(calls.submissions.length, 1);
 }
 
+function testExecutableTwoLayerCrossfadeComposite() {
+  const calls = { bindGroups: [], submissions: [] };
+  const context = {
+    configure() {},
+    getCurrentTexture() { return { createView: () => ({ id: 'swap-view' }) }; },
+    unconfigure() {},
+  };
+  const canvas = { width: 320, height: 180, clientWidth: 320, clientHeight: 180, getBoundingClientRect: () => ({ width: 320, height: 180 }), getContext: (kind) => kind === 'webgpu' ? context : null };
+  const device = makeResourceDevice();
+  device.createCommandEncoder = () => ({
+    beginRenderPass() {
+      return { setPipeline() {}, setBindGroup(slot, group) { calls.bindGroups.push([slot, group]); }, draw() {}, end() {} };
+    },
+    finish() { return { id: 'crossfade-command-buffer' }; },
+  });
+  device.queue.submit = (buffers) => calls.submissions.push(buffers);
+  const graph = new RenderGraph({ id: 'crossfade-compositor' })
+    .addResource(renderTarget('outgoing-color'))
+    .addResource(renderTarget('incoming-color'))
+    .addPass(renderPass('outgoing', { pipeline: 'scene-a', colorTargets: ['outgoing-color'], draw: [3, 1, 0, 0] }))
+    .addPass(renderPass('incoming', { pipeline: 'scene-b', colorTargets: ['incoming-color'], draw: [3, 1, 0, 0] }))
+    .addPass(compositePass('crossfade', {
+      layers: ['outgoing-color', 'incoming-color'],
+      transition: { type: 'crossfade', progress: 0.25 },
+      output: 'swapchain',
+      pipeline: 'crossfade-pipeline',
+      draw: [3, 1, 0, 0],
+    }))
+    .freeze();
+  const executor = new WebGpuGraphExecutor({
+    device,
+    canvas,
+    graph,
+    pipelines: new Map([['scene-a', makePipeline('scene-a')], ['scene-b', makePipeline('scene-b')], ['crossfade-pipeline', makePipeline('crossfade')]]),
+  });
+  const crossfadeGroup = device.calls.bindGroups.find((group) => group.descriptor.label.includes('crossfade'));
+  assert.deepEqual(crossfadeGroup.descriptor.entries.map((entry) => entry.binding), [0, 1, 2, 3], 'crossfade binds sampler, both layers, and progress uniform');
+  assert.equal(crossfadeGroup.descriptor.entries[1].resource.texture.descriptor.label, 'crossfade-compositor:outgoing-color');
+  assert.equal(crossfadeGroup.descriptor.entries[2].resource.texture.descriptor.label, 'crossfade-compositor:incoming-color');
+  executor.render({ transitionProgress: 0.75 });
+  const progressWrite = device.calls.writes.find((write) => write[0] === 'buffer' && write[1].descriptor.label.includes('crossfade'));
+  assert.equal(progressWrite[3][0], 0.75, 'frame transition progress reaches the GPU uniform');
+  assert.equal(calls.submissions.length, 1);
+  executor.dispose();
+  assert.equal(progressWrite[1].destroyed, true, 'crossfade uniform is executor-owned and destroyed');
+}
+
 async function testResourceManagerAndAssetCache() {
   const device = makeResourceDevice();
   const manager = new GpuResourceManager(device);
@@ -1543,6 +1590,7 @@ testExecutableRenderGraphSubmission();
 testExecutableHistoryPingPongTransactions();
 testExecutablePostStackAndCompositeSubmission();
 testExecutableBoundedVolumeSubmission();
+testExecutableTwoLayerCrossfadeComposite();
 testExecutorCanvasSizingContracts();
 testExecutorFailsClosed();
 await testRuntimeNoExecutorWhenUnavailableAndFallbackCleanup();

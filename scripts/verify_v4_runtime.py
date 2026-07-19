@@ -119,6 +119,8 @@ require("getContext('webgpu')" in executor and "context.configure" in executor, 
 require("createCommandEncoder" in executor and "beginRenderPass" in executor, "render-pass command encoding missing")
 require("depth24plus" in executor and "queue.submit" in executor, "depth target or GPU queue submission missing")
 require("'bounded-volume'" in executor and "passDef.outputs" in executor, "bounded volume pass is not executable")
+require("transitionUniforms" in executor and "transitionProgress" in executor and "expectedSources = isCrossfade ? 2 : 1" in executor, "two-layer crossfade compositor is not executable")
+require("transition: { type: 'crossfade', progress: 0.55 }" in demo and "incomingTexture" in demo, "demo does not execute the two-layer crossfade path")
 require("new WebGpuGraphExecutor" in runtime and "graphExecutor.render(" in runtime, "runtime does not execute the render graph")
 
 # Runtime/demo route.

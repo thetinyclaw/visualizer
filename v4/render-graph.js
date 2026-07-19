@@ -231,6 +231,13 @@ export class RenderGraph {
           requireResourceList(pass, 'layer', pass.layers); requireResource(pass, 'output', pass.output || 'swapchain');
           for (const layer of pass.layers || []) requireType(pass, 'layer', layer, [RESOURCE_TYPES.RENDER_TARGET, RESOURCE_TYPES.HISTORY_TARGET]);
           if ((pass.output || 'swapchain') !== 'swapchain') errors.push(`pass ${pass.id} composite output must be swapchain`);
+          if (pass.transition !== null) {
+            if (!pass.transition || pass.transition.type !== 'crossfade') errors.push(`pass ${pass.id} transition must be an executable crossfade descriptor`);
+            else {
+              if ((pass.layers || []).length !== 2) errors.push(`pass ${pass.id} crossfade requires exactly two layers`);
+              if (!Number.isFinite(pass.transition.progress) || pass.transition.progress < 0 || pass.transition.progress > 1) errors.push(`pass ${pass.id} crossfade progress must be between 0 and 1`);
+            }
+          }
           break;
         default: break;
       }
@@ -264,5 +271,5 @@ export function makeSceneGraphFoundation(sceneId) {
     .addPass(boundedVolumePass('volume', { pipeline: 'scene-volume', bounds: [-1, -1, -1, 1, 1, 1], depthTarget: 'scene-depth', inputs: ['particle-state-b'], outputs: ['volume-color'] }))
     .addPass(feedbackPass('feedback', { source: 'scene-depth', history: 'particle-state', output: 'post-color' }))
     .addPass(postPass('post', { pipeline: 'bloom-tonemap', inputs: ['scene-depth'], output: 'post-color' }))
-    .addPass(compositePass('composite', { layers: ['post-color'], transition: 'crossfade', output: 'swapchain' }));
+    .addPass(compositePass('composite', { layers: ['post-color'], output: 'swapchain' }));
 }
