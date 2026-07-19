@@ -17,7 +17,7 @@ import { filamentVortexManifest, makeFilamentVortexGraph } from '../v4/scenes/fi
 import { createFilamentVortexPipelines, createFilamentVortexExecutors } from '../v4/scenes/filament-vortex/pipeline.js';
 import { createNeonVoxelCloudScene, demoVoxelBands, voxelByteSignature, VOXEL_INSTANCE_COUNT, VOXEL_CONTRACT } from '../v4/scenes/neon-voxel-cloud/geometry.js';
 import { neonVoxelCloudManifest, makeNeonVoxelCloudGraph } from '../v4/scenes/neon-voxel-cloud/manifest.js';
-import { createNeonVoxelCloudExecutors } from '../v4/scenes/neon-voxel-cloud/pipeline.js';
+import { createNeonVoxelCloudExecutors, assertNeonVoxelCloudDescriptorContracts } from '../v4/scenes/neon-voxel-cloud/pipeline.js';
 
 function deferred() {
   let resolve;
@@ -1390,6 +1390,9 @@ function testNeonVoxelCloudGraphAndManifestContracts() {
   const frozen = graph.freeze();
   assert.deepEqual(frozen.passes.map((pass) => pass.id), ['voxel-compute', 'voxel-instanced-render', 'voxel-post', 'voxel-composite']);
   assert.equal(frozen.passes[0].kind, 'compute');
+  assert.equal(frozen.passes[2].kind, 'post', 'fullscreen post is a declared post pass with its own sampled input/output layout');
+  assert.deepEqual(frozen.passes[2].inputs, ['voxel-scene-color']);
+  assert.equal(frozen.passes[2].output, 'voxel-post-color');
   assert.deepEqual(frozen.passes[0].workgroups, VOXEL_CONTRACT.computeWorkgroups, 'compute dispatch covers all 260 instances');
   assert.equal(frozen.passes[1].indexFormat, 'uint16', 'instanced cube renderer uses uint16 cube indices');
 }
@@ -1423,6 +1426,13 @@ function testNeonVoxelCloudExecutorDispatchAndInstancedDrawReuse() {
   assert.deepEqual(device.calls.drawIndexed, [36, VOXEL_INSTANCE_COUNT, 0, 0, 0], 'instanced cube drawIndexed uses instanceCount 260');
   assert.equal(device.calls.indexBuffer[1], 'uint16', 'cube index buffer is bound as uint16');
   assert.equal(device.calls.submissions.length, 1, 'command buffer is submitted');
+  assertNeonVoxelCloudDescriptorContracts(device.calls.bindGroups.map((group) => group.descriptor));
+  const payloadBindingSets = device.calls.bindGroups
+    .filter((group) => group.descriptor?.label?.startsWith('neon-voxel-cloud:'))
+    .map((group) => [group.descriptor.label, group.descriptor.entries.map((entry) => entry.binding).sort((a, b) => a - b)]);
+  assert.deepEqual(payloadBindingSets.find(([label]) => label.includes('voxel-compute'))[1], [0, 1, 2, 6], 'compute bind group sees base read and payload write only');
+  assert.deepEqual(payloadBindingSets.find(([label]) => label.includes('voxel-instanced-render'))[1], [0, 1, 3], 'render bind group sees final payload read only');
+  assert.ok(payloadBindingSets.filter(([, bindings]) => bindings.includes(3) && bindings.includes(6)).length === 0, 'no bind group binds voxel-payload as both read-only and read-write');
   const initialWrites = device.calls.writes.length;
   const bindGroupsAfterFirstFrame = device.created.filter((resource) => resource.descriptor?.label?.startsWith('neon-voxel-cloud:')).length;
   executor.render({ time: 4, scene, audio });

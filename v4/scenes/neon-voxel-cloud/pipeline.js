@@ -26,37 +26,57 @@ export function createNeonVoxelCloudPipelines({ device, format }) {
   }
   const stage = gpuStage();
   const module = device.createShaderModule({ label: 'neon-voxel-cloud-wgsl', code: neonVoxelWgsl });
-  const bindGroupLayout = device.createBindGroupLayout({
-    label: 'neon-voxel-cloud-frame-bindings',
+  const computeBindGroupLayout = device.createBindGroupLayout({
+    label: 'neon-voxel-cloud-compute-bindings',
     entries: [
-      { binding: 0, visibility: stage.COMPUTE | stage.VERTEX | stage.FRAGMENT, buffer: { type: 'uniform' } },
-      { binding: 1, visibility: stage.COMPUTE | stage.VERTEX | stage.FRAGMENT, buffer: { type: 'uniform' } },
-      { binding: 2, visibility: stage.COMPUTE | stage.VERTEX, buffer: { type: 'read-only-storage' } },
-      { binding: 3, visibility: stage.VERTEX, buffer: { type: 'read-only-storage' } },
-      { binding: 4, visibility: stage.FRAGMENT, sampler: { type: 'filtering' } },
-      { binding: 5, visibility: stage.FRAGMENT, texture: { sampleType: 'float' } },
+      { binding: 0, visibility: stage.COMPUTE, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: stage.COMPUTE, buffer: { type: 'uniform' } },
+      { binding: 2, visibility: stage.COMPUTE, buffer: { type: 'read-only-storage' } },
       { binding: 6, visibility: stage.COMPUTE, buffer: { type: 'storage' } },
     ],
   });
-  const pipelineLayout = device.createPipelineLayout({ label: 'neon-voxel-cloud-pipeline-layout', bindGroupLayouts: [bindGroupLayout] });
-  const compute = device.createComputePipeline({ label: 'neon-voxel-cloud-compute-pipeline', layout: pipelineLayout, compute: { module, entryPoint: 'csVoxel' } });
+  const renderBindGroupLayout = device.createBindGroupLayout({
+    label: 'neon-voxel-cloud-render-bindings',
+    entries: [
+      { binding: 0, visibility: stage.VERTEX | stage.FRAGMENT, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: stage.VERTEX | stage.FRAGMENT, buffer: { type: 'uniform' } },
+      { binding: 3, visibility: stage.VERTEX, buffer: { type: 'read-only-storage' } },
+    ],
+  });
+  const fullscreenBindGroupLayout = device.createBindGroupLayout({
+    label: 'neon-voxel-cloud-fullscreen-bindings',
+    entries: [
+      { binding: 0, visibility: stage.FRAGMENT, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: stage.FRAGMENT, buffer: { type: 'uniform' } },
+      { binding: 4, visibility: stage.FRAGMENT, sampler: { type: 'filtering' } },
+      { binding: 5, visibility: stage.FRAGMENT, texture: { sampleType: 'float' } },
+    ],
+  });
+  const computeLayout = device.createPipelineLayout({ label: 'neon-voxel-cloud-compute-layout', bindGroupLayouts: [computeBindGroupLayout] });
+  const renderLayout = device.createPipelineLayout({ label: 'neon-voxel-cloud-render-layout', bindGroupLayouts: [renderBindGroupLayout] });
+  const fullscreenLayout = device.createPipelineLayout({ label: 'neon-voxel-cloud-fullscreen-layout', bindGroupLayouts: [fullscreenBindGroupLayout] });
+  const compute = device.createComputePipeline({ label: 'neon-voxel-cloud-compute-pipeline', layout: computeLayout, compute: { module, entryPoint: 'csVoxel' } });
   const render = device.createRenderPipeline({
     label: 'neon-voxel-cloud-instanced-render-pipeline',
-    layout: pipelineLayout,
+    layout: renderLayout,
     vertex: { module, entryPoint: 'vsVoxel', buffers: [{ arrayStride: CUBE_VERTEX_STRIDE, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] }] },
     fragment: { module, entryPoint: 'fsVoxel', targets: [{ format, blend: { color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' } } }] },
     primitive: { topology: 'triangle-list', cullMode: 'back', frontFace: 'ccw' },
     depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
   });
-  const post = device.createRenderPipeline({ label: 'neon-voxel-cloud-post-pipeline', layout: pipelineLayout, vertex: { module, entryPoint: 'vsFullscreen' }, fragment: { module, entryPoint: 'fsPost', targets: [{ format }] }, primitive: { topology: 'triangle-list', cullMode: 'none' } });
-  const composite = device.createRenderPipeline({ label: 'neon-voxel-cloud-composite-pipeline', layout: pipelineLayout, vertex: { module, entryPoint: 'vsFullscreen' }, fragment: { module, entryPoint: 'fsComposite', targets: [{ format }] }, primitive: { topology: 'triangle-list', cullMode: 'none' } });
+  const post = device.createRenderPipeline({ label: 'neon-voxel-cloud-post-pipeline', layout: fullscreenLayout, vertex: { module, entryPoint: 'vsFullscreen' }, fragment: { module, entryPoint: 'fsPost', targets: [{ format }] }, primitive: { topology: 'triangle-list', cullMode: 'none' } });
+  const composite = device.createRenderPipeline({ label: 'neon-voxel-cloud-composite-pipeline', layout: fullscreenLayout, vertex: { module, entryPoint: 'vsFullscreen' }, fragment: { module, entryPoint: 'fsComposite', targets: [{ format }] }, primitive: { topology: 'triangle-list', cullMode: 'none' } });
   const pipelines = new Map([
     ['voxel-compute-pipeline', compute],
     ['voxel-render-pipeline', render],
     ['voxel-post-pipeline', post],
     ['voxel-composite-pipeline', composite],
   ]);
-  pipelines.bindGroupLayout = bindGroupLayout;
+  pipelines.bindGroupLayouts = Object.freeze({
+    compute: computeBindGroupLayout,
+    render: renderBindGroupLayout,
+    fullscreen: fullscreenBindGroupLayout,
+  });
   return pipelines;
 }
 
@@ -76,31 +96,79 @@ function bindGroupInputTexture(graphPass) {
   return 'asset:voxel-pixel';
 }
 
+function layoutKindForPass(graphPass) {
+  if (graphPass.id === 'voxel-compute') return 'compute';
+  if (graphPass.id === 'voxel-instanced-render') return 'render';
+  return 'fullscreen';
+}
+
+function bindGroupEntriesForPass({ graphPass, resources, sampler, textureView }) {
+  if (graphPass.id === 'voxel-compute') {
+    return [
+      { binding: 0, resource: { buffer: resources.get('voxel-frame') } },
+      { binding: 1, resource: { buffer: resources.get('voxel-audio') } },
+      { binding: 2, resource: { buffer: resources.get('voxel-base') } },
+      { binding: 6, resource: { buffer: resources.get('voxel-payload') } },
+    ];
+  }
+  if (graphPass.id === 'voxel-instanced-render') {
+    return [
+      { binding: 0, resource: { buffer: resources.get('voxel-frame') } },
+      { binding: 1, resource: { buffer: resources.get('voxel-audio') } },
+      { binding: 3, resource: { buffer: resources.get('voxel-payload') } },
+    ];
+  }
+  return [
+    { binding: 0, resource: { buffer: resources.get('voxel-frame') } },
+    { binding: 1, resource: { buffer: resources.get('voxel-audio') } },
+    { binding: 4, resource: sampler },
+    { binding: 5, resource: textureView },
+  ];
+}
+
+export function assertNeonVoxelCloudDescriptorContracts(bindGroups) {
+  const byLabel = new Map((bindGroups || []).map((descriptor) => [descriptor.label, descriptor]));
+  const expected = Object.freeze({
+    'neon-voxel-cloud:voxel-compute:bind-group': [0, 1, 2, 6],
+    'neon-voxel-cloud:voxel-instanced-render:bind-group': [0, 1, 3],
+    'neon-voxel-cloud:voxel-post:bind-group': [0, 1, 4, 5],
+    'neon-voxel-cloud:voxel-composite:bind-group': [0, 1, 4, 5],
+  });
+  for (const [label, bindings] of Object.entries(expected)) {
+    const descriptor = byLabel.get(label);
+    if (!descriptor) throw new Error(`missing ${label}`);
+    const actual = descriptor.entries.map((entry) => entry.binding).sort((a, b) => a - b);
+    if (actual.join(',') !== bindings.join(',')) throw new Error(`${label} bindings ${actual.join(',')} did not match ${bindings.join(',')}`);
+  }
+  const compute = byLabel.get('neon-voxel-cloud:voxel-compute:bind-group');
+  const render = byLabel.get('neon-voxel-cloud:voxel-instanced-render:bind-group');
+  if (compute.entries.some((entry) => entry.binding === 3) || render.entries.some((entry) => entry.binding === 6)) {
+    throw new Error('voxel payload read/write bindings must be split across compute and render bind groups');
+  }
+  return true;
+}
+
 function getVoxelBindGroup({ device, resources, executor, graphPass, frameContext }) {
   const pipeline = executor.pipelineRegistry.get(graphPass.pipeline);
   if (!device.createBindGroup || !pipeline) return null;
-  const layout = executor.pipelineRegistry.bindGroupLayout || (typeof pipeline.getBindGroupLayout === 'function' ? pipeline.getBindGroupLayout(0) : null);
+  const layoutKind = layoutKindForPass(graphPass);
+  const layout = executor.pipelineRegistry.bindGroupLayouts?.[layoutKind] || (typeof pipeline.getBindGroupLayout === 'function' ? pipeline.getBindGroupLayout(0) : null);
   if (!layout) return null;
   const sampler = executor._voxelSampler || (executor._voxelSampler = device.createSampler ? device.createSampler({ label: 'neon-voxel-cloud-linear-sampler', magFilter: 'linear', minFilter: 'linear' }) : null);
   const inputTextureId = bindGroupInputTexture(graphPass);
-  const cacheKey = `${graphPass.id}:${inputTextureId}:${executor.textureGeneration || 0}`;
+  const cacheKey = `${layoutKind}:${graphPass.id}:${inputTextureId}:${executor.textureGeneration || 0}`;
   executor._voxelBindGroups = executor._voxelBindGroups || new Map();
   const cached = executor._voxelBindGroups.get(cacheKey);
   if (cached) { frameContext.lastBindGroup = cached; return cached; }
   const textureView = inputTextureId.startsWith('asset:') ? resources.get(inputTextureId)?.createView?.() : executor.textureView(inputTextureId);
-  const bindGroup = device.createBindGroup({
+  const bindGroupDescriptor = {
     label: `neon-voxel-cloud:${graphPass.id}:bind-group`,
     layout,
-    entries: [
-      { binding: 0, resource: { buffer: resources.get('voxel-frame') } },
-      { binding: 1, resource: { buffer: resources.get('voxel-audio') } },
-      { binding: 2, resource: { buffer: resources.get('voxel-base') } },
-      { binding: 3, resource: { buffer: resources.get('voxel-payload') } },
-      { binding: 4, resource: sampler },
-      { binding: 5, resource: textureView },
-      { binding: 6, resource: { buffer: resources.get('voxel-payload') } },
-    ],
-  });
+    entries: bindGroupEntriesForPass({ graphPass, resources, sampler, textureView }),
+  };
+  const bindGroup = device.createBindGroup(bindGroupDescriptor);
+  frameContext.voxelBindGroupDescriptors = frameContext.voxelBindGroupDescriptors || [];
+  frameContext.voxelBindGroupDescriptors.push({ label: bindGroupDescriptor.label, entries: bindGroupDescriptor.entries.map((entry) => ({ binding: entry.binding })) });
   executor._voxelBindGroups.set(cacheKey, bindGroup);
   frameContext.lastBindGroup = bindGroup;
   return bindGroup;

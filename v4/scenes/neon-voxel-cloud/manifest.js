@@ -1,4 +1,4 @@
-import { RenderGraph, uniformBuffer, storageBuffer, vertexBuffer, indexBuffer, renderTarget, depthTarget, computePass, renderPass, compositePass } from '../../render-graph.js';
+import { RenderGraph, uniformBuffer, storageBuffer, vertexBuffer, indexBuffer, renderTarget, depthTarget, computePass, renderPass, postPass, compositePass } from '../../render-graph.js';
 import { VOXEL_AUDIO_BYTES, VOXEL_BASE_BYTES, VOXEL_CONTRACT, VOXEL_FRAME_BYTES, VOXEL_INSTANCE_COUNT, VOXEL_PAYLOAD_BYTES } from './geometry.js';
 
 export const neonVoxelCloudManifest = Object.freeze({
@@ -49,9 +49,10 @@ export function makeNeonVoxelCloudGraph() {
       executor: 'voxel-bind-render',
       clearColor: { r: 0.001, g: 0.002, b: 0.012, a: 1 },
     }))
-    .addPass(renderPass('voxel-post', {
+    .addPass(postPass('voxel-post', {
       pipeline: 'voxel-post-pipeline',
-      colorTargets: ['voxel-post-color'],
+      inputs: ['voxel-scene-color'],
+      output: 'voxel-post-color',
       executor: 'voxel-bind-fullscreen',
       draw: [3, 1, 0, 0],
       clearColor: { r: 0.003, g: 0.006, b: 0.016, a: 1 },

@@ -17,7 +17,8 @@ function updateState(state, runtime, scene, frame = null) {
   const summary = scene.lastSummary;
   state.rendererMode = runtime.mode;
   state.webgpuActive = Boolean(runtime.graphExecutor && runtime.mode !== 'webgl2-legacy');
-  state.active = state.webgpuActive;
+  state.validationFailed = state.validationErrors.length > 0;
+  state.active = state.webgpuActive && !state.validationFailed;
   state.frame = frame || state.frame || null;
   state.seed = scene.seed;
   state.time = scene.lastTime;
@@ -35,7 +36,7 @@ function updateState(state, runtime, scene, frame = null) {
   state.passes = state.graphPassIds;
   state.dpr = frame?.dpr || runtime.graphExecutor?.dpr || Math.max(1, globalThis.devicePixelRatio || 1);
   state.telemetry = runtime.resourceManager?.telemetry?.() || null;
-  state.fallbackReason = runtime.publicErrors?.map((error) => error.code).join(', ') || '';
+  state.fallbackReason = state.validationFailed ? 'webgpu-validation-failed' : (runtime.publicErrors?.map((error) => error.code).join(', ') || '');
   state.audio = scene.lastAudio;
   state.byteSignature = voxelByteSignature(scene);
   state.frameCounters = runtime.frameCounters || null;
@@ -46,9 +47,29 @@ function updateState(state, runtime, scene, frame = null) {
 function writeStatus(status, state) {
   if (!status) return;
   const frameMode = state.frameMode === 'locked-single-frame' ? 'locked single-frame' : 'live RAF';
-  status.textContent = state.webgpuActive
+  status.textContent = state.validationFailed
+    ? `WebGPU validation failed; frame submission is not accepted · ${state.validationErrors[0]?.message || 'uncaptured GPU error'}`
+    : state.webgpuActive
     ? `WebGPU active · ${state.instances.count} coherent voxel cells · compute ${state.compute.workgroups.join('×')} · instanced drawIndexed ×260 · ${frameMode} · frames ${state.frameCounters?.submitted ?? 0}`
     : `WebGPU unavailable; old lab fallback link active · ${state.fallbackReason || 'probe unavailable'}`;
+}
+
+function installValidationProbe({ runtime, state, status, errors }) {
+  const device = runtime?.lifecycle?.device;
+  if (!device || typeof device.addEventListener !== 'function' || state._validationProbeInstalled) return false;
+  state._validationProbeInstalled = true;
+  device.addEventListener('uncapturederror', (event) => {
+    const message = event?.error?.message || event?.message || 'Uncaptured WebGPU validation error';
+    state.validationErrors.push({ message, name: event?.error?.name || 'GPUUncapturedErrorEvent' });
+    state.validationFailed = true;
+    state.active = false;
+    state.webgpuActive = false;
+    state.fallbackReason = 'webgpu-validation-failed';
+    if (errors) errors.textContent = state.validationErrors.map((error) => `webgpu-validation-failed: ${error.message}`).join('\n');
+    writeStatus(status, state);
+    console.error('[Neon Voxel Cloud] WebGPU validation failure', message);
+  });
+  return true;
 }
 
 export async function startVoxelRoute(windowObject = window) {
@@ -69,6 +90,7 @@ export async function startVoxelRoute(windowObject = window) {
     frame: null, telemetry: null, fallback: { href: './lab/neon-voxel-cloud.html', label: 'old WebGL lab fallback' }, fallbackReason: '',
     frameMode: locked ? 'locked-single-frame' : 'live-raf', frameCounters: null, lastFrameMs: 0, rafScheduled: false,
     structuralAudio: scene.structuralAudioMappings, materialHierarchy: scene.materialHierarchy, byteSignature: voxelByteSignature(scene),
+    validationErrors: [], validationFailed: false, _validationProbeInstalled: false,
   };
   windowObject.__V4_VOXEL_WEBGPU__ = state;
 
@@ -90,8 +112,13 @@ export async function startVoxelRoute(windowObject = window) {
     executorRegistry: createNeonVoxelCloudExecutors(),
     dprCap: 2,
     windowObject,
+    gpuLifecycleOptions: {
+      onStateChange: () => installValidationProbe({ runtime: windowObject.__V4_VOXEL_RUNTIME__, state, status, errors }),
+    },
   });
+  windowObject.__V4_VOXEL_RUNTIME__ = runtime;
   await runtime.resourcesReady;
+  installValidationProbe({ runtime, state, status, errors });
   let frame = runtime.lastFrame;
   const initialTime = Number.isFinite(params.lockedTime) ? params.lockedTime : 0;
   if (locked) {
