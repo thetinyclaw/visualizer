@@ -216,6 +216,10 @@ require("effectiveDprX: canvas.width / window.innerWidth" in html, "benchmark na
 require("BENCHMARK_SAMPLE_FRAMES" in html, "benchmark frame sampler missing")
 require("Math.max(120, Math.min(600, requestedBenchmarkFrames))" in html,
         "single-pattern benchmark allows undersized acceptance samples")
+require("function captureBenchmarkVisualMetrics()" in html and
+        "gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);" in html and
+        "visualMetrics: captureBenchmarkVisualMetrics()" in html,
+        "post-timing benchmark visual metrics are missing")
 require('id="btn-tv"' in html, "TV Mode control missing")
 require('id="btn-fft" href="fft.html"' in html, "main visualizer lacks FFT Observatory navigation")
 require('<meta name="mobile-web-app-capable" content="yes">' in html,

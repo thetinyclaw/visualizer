@@ -67,7 +67,7 @@ The page auto-enters demo mode, warms up for 30 frames, samples the requested fr
 window.__VISUALIZER_BENCHMARK__
 ```
 
-Telemetry includes average FPS/frame time, p95/worst frame time, backing and CSS dimensions, effective DPR, renderer, user agent, seed, and pattern identity.
+Telemetry includes average FPS/frame time, p95/worst frame time, backing and CSS dimensions, effective DPR, renderer, user agent, seed, and pattern identity. After timing ends, the page reads the final framebuffer once and records sampled mean luminance, dark/bright coverage, and horizontal edge energy. The readback never overlaps sampled frames, so visual-density evidence cannot contaminate FPS.
 
 ### Full suite
 

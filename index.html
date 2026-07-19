@@ -1557,6 +1557,44 @@ function updateHiveBeamMap() {
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, HIVE_BEAM_MAP_SIZE, 1, gl.RGBA, gl.UNSIGNED_BYTE, hiveBeamMapData);
 }
 
+function captureBenchmarkVisualMetrics() {
+    const width = canvas.width;
+    const height = canvas.height;
+    const pixels = new Uint8Array(width * height * 4);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+    const step = Math.max(1, Math.floor(Math.sqrt((width * height) / 100000)));
+    let samples = 0;
+    let luminanceSum = 0;
+    let darkSamples = 0;
+    let brightSamples = 0;
+    let edgeSum = 0;
+    let edgeSamples = 0;
+    for (let y = 0; y < height; y += step) {
+        for (let x = 0; x < width; x += step) {
+            const offset = (y * width + x) * 4;
+            const luminance = (pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722) / 255;
+            samples += 1;
+            luminanceSum += luminance;
+            if (luminance < 0.02) darkSamples += 1;
+            if (luminance > 0.35) brightSamples += 1;
+            if (x + step < width) {
+                const neighborOffset = (y * width + x + step) * 4;
+                const neighborLuminance = (pixels[neighborOffset] * 0.2126 + pixels[neighborOffset + 1] * 0.7152 + pixels[neighborOffset + 2] * 0.0722) / 255;
+                edgeSum += Math.abs(luminance - neighborLuminance);
+                edgeSamples += 1;
+            }
+        }
+    }
+    return {
+        sampledPixels: samples,
+        meanLuminance: luminanceSum / samples,
+        darkCoverage: darkSamples / samples,
+        brightCoverage: brightSamples / samples,
+        meanHorizontalEdge: edgeSum / edgeSamples,
+    };
+}
+
 function recordBenchmarkFrame(now) {
     if (!BENCHMARK_MODE || benchmarkReported) return;
     if (benchmarkLastFrame === 0) {
@@ -1598,6 +1636,7 @@ function recordBenchmarkFrame(now) {
         effectiveDprY: canvas.height / window.innerHeight,
         renderer,
         userAgent: navigator.userAgent,
+        visualMetrics: captureBenchmarkVisualMetrics(),
     };
 
     benchmarkReported = true;

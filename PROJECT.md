@@ -119,6 +119,7 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - `EFFECTS.md` fingerprints accepted visual families so recurring runs can reject superficial duplicates.
 - `EFFECT_PIPELINE.md` defines the open-ended generation state machine and hard native-density/FPS gates.
 - `benchmark.html` runs every registered pattern sequentially at full viewport and exports auditable JSON telemetry.
+- Single-pattern telemetry captures post-timing luminance, dark/bright coverage, and edge energy from the final native-density framebuffer without measuring screenshot/readback cost as frame time.
 - `scripts/verify_visualizer.py` checks registration, transition, documentation, and performance invariants before browser QA.
 
 ## Usage
