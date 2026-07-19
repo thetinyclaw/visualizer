@@ -56,14 +56,20 @@ if not errors:
     filament = re.search(r"function buildFilament\(\)\{(.*?)function buildCathedral", js, re.S)
     cathedral = re.search(r"function buildCathedral\(\)\{(.*?)function buildVoxels", js, re.S)
     voxels = re.search(r"function buildVoxels\(\)\{(.*?)function addShard", js, re.S)
-    require(filament and "strands" in filament.group(1) and "pts" in filament.group(1) and "gl.LINES" in filament.group(1),
-            "Filament Vortex lacks persistent strand/advection line topology")
-    require(cathedral and "addShard" in cathedral.group(1) and "gl.TRIANGLES" in cathedral.group(1) and "46" in cathedral.group(1),
-            "Prismatic Cathedral lacks actual 3D shard triangle geometry")
-    require(voxels and "addCube" in voxels.group(1) and "110" in voxels.group(1) and "c.on = c.on*.94" in voxels.group(1),
+    require(filament and "strands" in filament.group(1) and "pts" in filament.group(1) and "addRibbon" in filament.group(1) and "118" in filament.group(1),
+            "Filament Vortex lacks persistent thick strand/advection ribbon topology")
+    require(filament and "occupiedSilhouette:.68" in filament.group(1) and "lineBundleWidth:.052" in filament.group(1),
+            "Filament Vortex composition bounds/hierarchy invariants missing")
+    require(cathedral and "addShard" in cathedral.group(1) and "addArch" in cathedral.group(1) and "13 arch ribs" in cathedral.group(1) and "72" in cathedral.group(1),
+            "Prismatic Cathedral lacks bounded arch/corridor triangle geometry")
+    require(cathedral and "nearPlaneClearance:3.9" in cathedral.group(1) and "maxShardSize:.36" in cathedral.group(1) and "corridorHalfWidth:1.72" in cathedral.group(1),
+            "Prismatic Cathedral camera/geometry clipping invariants missing")
+    require(voxels and "addCube" in voxels.group(1) and "260" in voxels.group(1) and "c.on = c.on*.89" in voxels.group(1),
             "Neon Voxel Cloud lacks persistent voxel occupancy/cube geometry")
-    require("cameraFor" in js and "perspective(" in js and "lookAt(" in js,
-            "perspective camera travel missing")
+    require(voxels and "coherentMassRadius:2.25" in voxels.group(1) and "maxCubeSize:.26" in voxels.group(1) and "scanAxis:'diagonal y/z front'" in voxels.group(1),
+            "Neon Voxel Cloud composition/scan invariants missing")
+    require("cameraFor" in js and "perspective(" in js and "lookAt(" in js and "7.0" in js and "5.8" in js and "4.25" in js,
+            "perspective camera travel/bounds missing")
     require("function bands" in js and "fft" in js and "bin" in js,
             "structural audio band mapping missing")
 
