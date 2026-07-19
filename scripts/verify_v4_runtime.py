@@ -60,11 +60,11 @@ require("gpu-retry-limit-exceeded" in lifecycle, "retry exhaustion public error 
 require("error.message" not in lifecycle and "error.stack" not in lifecycle, "lifecycle leaks raw device errors")
 
 # Executable GPU resource and asset-cache coverage.
-require("device.createBuffer" in resources and "device.createTexture" in resources, "real GPU resource creation missing")
+require("createBuffer(id, descriptor)" in resources and "createTexture(id, descriptor)" in resources and "device[deviceMethod]" in resources, "real GPU resource creation missing")
 require("device.queue.writeBuffer" in resources and "device.queue.writeTexture" in resources, "GPU queue uploads missing")
-require("class AssetCache" in resources and "this.entries.has(asset.id)" in resources, "deduplicated asset cache missing")
+require("class AssetCache" in assets and "this.inflight" in assets and "loadManifest" in assets, "deduplicated asset cache missing")
 require("bytesPerRow" in resources and "256" in resources, "texture upload row alignment missing")
-require("hydrateDeviceResources" in runtime and "lifecycle.registerResource(manager)" in runtime, "runtime resource lifecycle integration missing")
+require("hydrateRuntimeResources" in runtime and "new DeviceResourceManager" in runtime and "persistent: true" in resources, "runtime resource lifecycle integration missing")
 
 # Audio feature bus contract.
 require("export const AUDIO_BAND_COUNT = 16" in audio, "16-band audio bus missing")
@@ -130,10 +130,10 @@ require("Only resources created through DeviceResourceManager" in resources, "ho
 for token in ["AssetLoader", "AssetCache", "asset-cross-origin-rejected", "asset-too-large", "asset-content-type-rejected", "inflight", "same-origin", "credentials: 'same-origin'"]:
     require(token in assets, f"asset loader/cache contract {token} missing")
 require("No live GPU telemetry" in demo, "demo must not fake live GPU telemetry")
-require("createBuffer('smoke-particles'" in demo and "createTexture('smoke-lut'" in demo, "demo does not allocate real WebGPU smoke resources")
-require("external browser/driver usage: unknown" in demo, "demo telemetry must report external usage as unknown")
+require("createBuffer('smoke-telemetry-particles'" in demo and "createTexture('smoke-telemetry-lut'" in demo, "demo does not allocate real WebGPU smoke resources")
+require("external browser/driver GPU usage: unknown" in demo, "demo telemetry must report external usage as unknown")
 require("Runtime initialization failed safely" in demo, "demo safe failure path missing")
-require("data-renderer-mode" in demo or "dataset.rendererMode" in runtime, "demo mode reporting hook missing")
+require("data-renderer-mode" in demo or "rendererMode" in runtime, "demo mode reporting hook missing")
 require("import { startV4Runtime } from './runtime.js';" in demo, "demo does not load v4 runtime module")
 
 # DPR resize sync: v4 executor must use CSS size, min DPR 1, cap high DPR, and skip zero-sized canvases.

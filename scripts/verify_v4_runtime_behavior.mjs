@@ -42,11 +42,13 @@ function makeCanvas() {
 
 function makeResourceDevice() {
   const calls = { buffers: [], textures: [], writes: [], submissions: [] };
+  const created = [];
   return {
     calls,
+    created,
     queue: {
-      writeBuffer(...args) { calls.writes.push(['buffer', ...args]); },
-      writeTexture(...args) { calls.writes.push(['texture', ...args]); },
+      writeBuffer(buffer, offset, source, byteOffset, byteLength) { buffer.write = { offset, source, byteOffset, byteLength }; calls.writes.push(['buffer', buffer, offset, source, byteOffset, byteLength]); },
+      writeTexture(destination, data, layout, size) { destination.texture.write = { data, layout, size }; calls.writes.push(['texture', destination, data, layout, size]); },
       submit(buffers) { calls.submissions.push(buffers); },
     },
     createCommandEncoder() {
@@ -59,16 +61,18 @@ function makeResourceDevice() {
     createBuffer(descriptor) {
       const resource = { descriptor, destroyed: false, destroy() { this.destroyed = true; } };
       calls.buffers.push(resource);
+      created.push(resource);
       return resource;
     },
     createTexture(descriptor) {
       const resource = { descriptor, destroyed: false, destroy() { this.destroyed = true; }, createView() { return { texture: resource }; } };
       calls.textures.push(resource);
+      created.push(resource);
       return resource;
     },
-    createSampler(descriptor) { return { descriptor, destroyed: false, destroy() { this.destroyed = true; } }; },
-    createBindGroupLayout(descriptor) { return { descriptor, destroyed: false, destroy() { this.destroyed = true; } }; },
-    createBindGroup(descriptor) { return { descriptor, destroyed: false, destroy() { this.destroyed = true; } }; },
+    createSampler(descriptor) { const resource = { descriptor, destroyed: false, destroy() { this.destroyed = true; } }; created.push(resource); return resource; },
+    createBindGroupLayout(descriptor) { const resource = { descriptor, destroyed: false, destroy() { this.destroyed = true; } }; created.push(resource); return resource; },
+    createBindGroup(descriptor) { const resource = { descriptor, destroyed: false, destroy() { this.destroyed = true; } }; created.push(resource); return resource; },
   };
 }
 

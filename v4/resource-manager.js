@@ -196,6 +196,8 @@ export class DeviceResourceManager {
     this.unregister = lifecycle.registerResource(this, { persistent: true });
   }
 
+  get size() { return this.entries.size; }
+
   createBuffer(id, descriptor) { return this.createResource(RESOURCE_KINDS.BUFFER, id, descriptor, 'createBuffer'); }
   createTexture(id, descriptor) { return this.createResource(RESOURCE_KINDS.TEXTURE, id, descriptor, 'createTexture'); }
   createSampler(id, descriptor = {}) { return this.createResource(RESOURCE_KINDS.SAMPLER, id, descriptor, 'createSampler'); }
