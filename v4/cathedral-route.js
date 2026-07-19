@@ -5,9 +5,10 @@ import { createPrismaticCathedralPipelines, createPrismaticCathedralExecutors } 
 
 function parseParams(windowObject) {
   const params = new URLSearchParams(windowObject.location.search);
+  const lockedTime = params.has('time') ? Number.parseFloat(params.get('time')) : null;
   return {
     seed: Number.parseInt(params.get('seed') || '491009', 10) || 491009,
-    lockedTime: params.has('time') ? Number.parseFloat(params.get('time')) : null,
+    lockedTime: Number.isFinite(lockedTime) ? lockedTime : null,
     mode: params.get('mode') === 'flat' ? 'flat' : 'demo',
   };
 }
@@ -28,6 +29,18 @@ function updateState(state, runtime, scene, frame = null) {
   state.telemetry = runtime.resourceManager?.telemetry?.() || null;
   state.fallbackReason = runtime.publicErrors?.map((error) => error.code).join(', ') || '';
   state.audio = scene.lastAudio;
+  state.frameCounters = runtime.frameCounters || null;
+  state.lastFrameMs = runtime.frameCounters?.lastFrameMs || 0;
+  state.rafScheduled = Boolean(runtime.frameCounters?.rafScheduled);
+}
+
+function writeStatus(status, state) {
+  if (!status) return;
+  const vc = state.vertexCounts;
+  const frameMode = state.frameMode === 'locked-single-frame' ? 'locked' : 'live';
+  status.textContent = state.webgpuActive
+    ? `WebGPU active · ${vc?.arches || 0} arches + ${vc?.shards || 0} shards · ${vc?.vertices || 0} indexed verts · DPR ${Number(state.dpr).toFixed(2)} · ${frameMode} · frames ${state.frameCounters?.submitted ?? 0}`
+    : `WebGPU unavailable; fallback link active · ${state.fallbackReason || 'probe unavailable'}`;
 }
 
 export async function startCathedralRoute(windowObject = window) {
@@ -39,11 +52,13 @@ export async function startCathedralRoute(windowObject = window) {
   const scene = createPrismaticCathedralScene({ seed: params.seed, mode: params.mode });
   const demo = new Float32Array(16);
   const start = windowObject.performance.now();
+  const locked = Number.isFinite(params.lockedTime);
   const state = {
     sceneId: 'prismatic-cathedral', rendererMode: 'pending', active: false, webgpuActive: false,
     seed: params.seed, time: params.lockedTime ?? 0, mode: params.mode, lockedTime: params.lockedTime,
     vertexCounts: null, bounds: null, graphPassIds: [], dpr: Math.max(1, windowObject.devicePixelRatio || 1),
     frame: null, telemetry: null, fallbackReason: '', fallbackHref: './lab/prismatic-cathedral.html',
+    frameMode: locked ? 'locked-single-frame' : 'live-raf', frameCounters: null, lastFrameMs: 0, rafScheduled: false,
     structuralAudio: scene.structuralAudioMappings, materialHierarchy: scene.materialHierarchy,
   };
   windowObject.__V4_CATHEDRAL_WEBGPU__ = state;
@@ -54,12 +69,14 @@ export async function startCathedralRoute(windowObject = window) {
     manifest: prismaticCathedralManifest,
     graphFactory: makePrismaticCathedralGraph,
     scene,
-    frameProvider: ({ time, audioBus }) => {
+    frameProvider: locked ? null : ({ time, audioBus }) => {
       const seconds = Number.isFinite(params.lockedTime) ? params.lockedTime : (time - start) / 1000;
       demoBands(demo, seconds, params.seed, params.mode);
       audioBus.processBandFrame(demo, 1 / 60, { source: params.mode === 'flat' ? 'flat' : 'demo', state: params.mode });
       return { time: seconds };
     },
+    autoStart: !locked,
+    onFrame: ({ frame }) => { updateState(state, runtime, scene, frame); writeStatus(status, state); },
     pipelineRegistryFactory: ({ device, format }) => createPrismaticCathedralPipelines({ device, format }),
     executorRegistry: createPrismaticCathedralExecutors(),
     dprCap: 2,
@@ -67,16 +84,15 @@ export async function startCathedralRoute(windowObject = window) {
   });
   await runtime.resourcesReady;
   const initialTime = Number.isFinite(params.lockedTime) ? params.lockedTime : 0;
-  demoBands(demo, initialTime, params.seed, params.mode);
-  runtime.audioBus.processBandFrame(demo, 1 / 60, { source: params.mode === 'flat' ? 'flat' : 'demo', state: params.mode });
-  const frame = runtime.renderFrame(initialTime);
-  updateState(state, runtime, scene, frame);
-  if (status) {
-    const vc = state.vertexCounts;
-    status.textContent = state.webgpuActive
-      ? `WebGPU active · ${vc?.arches || 0} arches + ${vc?.shards || 0} shards · ${vc?.vertices || 0} indexed verts · DPR ${Number(state.dpr).toFixed(2)}`
-      : `WebGPU unavailable; fallback link active · ${state.fallbackReason || 'probe unavailable'}`;
+  let frame = runtime.lastFrame;
+  if (locked) {
+    demoBands(demo, initialTime, params.seed, params.mode);
+    runtime.audioBus.processBandFrame(demo, 1 / 60, { source: params.mode === 'flat' ? 'flat' : 'demo', state: params.mode });
+    frame = runtime.renderFrame(initialTime);
+    runtime.stop();
   }
+  updateState(state, runtime, scene, frame);
+  writeStatus(status, state);
   if (errors) errors.textContent = runtime.publicErrors?.map((error) => `${error.code}: ${error.message}`).join('\n') || '';
   windowObject.addEventListener('resize', () => {
     runtime.resize();

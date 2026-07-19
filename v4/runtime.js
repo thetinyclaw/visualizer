@@ -109,6 +109,9 @@ export async function startV4Runtime({
   pipelineRegistryFactory = defaultSmokePipelines,
   executorRegistry = {},
   dprCap = 2,
+  autoStart = true,
+  initialFrameTime = 0,
+  onFrame = null,
   assetCache = new AssetCache(),
   createFallbackCanvas = () => {
     if (typeof OffscreenCanvas === 'function') return new OffscreenCanvas(1, 1);
@@ -142,13 +145,19 @@ export async function startV4Runtime({
   let selectedMode = probe.mode;
   let disposed = false;
   let rafId = null;
+  let rafScheduled = false;
   let frameGeneration = 0;
+  let submittedFrameCount = 0;
+  let attemptedFrameCount = 0;
+  let lastFrameMs = 0;
+  let lastFrame = null;
   const publicErrors = [...probe.errors];
 
   const stopLoop = () => {
     frameGeneration += 1;
     if (rafId !== null && windowObject && typeof windowObject.cancelAnimationFrame === 'function') windowObject.cancelAnimationFrame(rafId);
     rafId = null;
+    rafScheduled = false;
   };
   const disposeExecutor = () => {
     stopLoop();
@@ -162,8 +171,15 @@ export async function startV4Runtime({
   };
   const submitOneFrame = (time = 0, token = frameGeneration) => {
     if (disposed || token !== frameGeneration || !graphExecutor || lifecycle.state !== GPU_LIFECYCLE_STATES.READY) return null;
+    attemptedFrameCount += 1;
+    const started = windowObject?.performance?.now ? windowObject.performance.now() : Date.now();
     const frame = graphExecutor.render({ time, scene: resolvedScene, audio: audioBus.snapshot ? audioBus.snapshot() : null });
+    const ended = windowObject?.performance?.now ? windowObject.performance.now() : Date.now();
+    lastFrameMs = Math.max(0, ended - started);
+    lastFrame = frame;
+    if (frame?.submitted) submittedFrameCount += 1;
     setDataset(statusElement, { frameSubmitted: String(frame.submitted) });
+    if (typeof onFrame === 'function') onFrame(Object.freeze({ frame, time, attemptedFrameCount, submittedFrameCount, lastFrameMs, rafScheduled }));
     return frame;
   };
   const startLoopIfNeeded = () => {
@@ -171,11 +187,15 @@ export async function startV4Runtime({
     stopLoop();
     const token = frameGeneration;
     const tick = (time) => {
+      rafScheduled = false;
       if (disposed || token !== frameGeneration || !graphExecutor) return;
       const provided = frameProvider({ time, scene: resolvedScene, audioBus });
       submitOneFrame(provided?.time ?? time, token);
+      if (disposed || token !== frameGeneration || !graphExecutor) return;
+      rafScheduled = true;
       rafId = windowObject.requestAnimationFrame(tick);
     };
+    rafScheduled = true;
     rafId = windowObject.requestAnimationFrame(tick);
   };
 
@@ -201,7 +221,9 @@ export async function startV4Runtime({
         });
         lifecycle.registerResource(graphExecutor);
         setDataset(statusElement, { resourcesReady: 'true' });
-        if (frameProvider) startLoopIfNeeded(); else submitOneFrame(0);
+        if (autoStart) {
+          if (frameProvider) startLoopIfNeeded(); else submitOneFrame(initialFrameTime);
+        }
         return manager;
       })
       .catch(() => {
@@ -257,6 +279,8 @@ export async function startV4Runtime({
     get graphExecutor() { return !disposed && lifecycle.state === GPU_LIFECYCLE_STATES.READY ? graphExecutor : null; },
     get resourcesReady() { return resourcesReady; },
     publicErrors,
+    get frameCounters() { return Object.freeze({ attempted: attemptedFrameCount, submitted: submittedFrameCount, lastFrameMs, rafScheduled, rafId, generation: frameGeneration }); },
+    get lastFrame() { return lastFrame; },
     renderFrame: submitOneFrame,
     stop: stopLoop,
     resize() { return graphExecutor ? graphExecutor.resizeTargets() : false; },

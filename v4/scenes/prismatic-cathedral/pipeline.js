@@ -74,9 +74,17 @@ function getFrameBindGroup({ device, pass, resources, executor, graphPass, frame
   const layout = executor.pipelineRegistry.bindGroupLayout || (typeof pipeline.getBindGroupLayout === 'function' ? pipeline.getBindGroupLayout(0) : null);
   if (!layout) return null;
   const sampler = executor._cathedralSampler || (executor._cathedralSampler = device.createSampler ? device.createSampler({ label: 'prismatic-cathedral-linear-sampler', magFilter: 'linear', minFilter: 'linear' }) : null);
-  const fallbackTexture = graphPass.id === 'cathedral-composite' ? 'cathedral-post-color' : 'cathedral-scene-color';
-  const inputTextureId = graphPass.id === 'cathedral-post' ? 'cathedral-scene-color' : fallbackTexture;
-  const textureView = executor.textureView(inputTextureId);
+  const inputTextureId = graphPass.id === 'cathedral-post'
+    ? 'cathedral-scene-color'
+    : (graphPass.id === 'cathedral-composite' ? 'cathedral-post-color' : 'asset:edge-pixel');
+  const cacheKey = `${graphPass.id}:${inputTextureId}:${executor.textureGeneration || 0}`;
+  executor._cathedralBindGroups = executor._cathedralBindGroups || new Map();
+  const cached = executor._cathedralBindGroups.get(cacheKey);
+  if (cached) {
+    frameContext.lastBindGroup = cached;
+    return cached;
+  }
+  const textureView = inputTextureId.startsWith('asset:') ? resources.get(inputTextureId).createView() : executor.textureView(inputTextureId);
   const bindGroup = device.createBindGroup({
     label: `prismatic-cathedral:${graphPass.id}:bind-group`,
     layout,
@@ -87,9 +95,13 @@ function getFrameBindGroup({ device, pass, resources, executor, graphPass, frame
       { binding: 3, resource: textureView },
     ],
   });
+  executor._cathedralBindGroups.set(cacheKey, bindGroup);
   frameContext.lastBindGroup = bindGroup;
   return bindGroup;
 }
+
+const EMPTY_UNIFORMS = new Float32Array(24);
+const EMPTY_AUDIO = new Float32Array(20);
 
 export function createPrismaticCathedralExecutors() {
   return new Map([
@@ -108,8 +120,8 @@ export function createPrismaticCathedralExecutors() {
       frameContext.cathedralSummary = summary;
     }],
     ['cathedral-bind-fullscreen', ({ pass, device, resources, frameContext, graphPass, executor }) => {
-      writeBuffer(device, resources.get('cathedral-uniforms'), frameContext.scene?.mesh?.uniforms || new Float32Array(24));
-      writeBuffer(device, resources.get('cathedral-audio'), frameContext.scene?.mesh?.audioPayload || new Float32Array(20));
+      writeBuffer(device, resources.get('cathedral-uniforms'), frameContext.scene?.mesh?.uniforms || EMPTY_UNIFORMS);
+      writeBuffer(device, resources.get('cathedral-audio'), frameContext.scene?.mesh?.audioPayload || EMPTY_AUDIO);
       const bindGroup = getFrameBindGroup({ device, pass, resources, executor, graphPass, frameContext });
       if (bindGroup && typeof pass.setBindGroup === 'function') pass.setBindGroup(0, bindGroup);
     }],

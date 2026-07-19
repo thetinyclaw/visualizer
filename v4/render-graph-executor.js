@@ -124,6 +124,7 @@ export class WebGpuGraphExecutor {
     this.ownedTextures = new Map();
     this.fullscreenSampler = null;
     this.autoBindGroups = new Map();
+    this.textureGeneration = 0;
     this.width = 0;
     this.height = 0;
     this.dpr = 1;
@@ -218,6 +219,7 @@ export class WebGpuGraphExecutor {
       const existing = this.ownedTextures.get(resource.id);
       if (existing && existing.width === this.width && existing.height === this.height) continue;
       if (existing?.texture && typeof existing.texture.destroy === 'function') existing.texture.destroy();
+      this.textureGeneration += 1;
       const texture = this.device.createTexture({
         label: `${this.graph.id}:${resource.id}`,
         size: { width: this.width, height: this.height, depthOrArrayLayers: 1 },
@@ -326,6 +328,7 @@ export class WebGpuGraphExecutor {
     this.ownedTextures.clear();
     this.autoBindGroups.clear();
     this.fullscreenSampler = null;
+    this.textureGeneration += 1;
     if (typeof this.context.unconfigure === 'function') this.context.unconfigure();
   }
 }

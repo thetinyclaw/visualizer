@@ -1132,6 +1132,8 @@ function testPrismaticCathedralExecutorUploadsAndDrawsIndexed() {
   const device = makeResourceDevice();
   const graph = makePrismaticCathedralGraph().freeze();
   const scene = createPrismaticCathedralScene({ seed: 491009, mode: 'demo' });
+  const pipelines = createPrismaticCathedralPipelines({ device, format: 'bgra8unorm' });
+  pipelines.bindGroupLayout = { id: 'test-cathedral-layout' };
   const executor = new WebGpuGraphExecutor({
     device,
     canvas,
@@ -1142,8 +1144,9 @@ function testPrismaticCathedralExecutorUploadsAndDrawsIndexed() {
       ['cathedral-positions', { id: 'positions' }],
       ['cathedral-colors', { id: 'colors' }],
       ['cathedral-indices', { id: 'indices' }],
+      ['asset:edge-pixel', { id: 'edge-pixel', createView: () => ({ id: 'edge-pixel-view' }) }],
     ]),
-    pipelines: createPrismaticCathedralPipelines({ device, format: 'bgra8unorm' }),
+    pipelines,
     executors: createPrismaticCathedralExecutors(),
     windowObject: { devicePixelRatio: 1 },
   });
@@ -1153,6 +1156,56 @@ function testPrismaticCathedralExecutorUploadsAndDrawsIndexed() {
   assert.equal(device.calls.writes.filter((write) => write[0] === 'buffer').length >= 5, true, 'positions/colors/indices/uniform/audio are uploaded through queue.writeBuffer');
   assert.deepEqual(device.calls.drawIndexed, [scene.mesh.indexCount, 1, 0, 0, 0], 'authored executor issues drawIndexed with real mesh indices');
   assert.equal(device.calls.submissions.length, 1, 'executor submits encoded command buffer');
+  const bindGroupsAfterFirstFrame = device.created.filter((resource) => resource.descriptor?.label?.startsWith('prismatic-cathedral:')).length;
+  assert.equal(bindGroupsAfterFirstFrame, 3, 'one geometry/post/composite bind group is created on the first frame');
+  executor.render({ time: 18, scene, audio: null });
+  const bindGroupsAfterRepeatFrame = device.created.filter((resource) => resource.descriptor?.label?.startsWith('prismatic-cathedral:')).length;
+  assert.equal(bindGroupsAfterRepeatFrame, bindGroupsAfterFirstFrame, 'same-size repeated frames reuse cathedral bind groups/resources');
+  assert.equal(device.calls.submissions.length, 2, 'repeat frame submits without bind-group churn');
+}
+
+async function testRuntimeAutoStartAndFrameCounters() {
+  const device = makeDevice('locked-frame');
+  const runtime = await startV4Runtime({
+    canvas: makeCanvas(),
+    statusElement: { dataset: {}, textContent: '' },
+    manifest: validManifest(),
+    graphFactory: smokeGraph,
+    autoStart: false,
+    navigatorObject: { gpu: { async requestAdapter() { return { features: new Set(), limits: { maxStorageBuffersPerShaderStage: 4, maxStorageBufferBindingSize: 1 << 20 }, async requestDevice() { return device; } }; } } },
+    createFallbackCanvas: makeCanvas,
+  });
+  await runtime.resourcesReady;
+  assert.equal(device.calls.submissions.length, 0, 'locked/manual runtime must not submit an implicit initial frame');
+  assert.equal(runtime.frameCounters.submitted, 0);
+  runtime.renderFrame(18);
+  runtime.stop();
+  assert.equal(device.calls.submissions.length, 1, 'locked/manual runtime submits exactly one requested frame');
+  assert.equal(runtime.frameCounters.submitted, 1);
+  assert.equal(runtime.frameCounters.rafScheduled, false, 'locked/manual runtime leaves no queued RAF');
+
+  const liveDevice = makeDevice('live-frame');
+  let requestId = 0;
+  const callbacks = new Map();
+  const windowObject = { devicePixelRatio: 1, performance: { now: () => 10 }, requestAnimationFrame(cb) { const id = ++requestId; callbacks.set(id, cb); return id; }, cancelAnimationFrame(id) { callbacks.delete(id); } };
+  const live = await startV4Runtime({
+    canvas: makeCanvas(),
+    statusElement: { dataset: {}, textContent: '' },
+    manifest: validManifest(),
+    graphFactory: smokeGraph,
+    frameProvider: ({ time }) => ({ time }),
+    windowObject,
+    navigatorObject: { gpu: { async requestAdapter() { return { features: new Set(), limits: { maxStorageBuffersPerShaderStage: 4, maxStorageBufferBindingSize: 1 << 20 }, async requestDevice() { return liveDevice; } }; } } },
+    createFallbackCanvas: makeCanvas,
+  });
+  assert.equal(callbacks.size, 1, 'unlocked mode schedules exactly one RAF');
+  const first = [...callbacks.entries()][0];
+  callbacks.delete(first[0]);
+  first[1](123);
+  assert.equal(live.frameCounters.submitted, 1);
+  assert.equal(callbacks.size, 1, 'unlocked tick queues only one next RAF');
+  live.dispose();
+  assert.equal(callbacks.size, 0, 'dispose cancels queued RAF');
 }
 
 await testRuntimeUsesLifecycleAndRetryBudget();
@@ -1177,6 +1230,7 @@ testSceneManifestDeepValidation();
 testPrismaticCathedralGeometryContracts();
 testPrismaticCathedralGraphAndManifestContracts();
 testPrismaticCathedralExecutorUploadsAndDrawsIndexed();
+await testRuntimeAutoStartAndFrameCounters();
 await testFallbackCanvasSeparation();
 testAudioFeatureBusLogBandsAndAllocationReuse();
 await testLiveAudioSecureContextAndPermissionDenial();
