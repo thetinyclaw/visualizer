@@ -23,6 +23,8 @@ assert.deepEqual(visualizerV4SceneRegistry.scenes.map((scene) => scene.title), [
   'Live Audio',
 ]);
 assert.equal(visualizerV4SceneRegistry.legacy.effectCount, 19, 'legacy WebGL effect count contract must remain machine-readable');
+assert.equal(visualizerV4SceneRegistry.scenes.find((scene) => scene.id === 'neon-voxel-cloud').counts.instanceCount, 260,
+  'voxel launcher metadata must match the executable instanced draw contract');
 
 const query = normalizeLauncherQuery('?seed=a b&time=12.5&mode=live&ignored=<script>');
 assert.deepEqual(query, { seed: 'a b', time: '12.5', mode: 'live' });
@@ -44,7 +46,9 @@ for (const scene of visualizerV4SceneRegistry.scenes) {
   assert.ok(scene.capability.state, `${scene.id} missing capability state`);
   assert.ok(scene.counts && typeof scene.counts === 'object', `${scene.id} missing counts`);
   assert.ok(scene.requirements && typeof scene.requirements === 'object', `${scene.id} missing render/compute/post requirements`);
-  assert.equal(scene.evidence.artifactsExist, false, `${scene.id} must not claim artifacts exist`);
+  const expectsImmutableBrowserEvidence = scene.routeKind === 'hero-webgpu';
+  assert.equal(scene.evidence.artifactsExist, expectsImmutableBrowserEvidence, `${scene.id} artifact status must match committed evidence`);
+  if (expectsImmutableBrowserEvidence) assert.match(scene.evidence.status, /automation-browser evidence captured/);
   assert.equal(scene.evidence.approval.humanApproved, false, `${scene.id} must not claim human approval`);
   assert.ok(buildCapturePlanCommand(scene, query).includes('capture-plan'), `${scene.id} missing capture-plan hint`);
   const legacy = buildSceneUrl({ route: scene.fallback.legacyHref }, query);
@@ -83,6 +87,13 @@ assert.match(registrySource, /No artifacts are implied by this launcher/, 'captu
 const liveAudio = read('v4/live-audio.html');
 assert.match(liveAudio, /never auto-requests microphone access/, 'live-audio route must say mic is not automatic');
 assert.match(liveAudio, /start-mic'.*addEventListener\('click'/s, 'microphone request must stay click-gated');
+
+for (const [routeHtml, routeModule] of [['v4/cathedral.html', 'v4/cathedral-route.js'], ['v4/filament.html', 'v4/filament-route.js']]) {
+  assert.match(read(routeHtml), /id="query-text"/, `${routeHtml} must expose dynamic query text instead of hard-coded locks`);
+  assert.match(read(routeHtml), /id="fallback-link"/, `${routeHtml} must expose a dynamic fallback link`);
+  assert.match(read(routeModule), /queryText\.textContent/, `${routeModule} must render the effective query`);
+  assert.match(read(routeModule), /fallbackLink\.href/, `${routeModule} must propagate the effective query to fallback`);
+}
 
 console.log('Visualizer v4 launcher registry verification passed');
 console.log('Checked routes, query propagation, fallbacks, no injection sinks, no launcher auto mic/GPU, 19 legacy effects, and v4 manifest compatibility.');

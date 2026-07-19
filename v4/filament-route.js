@@ -53,6 +53,12 @@ export async function startFilamentRoute(windowObject = window) {
   const status = document.getElementById('status');
   const errors = document.getElementById('errors');
   const params = parseParams(windowObject);
+  const queryText = document.getElementById('query-text');
+  const fallbackLink = document.getElementById('fallback-link');
+  const routeQuery = new URLSearchParams({ seed: String(params.seed), mode: params.mode });
+  if (Number.isFinite(params.lockedTime)) routeQuery.set('time', String(params.lockedTime));
+  if (queryText) queryText.textContent = `?${routeQuery}`;
+  if (fallbackLink) fallbackLink.href = `./lab/filament-vortex.html?${routeQuery}`;
   const locked = Number.isFinite(params.lockedTime);
   const scene = createFilamentVortexScene({ seed: params.seed, mode: params.mode, locked });
   const demo = new Float32Array(16);

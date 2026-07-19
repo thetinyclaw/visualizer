@@ -27,6 +27,11 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - [x] Build six reference-informed standalone candidates through isolated parallel worktrees, with native-density benchmarks and FFT-ready runners (2026-07-18)
 - [x] Merge all six reference-informed candidates into automatic main-cycle indices 13–18 while preserving standalone routes (2026-07-18)
 - [x] Correct main-cycle candidate projection by removing duplicate aspect-ratio scaling at the shared UV boundary (2026-07-18)
+- [x] Build executable Visualizer v4 WebGPU runtime, resource lifecycle, render graph, live-audio bridge, and compatibility fallback (2026-07-19)
+- [x] Port Cathedral, Filament, and Voxel as genuine deterministic WebGPU hero routes with immutable automation-browser evidence (2026-07-19)
+- [x] Add bounded volume, history/trails, bloom, chromatic optics, ACES output, and two-layer compositor transactions (2026-07-19)
+- [x] Add unified v4 launcher and machine-readable route/evidence registry without hidden GPU or microphone work (2026-07-19)
+- [ ] Complete Safari/TV HTTPS target-device acceptance and explicit human visual/release approval
 
 ## Recent Refresh (2026-07-05)
 - Capped high-DPI render buffer to reduce fill-rate cost on Retina/TV displays.

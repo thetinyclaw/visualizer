@@ -51,7 +51,7 @@
 <a class="skip" href="#scene-grid">Skip to scene cards</a>
 <header>
   <p class="eyebrow">Visualizer v4 / unified launcher</p>
-  <h1>Approved routes, honest gates, no hidden renders.</h1>
+  <h1>Executable routes, honest gates, no hidden renders.</h1>
   <p class="lede">This index links to the current v4 hero and diagnostic routes without iframes or background GPU work. Query controls are deterministic and propagated to every route as <code>seed</code>, <code>time</code>, and <code>mode</code>. Hero maturity is <strong>provisional visual pass</strong>; none are marked human approved.</p>
   <form class="controls" id="query-form" aria-label="deterministic query controls">
     <label>Seed <input id="seed" name="seed" inputmode="numeric" autocomplete="off"></label>
@@ -65,7 +65,7 @@
   <section id="scene-grid" class="grid" aria-label="v4 scene launcher cards"></section>
   <section class="panel" aria-labelledby="diag-heading">
     <h2 id="diag-heading">Read-only diagnostics and capture-plan hints</h2>
-    <p>These links and commands are hints only. They do not claim screenshots, benchmark JSON, motion sheets, or human approval artifacts exist.</p>
+    <p>These links and commands do not create or imply new artifacts. Existing committed automation-browser hero evidence is disclosed on the relevant scene cards; target-device and human approval remain pending.</p>
     <ul class="link-list" id="diagnostic-links"></ul>
     <pre id="registry-json" aria-label="machine-readable registry excerpt"></pre>
   </section>
@@ -170,7 +170,7 @@ function render() {
   legacyUrl.searchParams.set('seed', state.query.seed);
   legacyUrl.searchParams.set('pattern', visualizerV4SceneRegistry.legacy.deterministicQuery.pattern);
   legacyLink.href = legacyUrl.href;
-  registryJson.textContent = JSON.stringify({ schemaVersion: visualizerV4SceneRegistry.schemaVersion, sceneIds: visualizerV4SceneRegistry.scenes.map((scene) => scene.id), query: state.query, noArtifactsClaimed: true }, null, 2);
+  registryJson.textContent = JSON.stringify({ schemaVersion: visualizerV4SceneRegistry.schemaVersion, sceneIds: visualizerV4SceneRegistry.scenes.map((scene) => scene.id), query: state.query, launcherCreatesArtifacts: false, committedHeroEvidenceDisclosed: true }, null, 2);
   window.__V4_LAUNCHER__.query = state.query;
   srStatus.textContent = `Updated locked links for seed ${state.query.seed}, time ${state.query.time}, mode ${state.query.mode}.`;
 }

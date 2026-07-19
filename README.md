@@ -1,6 +1,6 @@
 # TinyClaw Visualizer
 
-Audio-reactive WebGL visualizer for ambient TV / browser display. It is a single static HTML file: no build step, no package install, no backend.
+Audio-reactive browser visualizer for ambient TV / browser display. The legacy 19-effect WebGL cycle remains a single static HTML file; Visualizer v4 adds no-build ES modules and native WebGPU hero routes. There is no backend or production build step.
 
 ## Run locally
 
@@ -47,7 +47,16 @@ Safari does not expose an AirPlay picker for a WebGL canvas, so the television i
 
 For deterministic QA, select a pattern and seed with `?pattern=N&seed=S`. Example: `index.html?pattern=8&seed=491009` opens and locks a repeatable **Cosmic Mycelium** scene without auto-transitioning.
 
-Visualizer v4 runtime foundation lives in the isolated `v4/` module surface. Open `http://127.0.0.1:8789/v4/demo.html` for a smoke route that probes full WebGPU, reduced WebGPU, or WebGL2 legacy fallback and visibly reports the selected mode. When WebGPU is active the route creates real managed smoke buffer/texture resources and reports only manager-known allocation bytes while labeling browser/driver/external GPU usage as unknown; fallback mode allocates no fake resources.
+Visualizer v4 lives in the isolated `v4/` module surface. Open `http://127.0.0.1:8789/v4/index.html` for the unified, read-only launcher. It links deterministic locked routes without hidden canvases, microphone requests, or background GPU work. The executable routes currently include:
+
+- `v4/cathedral.html` — native WebGPU Prismatic Cathedral geometry → post → composite.
+- `v4/filament.html` — compute ping-pong Filament Vortex → ribbons → post → composite.
+- `v4/voxel.html` — compute-updated 260-cell instanced Neon Voxel Cloud → post → composite.
+- `v4/history.html` — transactional ping-pong history/trails diagnostic.
+- `v4/demo.html` — bounded volume → bloom/chromatic optics/ACES → two-layer crossfade smoke.
+- `v4/live-audio.html` — trusted-click microphone bridge with honestly labeled Demo/Flat modes.
+
+Committed immutable Chromium evidence exists for the three hero routes. It is automation-browser evidence, not Safari/TV target-device acceptance or human release approval. The release gates remain intentionally fail-closed.
 
 The six reference-informed effects are part of the automatic main cycle at indices `13–18` and remain available as standalone candidate pages. Every route accepts deterministic `?seed=...`; append `?benchmark=1&seed=491009&frames=120` for native-density telemetry:
 
@@ -90,6 +99,10 @@ Example benchmark route: `candidates/filament-vortex.html?benchmark=1&seed=49100
 ## Verify
 
 ```bash
+python3 scripts/verify_v4_runtime.py
+node scripts/verify_v4_runtime_behavior.mjs
+python3 scripts/verify_v4_hero_lab.py
+node scripts/verify_v4_launcher.mjs
 python3 scripts/verify_visualizer.py
 python3 scripts/verify_candidates.py
 python3 -m unittest tests/test_v4_evidence.py

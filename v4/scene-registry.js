@@ -46,7 +46,7 @@ export const visualizerV4SceneRegistry = Object.freeze({
       counts: Object.freeze({ assets: 1, pipelines: 3, simulationBuffers: 0, controls: 1, transitions: 1, renderPasses: 1, computePasses: 0, postPasses: 1, compositePasses: 1 }),
       requirements: Object.freeze({ render: true, compute: false, post: true, composite: true, history: false, liveAudio: false }),
       manifest: Object.freeze({ module: './scenes/prismatic-cathedral/manifest.js', exportName: 'prismaticCathedralManifest', graphExportName: 'makePrismaticCathedralGraph' }),
-      evidence: Object.freeze({ status: 'not captured in this launcher', artifactsExist: false, captureEffectId: 'prismatic-cathedral', approval: HERO_APPROVAL }),
+      evidence: Object.freeze({ status: 'automation-browser evidence captured; target-device and human approval pending', artifactsExist: true, evidenceRoot: './evidence/runs/cathedral-491009-demo-18000-dpr1/', captureEffectId: 'prismatic-cathedral', approval: HERO_APPROVAL }),
     }),
     Object.freeze({
       id: 'filament-vortex',
@@ -60,7 +60,7 @@ export const visualizerV4SceneRegistry = Object.freeze({
       counts: Object.freeze({ assets: 1, pipelines: 4, simulationBuffers: 0, controls: 1, transitions: 1, renderPasses: 1, computePasses: 1, postPasses: 1, compositePasses: 1 }),
       requirements: Object.freeze({ render: true, compute: true, post: true, composite: true, history: false, liveAudio: false }),
       manifest: Object.freeze({ module: './scenes/filament-vortex/manifest.js', exportName: 'filamentVortexManifest', graphExportName: 'makeFilamentVortexGraph' }),
-      evidence: Object.freeze({ status: 'not captured in this launcher', artifactsExist: false, captureEffectId: 'filament-vortex', approval: HERO_APPROVAL }),
+      evidence: Object.freeze({ status: 'automation-browser evidence captured; target-device and human approval pending', artifactsExist: true, evidenceRoot: './evidence/runs/filament-491009-demo-18000-dpr1/', captureEffectId: 'filament-vortex', approval: HERO_APPROVAL }),
     }),
     Object.freeze({
       id: 'neon-voxel-cloud',
@@ -71,10 +71,10 @@ export const visualizerV4SceneRegistry = Object.freeze({
       routeKind: 'hero-webgpu',
       fallback: Object.freeze({ requiredWhen: 'WebGPU compute/storage or instanced draw path unavailable', oldLabHref: './lab/neon-voxel-cloud.html', legacyHref: '../index.html?pattern=17' }),
       capability: Object.freeze({ state: 'webgpu-full', label: 'WebGPU full + compute + instancing', requiresWebGPU: true, fallbackRequired: false, audio: 'demo/flat gated; no microphone request' }),
-      counts: Object.freeze({ assets: 1, pipelines: 4, simulationBuffers: 0, controls: 1, transitions: 1, renderPasses: 1, computePasses: 1, postPasses: 1, compositePasses: 1, instanceCount: 1728 }),
+      counts: Object.freeze({ assets: 1, pipelines: 4, simulationBuffers: 0, controls: 1, transitions: 1, renderPasses: 1, computePasses: 1, postPasses: 1, compositePasses: 1, instanceCount: 260 }),
       requirements: Object.freeze({ render: true, compute: true, post: true, composite: true, history: false, liveAudio: false }),
       manifest: Object.freeze({ module: './scenes/neon-voxel-cloud/manifest.js', exportName: 'neonVoxelCloudManifest', graphExportName: 'makeNeonVoxelCloudGraph' }),
-      evidence: Object.freeze({ status: 'not captured in this launcher', artifactsExist: false, captureEffectId: 'neon-voxel-cloud', approval: HERO_APPROVAL }),
+      evidence: Object.freeze({ status: 'automation-browser evidence captured; target-device and human approval pending', artifactsExist: true, evidenceRoot: './evidence/runs/voxel-582114-demo-18000-dpr1/', captureEffectId: 'neon-voxel-cloud', approval: HERO_APPROVAL }),
     }),
     Object.freeze({
       id: 'runtime-history-trails-smoke',
