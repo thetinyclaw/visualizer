@@ -12,6 +12,23 @@ export const RESOURCE_KINDS = Object.freeze({
 
 const DEFAULT_MEMORY_BUDGET_BYTES = 256 * 1024 * 1024;
 const UNKNOWN_BYTES = null;
+const BUFFER_USAGE_FALLBACK = Object.freeze({
+  'copy-src': 0x0004,
+  'copy-dst': 0x0008,
+  index: 0x0010,
+  vertex: 0x0020,
+  uniform: 0x0040,
+  storage: 0x0080,
+  indirect: 0x0100,
+  query: 0x0200,
+});
+const TEXTURE_USAGE_FALLBACK = Object.freeze({
+  'copy-src': 0x01,
+  'copy-dst': 0x02,
+  'texture-binding': 0x04,
+  'storage-binding': 0x08,
+  'render-attachment': 0x10,
+});
 let nextObjectKeyId = 1;
 const objectKeyIds = new WeakMap();
 
@@ -140,6 +157,26 @@ function knownBytesFor(kind, descriptor) {
   return 0;
 }
 
+function usageFlags(names, browserFlags, fallback, label) {
+  if (typeof names === 'number') return names;
+  if (!Array.isArray(names) || names.length === 0) throw publicError('invalid-resource-descriptor', `${label} usage must be a nonempty array or numeric flags.`);
+  return names.reduce((flags, name) => {
+    const key = String(name).toUpperCase().replaceAll('-', '_');
+    const value = browserFlags && browserFlags[key] !== undefined ? browserFlags[key] : fallback[name];
+    if (value === undefined) throw publicError('invalid-resource-descriptor', `Unsupported ${label} usage.`);
+    return flags | value;
+  }, 0);
+}
+
+function asBytes(data) {
+  if (!ArrayBuffer.isView(data)) throw publicError('invalid-resource-descriptor', 'GPU upload data must be an ArrayBuffer view.');
+  return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+}
+
+function alignTo(value, alignment) {
+  return Math.ceil(value / alignment) * alignment;
+}
+
 function destroyGpuResource(resource) {
   if (resource && typeof resource.destroy === 'function') resource.destroy();
 }
@@ -156,7 +193,7 @@ export class DeviceResourceManager {
     this.knownAllocatedBytes = 0;
     this.unknownAllocationCount = 0;
     this.generation = lifecycle.generation;
-    this.unregister = lifecycle.registerResource(this);
+    this.unregister = lifecycle.registerResource(this, { persistent: true });
   }
 
   createBuffer(id, descriptor) { return this.createResource(RESOURCE_KINDS.BUFFER, id, descriptor, 'createBuffer'); }
@@ -164,6 +201,51 @@ export class DeviceResourceManager {
   createSampler(id, descriptor = {}) { return this.createResource(RESOURCE_KINDS.SAMPLER, id, descriptor, 'createSampler'); }
   createBindGroupLayout(id, descriptor) { return this.createResource(RESOURCE_KINDS.BIND_GROUP_LAYOUT, id, descriptor, 'createBindGroupLayout'); }
   createBindGroup(id, descriptor) { return this.createResource(RESOURCE_KINDS.BIND_GROUP, id, descriptor, 'createBindGroup'); }
+
+  createBufferFromData(id, { byteLength, usage = ['storage', 'copy-dst'], data = null, label = id } = {}) {
+    const size = alignTo(Number(byteLength ?? data?.byteLength), 4);
+    if (!Number.isFinite(size) || size <= 0) throw publicError('invalid-resource-descriptor', 'GPU buffer byteLength must be positive.');
+    const handle = this.createBuffer(id, { label, size, usage: usageFlags(usage, globalThis.GPUBufferUsage, BUFFER_USAGE_FALLBACK, 'buffer') });
+    if (data !== null && this.lifecycle.device?.queue?.writeBuffer) {
+      const bytes = asBytes(data);
+      if (bytes.byteLength > size) {
+        this.release(id);
+        throw publicError('resource-upload-too-large', 'GPU buffer upload exceeds allocated size.');
+      }
+      this.lifecycle.device.queue.writeBuffer(handle.resource, 0, bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    }
+    return handle;
+  }
+
+  createTextureFromPixels(id, { width, height, pixels, format = 'rgba8unorm', usage = ['texture-binding', 'copy-dst'], label = id } = {}) {
+    if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
+      throw publicError('invalid-resource-descriptor', 'GPU texture dimensions must be positive integers.');
+    }
+    const source = asBytes(pixels);
+    const sourceStride = width * 4;
+    if (source.byteLength !== sourceStride * height) throw publicError('resource-upload-too-large', 'RGBA texture pixel length does not match dimensions.');
+    const handle = this.createTexture(id, {
+      label,
+      size: { width, height, depthOrArrayLayers: 1 },
+      format,
+      usage: usageFlags(usage, globalThis.GPUTextureUsage, TEXTURE_USAGE_FALLBACK, 'texture'),
+    });
+    if (this.lifecycle.device?.queue?.writeTexture) {
+      const bytesPerRow = height === 1 ? sourceStride : alignTo(sourceStride, 256);
+      let upload = source;
+      if (bytesPerRow !== sourceStride) {
+        upload = new Uint8Array(bytesPerRow * height);
+        for (let row = 0; row < height; row += 1) upload.set(source.subarray(row * sourceStride, (row + 1) * sourceStride), row * bytesPerRow);
+      }
+      this.lifecycle.device.queue.writeTexture(
+        { texture: handle.resource },
+        upload,
+        { offset: 0, bytesPerRow, rowsPerImage: height },
+        { width, height, depthOrArrayLayers: 1 },
+      );
+    }
+    return handle;
+  }
 
   createResource(kind, id, descriptor, deviceMethod) {
     assertId(id);

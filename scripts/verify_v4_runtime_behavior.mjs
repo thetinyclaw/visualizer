@@ -3,7 +3,7 @@ import { probeRenderer, RENDERER_MODES } from '../v4/capability.js';
 import { GpuLifecycle, GPU_LIFECYCLE_STATES } from '../v4/gpu-lifecycle.js';
 import { RenderGraph, storageBuffer, instancedDepthTarget, computePass, boundedVolumePass, feedbackPass, postPass, compositePass } from '../v4/render-graph.js';
 import { validateSceneManifest } from '../v4/scene-manifest.js';
-import { startV4Runtime } from '../v4/runtime.js';
+import { startV4Runtime, hydrateRuntimeResources } from '../v4/runtime.js';
 import { DeviceResourceManager } from '../v4/resource-manager.js';
 import { AssetCache, AssetLoader } from '../v4/asset-loader.js';
 import { WebGpuGraphExecutor } from '../v4/render-graph-executor.js';
@@ -335,10 +335,16 @@ async function testDeviceResourceManagerBehavior() {
   assert.equal(manager.isHandleCurrent(a), false, 'pre-loss handles become stale');
   assert.equal(a.resource.destroyed, true, 'device-loss disposal destroys old GPU handles');
   assert.equal(manager.telemetry().knownAllocatedBytes, 0);
+  assert.equal(lifecycle.resources.has(manager), true, 'persistent manager re-registers after lifecycle loss cleanup');
 
   const recreated = manager.createBuffer('particles', { size: 1024, usage: 1 });
   assert.notEqual(recreated.resource, a.resource, 'resource is recreated on the new generation');
   assert.equal(recreated.generation, lifecycle.generation);
+  second.lose('unknown');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(recreated.resource.destroyed, true, 'resources created after first reacquire are destroyed on second loss');
+  assert.equal(lifecycle.resources.has(manager), true, 'persistent registration survives repeated losses without duplicates');
+  assert.equal([...lifecycle.resources].filter((resource) => resource === manager).length, 1, 'persistent manager is not duplicate-registered');
   assert.equal(manager.release('particles'), true);
   assert.equal(manager.get('particles'), null);
   manager.clear();
@@ -350,14 +356,40 @@ function makeHeaders(values) {
   return { get(name) { return lower.get(String(name).toLowerCase()) || null; } };
 }
 
-function makeJsonResponse(body, headers = {}) {
+function makeJsonResponse(body, headers = {}, responseOptions = {}) {
   const text = JSON.stringify(body);
+  const bytes = new TextEncoder().encode(text);
   return {
-    ok: true,
-    headers: makeHeaders({ 'content-type': 'application/json', 'content-length': String(text.length), ...headers }),
+    ok: responseOptions.ok ?? true,
+    type: responseOptions.type || 'basic',
+    url: Object.hasOwn(responseOptions, 'url') ? responseOptions.url : 'https://example.test/v4/assets/mesh.json',
+    headers: makeHeaders({ 'content-type': 'application/json', 'content-length': String(bytes.byteLength), ...headers }),
     async json() { return body; },
     async text() { return text; },
-    async arrayBuffer() { return new TextEncoder().encode(text).buffer; },
+    async arrayBuffer() { return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength); },
+  };
+}
+
+function makeStreamingResponse(chunks, headers = {}, responseOptions = {}) {
+  let index = 0;
+  let cancelled = false;
+  return {
+    ok: true,
+    type: 'basic',
+    url: responseOptions.url || 'https://example.test/v4/assets/stream.bin',
+    get cancelled() { return cancelled; },
+    headers: makeHeaders(headers),
+    body: {
+      getReader() {
+        return {
+          async read() {
+            if (index >= chunks.length) return { done: true };
+            return { done: false, value: chunks[index++] };
+          },
+          async cancel() { cancelled = true; },
+        };
+      },
+    },
   };
 }
 
@@ -407,6 +439,93 @@ async function testAssetLoaderAndCacheContainment() {
     }),
   });
   await assert.rejects(() => timeoutLoader.load('/slow.bin'), /Asset request was aborted or timed out/);
+}
+
+async function testAssetLoaderAdversarialContainment() {
+  let fetchInit = null;
+  const redirectSafe = new AssetLoader({
+    baseUrl: 'https://example.test/v4/demo.html',
+    allowedBasePath: '/v4/assets/',
+    maxBytes: 64,
+    fetchImpl: async (_url, init) => {
+      fetchInit = init;
+      return makeJsonResponse({ ok: 1 }, {}, { url: 'https://example.test/v4/assets/ok.json' });
+    },
+  });
+  await redirectSafe.load('./assets/ok.json');
+  assert.equal(fetchInit.redirect, 'error', 'asset fetch rejects redirects at fetch layer');
+  await assert.rejects(() => redirectSafe.load('/v4/%2e%2e/secrets.json'), /Asset path traversal is rejected|outside the allowed base path/);
+  await assert.rejects(() => redirectSafe.load('/private/ok.json'), /outside the allowed base path/);
+
+  const missingFinalUrl = new AssetLoader({ baseUrl: 'https://example.test/', fetchImpl: async () => makeJsonResponse({ ok: true }, {}, { url: '' }) });
+  await assert.rejects(() => missingFinalUrl.load('/v4/assets/ok.json'), /Asset final URL is unavailable/);
+  const crossFinalUrl = new AssetLoader({ baseUrl: 'https://example.test/', fetchImpl: async () => makeJsonResponse({ ok: true }, {}, { url: 'https://evil.test/ok.json' }) });
+  await assert.rejects(() => crossFinalUrl.load('/v4/assets/ok.json'), /Cross-origin assets are rejected/);
+  const opaque = new AssetLoader({ baseUrl: 'https://example.test/', fetchImpl: async () => makeJsonResponse({ ok: true }, {}, { type: 'opaque', url: 'https://example.test/ok.json' }) });
+  await assert.rejects(() => opaque.load('/v4/assets/ok.json'), /Asset request failed/);
+
+  const streamingResponse = makeStreamingResponse([
+    new Uint8Array([1, 2, 3]),
+    new Uint8Array([4, 5, 6]),
+  ], { 'content-type': 'application/octet-stream' });
+  const streamingLoader = new AssetLoader({ baseUrl: 'https://example.test/', maxBytes: 5, fetchImpl: async () => streamingResponse });
+  await assert.rejects(() => streamingLoader.load('/v4/assets/stream.bin'), /Asset exceeds configured size bound/);
+  assert.equal(streamingResponse.cancelled, true, 'stream reader is cancelled as soon as maxBytes is exceeded');
+}
+
+async function testAssetCacheAbortAndStaleRaces() {
+  const gate = deferred();
+  let signalSeen;
+  let fetchAttempts = 0;
+  const loader = new AssetLoader({
+    baseUrl: 'https://example.test/v4/demo.html',
+    fetchImpl: async (_url, init) => {
+      fetchAttempts += 1;
+      signalSeen = init.signal;
+      await gate.promise;
+      if (init.signal.aborted) throw new Error('private abort detail');
+      return makeJsonResponse({ late: true });
+    },
+  });
+  const cache = new AssetCache(loader);
+  const pending = cache.load('./assets/late.json');
+  await Promise.resolve();
+  cache.clear({ abortInflight: true });
+  assert.equal(signalSeen.aborted, true, 'clear({abortInflight:true}) aborts active fetches');
+  gate.resolve();
+  await assert.rejects(() => pending, /Asset request was aborted or timed out/);
+  assert.equal(cache.telemetry().entries, 0, 'aborted inflight completion cannot repopulate cache');
+
+  const releaseGate = deferred();
+  const releaseLoader = new AssetLoader({
+    baseUrl: 'https://example.test/v4/demo.html',
+    fetchImpl: async (_url, init) => {
+      await releaseGate.promise;
+      if (init.signal.aborted) throw new Error('private release abort');
+      return makeJsonResponse({ late: true });
+    },
+  });
+  const releaseCache = new AssetCache(releaseLoader);
+  const released = releaseCache.load('./assets/released.json');
+  await Promise.resolve();
+  assert.equal(releaseCache.release('https://example.test/v4/assets/released.json'), true, 'release aborts matching inflight load');
+  releaseGate.resolve();
+  await assert.rejects(() => released, /Asset request was aborted or timed out/);
+  assert.equal(releaseCache.telemetry().entries, 0, 'released inflight completion cannot populate cache');
+  assert.equal(fetchAttempts, 1);
+}
+
+async function testRuntimeHydrationApi() {
+  const lifecycle = new GpuLifecycle({ maxRetries: 0, retryDelayMs: 0 });
+  const device = makeDevice('hydrate');
+  await lifecycle.acquire(async () => device);
+  const manager = new DeviceResourceManager(lifecycle, { labelPrefix: 'hydrate-test' });
+  const cache = new AssetCache({ generatedLoaders: { 'blue-noise': async () => ({ width: 2, height: 2, pixels: new Uint8Array(16).fill(127) }) } });
+  await hydrateRuntimeResources({ manager, manifest: validManifest(), assetCache: cache });
+  assert.ok(manager.get('particles-a'), 'ping-pong simulation buffer A is hydrated');
+  assert.ok(manager.get('particles-b'), 'ping-pong simulation buffer B is hydrated');
+  assert.ok(manager.get('asset:blue-noise'), 'generated blue-noise texture asset is hydrated');
+  assert.equal(device.created.some((resource) => resource.write), true, 'hydrated assets/buffers upload through queue when available');
 }
 
 function testSceneManifestDeepValidation() {
@@ -706,6 +825,9 @@ await testRuntimeFallbackUpdatesPublicStatusContract();
 testExecutableRenderGraphSubmission();
 await testDeviceResourceManagerBehavior();
 await testAssetLoaderAndCacheContainment();
+await testAssetLoaderAdversarialContainment();
+await testAssetCacheAbortAndStaleRaces();
+await testRuntimeHydrationApi();
 testRenderGraphDeepValidation();
 testSceneManifestDeepValidation();
 await testFallbackCanvasSeparation();

@@ -27,6 +27,7 @@ export class GpuLifecycle {
     this.generation = 0;
     this.lifecycleEpoch = 0;
     this.resources = new Set();
+    this.persistentResources = new Set();
     this.disposed = false;
     this.retryScheduler = retryScheduler || ((delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)));
   }
@@ -56,6 +57,7 @@ export class GpuLifecycle {
       if (!device) throw new Error('No GPU device returned.');
       this.device = device;
       this.generation += 1;
+      for (const resource of this.persistentResources) this.resources.add(resource);
       this.transition(GPU_LIFECYCLE_STATES.READY);
       this.watchDeviceLoss(device, requestDevice, this.generation);
       return device;
@@ -72,19 +74,28 @@ export class GpuLifecycle {
       retryToken.lifecycleEpoch === this.lifecycleEpoch;
   }
 
-  registerResource(resource) {
+  registerResource(resource, { persistent = false } = {}) {
     if (!resource || typeof resource.dispose !== 'function') {
       throw new TypeError('GPU lifecycle resources must expose dispose().');
     }
     this.resources.add(resource);
-    return () => this.resources.delete(resource);
+    if (persistent) this.persistentResources.add(resource);
+    return () => {
+      this.resources.delete(resource);
+      this.persistentResources.delete(resource);
+    };
   }
 
-  disposeResources() {
+  disposeResources({ final = false } = {}) {
     for (const resource of this.resources) {
       try { resource.dispose(); } catch (error) { /* public lifecycle never leaks raw errors */ }
     }
     this.resources.clear();
+    if (final) {
+      this.persistentResources.clear();
+    } else {
+      for (const resource of this.persistentResources) this.resources.add(resource);
+    }
   }
 
   watchDeviceLoss(device, requestDevice, generation) {
@@ -114,7 +125,7 @@ export class GpuLifecycle {
   dispose() {
     this.disposed = true;
     this.lifecycleEpoch += 1;
-    this.disposeResources();
+    this.disposeResources({ final: true });
     if (this.device && typeof this.device.destroy === 'function') this.device.destroy();
     this.device = null;
     this.transition(GPU_LIFECYCLE_STATES.DISPOSED);
