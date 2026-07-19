@@ -354,6 +354,12 @@ function testExecutableTwoLayerCrossfadeComposite() {
   };
   const canvas = { width: 320, height: 180, clientWidth: 320, clientHeight: 180, getBoundingClientRect: () => ({ width: 320, height: 180 }), getContext: (kind) => kind === 'webgpu' ? context : null };
   const device = makeResourceDevice();
+  device.queue.writeBuffer = (buffer, offset, source, dataOffset = 0, size) => {
+    const sourceLength = ArrayBuffer.isView(source) ? source.length : source.byteLength;
+    if (size !== undefined && dataOffset + size > sourceLength) throw new RangeError('writeBuffer source range exceeds typed-array elements');
+    buffer.write = { offset, source, byteOffset: dataOffset, byteLength: size };
+    device.calls.writes.push(['buffer', buffer, offset, source, dataOffset, size]);
+  };
   device.createCommandEncoder = () => ({
     beginRenderPass() {
       return { setPipeline() {}, setBindGroup(slot, group) { calls.bindGroups.push([slot, group]); }, draw() {}, end() {} };

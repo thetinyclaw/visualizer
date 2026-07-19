@@ -471,7 +471,7 @@ export class WebGpuGraphExecutor {
       if (!transition) throw fail(`Pass ${passDef.id} crossfade uniform is unavailable.`);
       const requested = Number.isFinite(frameContext.transitionProgress) ? frameContext.transitionProgress : passDef.transition.progress;
       transition.values[0] = Math.max(0, Math.min(1, Number(requested) || 0));
-      this.device.queue.writeBuffer(transition.buffer, 0, transition.values, 0, transition.values.byteLength);
+      this.device.queue.writeBuffer(transition.buffer, 0, transition.values, 0, transition.values.length);
     }
     const autoBindGroup = this.autoBindGroups.get(passDef.id) || this.dynamicHistoryBindGroup(compiled);
     if (autoBindGroup && typeof passEncoder.setBindGroup === 'function') passEncoder.setBindGroup(0, autoBindGroup);

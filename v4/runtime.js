@@ -226,7 +226,8 @@ export async function startV4Runtime({
         }
         return manager;
       })
-      .catch(() => {
+      .catch((error) => {
+        globalThis.console?.error?.('Visualizer v4 GPU initialization failed.', error);
         resetExecutionState();
         publicErrors.push(Object.freeze({ code: 'gpu-resource-initialization-failed', message: 'Scene GPU resources could not be initialized.' }));
         return null;
