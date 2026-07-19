@@ -448,6 +448,7 @@ def browser_harness_script(seed: int, time_ms: float, mode: str, min_frames: int
       v4CaptureConfig: window.__V4_CAPTURE_CONFIG__,
       locationSearch: window.location.search,
     }};
+    const gpuTelemetry = exportedState.v4RuntimeSmoke?.gpuTelemetry || exportedState.v4CathedralWebGPU?.gpuTelemetry || null;
     return {{
       config,
       frameSamples: frames,
@@ -458,7 +459,17 @@ def browser_harness_script(seed: int, time_ms: float, mode: str, min_frames: int
       consoleLogs,
       exportedState,
       memory: {{ jsHeapUsedMB: perfMemory ? perfMemory.usedJSHeapSize / 1048576 : null }},
-      gpuTiming: {{ frameMs: null, unknownReason: 'WebGPU timestamp queries are not exposed by this route/controller' }},
+      gpuTiming: gpuTelemetry ? {{
+        source: gpuTelemetry.source,
+        frameNs: gpuTelemetry.latestFrameNs ?? null,
+        frameMs: gpuTelemetry.latestFrameMs ?? null,
+        sampleCount: gpuTelemetry.sampleCount ?? 0,
+        sampleAgeFrames: gpuTelemetry.sampleAgeFrames ?? null,
+        sampleAgeMs: gpuTelemetry.sampleAgeMs ?? null,
+        scope: gpuTelemetry.frameScope || 'frame',
+        passScopes: gpuTelemetry.passScopes || [],
+        unavailableReason: gpuTelemetry.unavailableReason || (gpuTelemetry.latestFrameMs === null ? 'timestamp-query-awaiting-sample' : null),
+      }} : {{ source: null, frameNs: null, frameMs: null, sampleCount: 0, sampleAgeFrames: null, sampleAgeMs: null, scope: 'frame', passScopes: [], unavailableReason: 'WebGPU timestamp query telemetry unavailable to this controller' }},
       gpuMemory: {{ mb: null, unknownReason: 'Browser GPU memory is not exposed to page JavaScript' }},
     }};
   }};
@@ -706,6 +717,7 @@ def run_local_browser_capture(*, route: str, effect_id: str, seed: int, time_ms:
                 observed_time_ms = attested_page_time_ms(page, requested_time_ms)
                 telemetry = page.evaluate("window.__V4_CAPTURE_SAMPLE__ && window.__V4_CAPTURE_SAMPLE__()")
                 require(isinstance(telemetry, Mapping), "browser harness did not export telemetry")
+                telemetry = require_mapping(telemetry, "browser telemetry")
                 observed_dpr = float(telemetry.get("dpr", 0))
                 require(abs(observed_dpr - float(dpr)) <= 0.05, f"observed DPR {observed_dpr} does not match requested DPR {dpr}")
                 require(previous_observed_time is None or observed_time_ms > previous_observed_time,
@@ -745,6 +757,8 @@ def run_local_browser_capture(*, route: str, effect_id: str, seed: int, time_ms:
             validate_motion_sheet(motion, require_real=True, evidence_root=temp_dir, path_resolver=staging_resolver)
             benchmark_path = derived_dir / "benchmark_report.json"
             manifest_path = raw_dir / "run-manifest.raw.json"
+            gpu_timing = require_mapping(telemetry.get("gpuTiming", {}), "capture.gpuTiming")
+            gpu_frame_ms = gpu_timing.get("frameMs")
             benchmark = {
                 "benchmark_schema_version": "1.0", "evidence_kind": "real_acceptance", "effect_id": effect_id,
                 "seed": seed, "captured_at": iso_now(), "run_id": run_id, "route": route,
@@ -754,7 +768,7 @@ def run_local_browser_capture(*, route: str, effect_id: str, seed: int, time_ms:
                 "requested_dpr": float(dpr), "effective_density": {"x": float(telemetry["dpr"]), "y": float(telemetry["dpr"])},
                 "frame_samples": [{"frame_index": int(s["frame_index"]), "frame_ms": float(s["frame_ms"]), "evidence_ref": raw_ref(final_raw_telemetry_path)} for s in frame_samples],
                 "summary": summary,
-                "gpu_timing": {"frame_ms": {"value": None, "unknown_reason": telemetry["gpuTiming"]["unknownReason"], "unit": "ms"}},
+                "gpu_timing": {"frame_ms": {"value": gpu_frame_ms, "unknown_reason": gpu_timing.get("unavailableReason") or ("" if gpu_frame_ms is not None else "timestamp-query-unavailable"), "unit": "ms", "source": gpu_timing.get("source"), "sample_count": gpu_timing.get("sampleCount", 0), "sample_age_frames": gpu_timing.get("sampleAgeFrames"), "scope": gpu_timing.get("scope", "frame")}},
                 "memory": {
                     "js_heap_used_mb": {"value": telemetry["memory"].get("jsHeapUsedMB"), "unknown_reason": "browser performance.memory unavailable" if telemetry["memory"].get("jsHeapUsedMB") is None else "", "unit": "MB"},
                     "gpu_memory_mb": {"value": telemetry["gpuMemory"].get("mb"), "unknown_reason": telemetry["gpuMemory"].get("unknownReason"), "unit": "MB"},

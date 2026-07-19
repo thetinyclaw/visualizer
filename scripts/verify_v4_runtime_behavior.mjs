@@ -85,6 +85,50 @@ function makeResourceDevice() {
   };
 }
 
+function makeTimestampDevice({ timestamps = [1000n, 9000n, 1500n, 2500n, 3000n, 7000n], mapReject = false } = {}) {
+  const device = makeResourceDevice();
+  const timestampWords = BigUint64Array.from(timestamps);
+  device.calls.queries = [];
+  device.createQuerySet = (descriptor) => {
+    const qs = { descriptor, destroyed: false, destroy() { this.destroyed = true; } };
+    device.calls.queries.push(qs);
+    device.created.push(qs);
+    return qs;
+  };
+  device.createBuffer = (descriptor) => {
+    const backing = new ArrayBuffer(descriptor.size || timestampWords.byteLength);
+    const resource = {
+      descriptor,
+      destroyed: false,
+      mapped: false,
+      async mapAsync() {
+        if (mapReject) throw new Error('map failed');
+        this.mapped = true;
+      },
+      getMappedRange() {
+        const copy = backing.slice(0);
+        const view = new BigUint64Array(copy);
+        view.set(timestampWords.slice(0, view.length));
+        return copy;
+      },
+      unmap() { this.mapped = false; },
+      destroy() { this.destroyed = true; },
+    };
+    device.calls.buffers.push(resource);
+    device.created.push(resource);
+    return resource;
+  };
+  device.createCommandEncoder = () => ({
+    writeTimestamp(querySet, index) { device.calls.writeTimestamp = device.calls.writeTimestamp || []; device.calls.writeTimestamp.push([querySet, index]); },
+    beginComputePass(descriptor) { device.calls.computePass = descriptor; return { setPipeline() {}, setBindGroup() {}, dispatchWorkgroups() {}, end() {} }; },
+    beginRenderPass(descriptor) { device.calls.renderPass = descriptor; return { setPipeline() {}, setBindGroup() {}, setVertexBuffer() {}, setIndexBuffer() {}, draw() {}, drawIndexed() {}, end() {} }; },
+    resolveQuerySet(...args) { device.calls.resolveQuerySet = args; },
+    copyBufferToBuffer(...args) { device.calls.copyBufferToBuffer = args; },
+    finish() { return { id: 'timestamp-command-buffer' }; },
+  });
+  return device;
+}
+
 function makePipeline(id) {
   return { id, layoutBindGroupCount: 1, getBindGroupLayout(index) { return { id: `${id}:layout:${index}` }; } };
 }
@@ -941,6 +985,109 @@ async function testFallbackCanvasSeparation() {
   assert.deepEqual(fallbackCanvas.calls, ['webgl2']);
 }
 
+async function testTimestampCapabilityOptionalRequest() {
+  const requested = [];
+  const supported = await probeRenderer({
+    navigatorObject: { gpu: { async requestAdapter() { return { features: new Set(['timestamp-query']), limits: { maxStorageBuffersPerShaderStage: 4, maxStorageBufferBindingSize: 1 << 20 }, async requestDevice(descriptor) { requested.push(descriptor.requiredFeatures); return makeDevice('timestamp-capable'); } }; } } },
+    fallbackCanvas: makeCanvas(),
+  });
+  assert.equal(supported.webgpu.telemetry.timestampQuerySupported, true);
+  assert.deepEqual(requested[0], ['timestamp-query'], 'timestamp-query is opted into only when the adapter advertises it');
+
+  const unsupportedRequests = [];
+  const unsupported = await probeRenderer({
+    navigatorObject: { gpu: { async requestAdapter() { return { features: new Set(), limits: { maxStorageBuffersPerShaderStage: 4, maxStorageBufferBindingSize: 1 << 20 }, async requestDevice(descriptor) { unsupportedRequests.push(descriptor.requiredFeatures); return makeDevice('no-timestamp'); } }; } } },
+    fallbackCanvas: makeCanvas(),
+  });
+  assert.equal(unsupported.webgpu.telemetry.timestampQuerySupported, false);
+  assert.equal(unsupported.webgpu.telemetry.unavailableReason, 'timestamp-query-feature-unavailable');
+  assert.deepEqual(unsupportedRequests[0], [], 'unsupported adapters are not asked for timestamp-query');
+
+  const retryRequests = [];
+  const retry = await probeRenderer({
+    navigatorObject: { gpu: { async requestAdapter() { return { features: new Set(['timestamp-query']), limits: { maxStorageBuffersPerShaderStage: 4, maxStorageBufferBindingSize: 1 << 20 }, async requestDevice(descriptor) { retryRequests.push(descriptor.requiredFeatures); if (descriptor.requiredFeatures.includes('timestamp-query')) throw new Error('reject optional timestamp'); return makeDevice('timestamp-retry'); } }; } } },
+    fallbackCanvas: makeCanvas(),
+  });
+  assert.equal(retry.webgpu.telemetry.timestampQuerySupported, false, 'timestamp request failure retries without timestamp instead of breaking fallback');
+  assert.deepEqual(retryRequests, [['timestamp-query'], []]);
+}
+
+async function testExecutorTimestampTelemetryHonestyAndFlush() {
+  const canvas = makeCanvas();
+  canvas.getBoundingClientRect = () => ({ width: 320, height: 180 });
+  const device = makeTimestampDevice();
+  const graph = makeExecutorGraph('timestamp-executor');
+  const executor = new WebGpuGraphExecutor({
+    device,
+    canvas,
+    graph,
+    pipelines: new Map([['render-pipeline', { id: 'render' }], ['composite-pipeline', { id: 'composite' }]]),
+    timestampTelemetry: { enabled: true },
+  });
+  const first = executor.render({ submittedFrameCount: 0 });
+  assert.equal(first.gpuTelemetry.supported, true);
+  assert.equal(first.gpuTelemetry.latestFrameNs, null, 'no GPU number is exposed before async query readback resolves');
+  assert.ok(device.calls.renderPass.timestampWrites, 'render pass descriptor carries timestampWrites');
+  assert.equal(device.calls.resolveQuerySet[1], 0, 'first ring slot resolves from query index zero');
+  assert.equal(device.calls.copyBufferToBuffer[4], 6 * 8, 'bounded readback copies exactly frame + two pass pairs');
+  const flushed = await executor.flushTelemetry({ timeoutMs: 100, submittedFrameCount: 1 });
+  assert.equal(flushed.latestFrameNs, 8000);
+  assert.equal(flushed.latestFrameMs, 0.008);
+  assert.deepEqual(flushed.latest.passes.map((sample) => [sample.scope, sample.ns]), [['pass:draw', 1000], ['pass:composite', 4000]]);
+  assert.equal(flushed.source, 'timestamp-query');
+  executor.render({ submittedFrameCount: 1 });
+  executor.render({ submittedFrameCount: 2 });
+  assert.equal(device.calls.queries.length, 1, 'query set is reused across frames');
+  assert.equal(device.calls.buffers.filter((buffer) => /timestamp-readback/.test(buffer.descriptor.label)).length, 3, 'bounded readback ring is reused');
+  executor.dispose();
+  assert.equal(device.calls.queries[0].destroyed, true, 'query set is destroyed on executor cleanup/device loss disposal');
+  assert.equal(device.calls.buffers.filter((buffer) => /timestamp/.test(buffer.descriptor.label)).every((buffer) => buffer.destroyed), true, 'timestamp buffers are destroyed');
+}
+
+async function testTimestampTelemetryUnavailableAndMapFailure() {
+  const canvas = makeCanvas();
+  canvas.getBoundingClientRect = () => ({ width: 320, height: 180 });
+  const unsupported = makeResourceDevice();
+  const unsupportedExecutor = new WebGpuGraphExecutor({ device: unsupported, canvas, graph: makeExecutorGraph('timestamp-unavailable'), pipelines: new Map([['render-pipeline', {}], ['composite-pipeline', {}]]), timestampTelemetry: { enabled: false, unavailableReason: 'timestamp-query-feature-unavailable' } });
+  assert.equal(unsupportedExecutor.telemetrySnapshot().latestFrameNs, null);
+  assert.equal(unsupportedExecutor.telemetrySnapshot().unavailableReason, 'timestamp-query-feature-unavailable');
+  assert.equal(unsupportedExecutor.render().gpuTelemetry.latestFrameNs, null, 'unsupported telemetry never fabricates timing');
+
+  const failing = makeTimestampDevice({ mapReject: true });
+  const failingExecutor = new WebGpuGraphExecutor({ device: failing, canvas, graph: makeExecutorGraph('timestamp-map-failure'), pipelines: new Map([['render-pipeline', {}], ['composite-pipeline', {}]]), timestampTelemetry: { enabled: true } });
+  failingExecutor.render({ submittedFrameCount: 0 });
+  const failed = await failingExecutor.flushTelemetry({ timeoutMs: 100, submittedFrameCount: 1 });
+  assert.equal(failed.latestFrameNs, null, 'map failure remains null');
+  assert.equal(failed.unavailableReason, 'timestamp-query-map-failed');
+
+  const quantized = makeTimestampDevice({ timestamps: [5000n, 5000n, 6000n, 7000n, 8000n, 9000n] });
+  const quantizedExecutor = new WebGpuGraphExecutor({ device: quantized, canvas, graph: makeExecutorGraph('timestamp-quantized'), pipelines: new Map([['render-pipeline', {}], ['composite-pipeline', {}]]), timestampTelemetry: { enabled: true } });
+  quantizedExecutor.render({ submittedFrameCount: 0 });
+  const quantizedResult = await quantizedExecutor.flushTelemetry({ timeoutMs: 100, submittedFrameCount: 1 });
+  assert.equal(quantizedResult.latestFrameNs, null, 'privacy-quantized zero frame duration stays null');
+  assert.equal(quantizedResult.unavailableReason, 'timestamp-query-frame-nonpositive');
+}
+
+async function testLockedRuntimeFlushTelemetryWithoutRaf() {
+  const device = makeTimestampDevice();
+  const runtime = await startV4Runtime({
+    canvas: makeCanvas(),
+    statusElement: { dataset: {}, textContent: '' },
+    manifest: validManifest(),
+    graphFactory: smokeGraph,
+    autoStart: false,
+    navigatorObject: { gpu: { async requestAdapter() { return { features: new Set(['timestamp-query']), limits: { maxStorageBuffersPerShaderStage: 4, maxStorageBufferBindingSize: 1 << 20 }, async requestDevice() { return device; } }; } } },
+    createFallbackCanvas: makeCanvas,
+  });
+  await runtime.resourcesReady;
+  assert.equal(runtime.frameCounters.rafScheduled, false);
+  assert.equal(runtime.gpuTelemetry.latestFrameNs, null);
+  runtime.renderFrame(18);
+  const flushed = await runtime.flushTelemetry({ timeoutMs: 100 });
+  assert.equal(flushed.latestFrameNs, 8000, 'explicit locked-frame flush resolves submitted timestamps without starting RAF');
+  assert.equal(runtime.frameCounters.rafScheduled, false);
+}
+
 function testAudioFeatureBusLogBandsAndAllocationReuse() {
   const edges = makeLogBandEdges();
   assert.equal(edges.length, AUDIO_BAND_COUNT + 1);
@@ -1517,6 +1664,10 @@ testNeonVoxelCloudGraphAndManifestContracts();
 testNeonVoxelCloudExecutorDispatchAndInstancedDrawReuse();
 await testRuntimeAutoStartAndFrameCounters();
 await testFallbackCanvasSeparation();
+await testTimestampCapabilityOptionalRequest();
+await testExecutorTimestampTelemetryHonestyAndFlush();
+await testTimestampTelemetryUnavailableAndMapFailure();
+await testLockedRuntimeFlushTelemetryWithoutRaf();
 testAudioFeatureBusLogBandsAndAllocationReuse();
 await testLiveAudioSecureContextAndPermissionDenial();
 await testLiveAudioFallbackAndStopCleanup();
@@ -1525,4 +1676,4 @@ await testForgedGestureFlagAndInactiveUserActivationCannotRequestMic();
 await testStaleCapturedWorkletHandlerAfterStopAndRestartCannotMutate();
 await testDemoFlatLabelsCannotBeConfused();
 console.log('Behavioral v4 runtime tests passed');
-console.log('Covered lifecycle adoption/loss budget/stale retry aborts, fallback status, render-graph refs, manifest refs, WebGL2/2D canvas separation, live audio worklet/fallback lifecycle, permission/security gates, and allocation reuse');
+console.log('Covered lifecycle adoption/loss budget/stale retry aborts, fallback status, render-graph refs, manifest refs, WebGL2/2D canvas separation, optional timestamp telemetry honesty/flush, live audio worklet/fallback lifecycle, permission/security gates, and allocation reuse');
