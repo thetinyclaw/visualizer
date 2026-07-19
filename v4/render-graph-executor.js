@@ -4,7 +4,7 @@ const RENDER_ATTACHMENT = globalThis.GPUTextureUsage?.RENDER_ATTACHMENT ?? 0x10;
 const TEXTURE_BINDING = globalThis.GPUTextureUsage?.TEXTURE_BINDING ?? 0x04;
 const COPY_SRC = globalThis.GPUTextureUsage?.COPY_SRC ?? 0x01;
 
-const EXECUTABLE_PASS_KINDS = new Set(['render', 'compute', 'post', 'composite']);
+const EXECUTABLE_PASS_KINDS = new Set(['render', 'compute', 'post', 'history', 'composite']);
 const DEFAULT_CLEAR = Object.freeze({ r: 0.015, g: 0.025, b: 0.055, a: 1 });
 
 function fail(message) {
@@ -88,6 +88,17 @@ function assertNoPostReadWriteHazard(pass, descriptors) {
   }
 }
 
+function assertHistoryContract(pass, descriptors) {
+  if (pass.kind !== 'history') return;
+  const history = descriptors.get(pass.history);
+  if (!history || history.type !== 'history-target') throw fail(`Pass ${pass.id} requires a history-target resource.`);
+  if (!history.previous || !history.next || history.previous === history.next) throw fail(`Pass ${pass.id} history previous/next targets must be distinct.`);
+  const sourceIdentity = canonicalResourceId(pass.source, descriptors);
+  if (sourceIdentity === history.previous || sourceIdentity === history.next || sourceIdentity === canonicalResourceId(pass.history, descriptors)) {
+    throw fail(`Pass ${pass.id} history source must not alias ping-pong targets.`);
+  }
+}
+
 function bindPassResources(passEncoder, resources, graphPass) {
   for (const [slot, id] of (graphPass.resources || []).entries()) {
     const resource = resources.get(id);
@@ -124,6 +135,7 @@ export class WebGpuGraphExecutor {
     this.ownedTextures = new Map();
     this.fullscreenSampler = null;
     this.autoBindGroups = new Map();
+    this.historyStates = new Map();
     this.textureGeneration = 0;
     this.width = 0;
     this.height = 0;
@@ -152,7 +164,7 @@ export class WebGpuGraphExecutor {
       const descriptor = descriptors.get(id);
       if (!descriptor) throw fail(`Pass ${pass.id} references graph resource ${id} that is not declared.`);
       const resource = this.resourceRegistry.get(id);
-      if (!resource && !['render-target', 'depth-target', 'instanced-depth-target'].includes(descriptor.type)) throw fail(`Pass ${pass.id} references missing executable resource ${id}.`);
+      if (!resource && !['render-target', 'depth-target', 'instanced-depth-target', 'history-target'].includes(descriptor.type)) throw fail(`Pass ${pass.id} references missing executable resource ${id}.`);
       return resource || descriptor;
     };
     const resolveExecutor = (name, pass) => {
@@ -164,6 +176,7 @@ export class WebGpuGraphExecutor {
     return graph.passes.map((pass) => {
       if (!EXECUTABLE_PASS_KINDS.has(pass.kind)) throw fail(`Pass ${pass.id} kind ${pass.kind} is not executable in this foundation.`);
       assertNoPostReadWriteHazard(pass, descriptors);
+      assertHistoryContract(pass, descriptors);
       if (pass.kind === 'compute') {
         const pipeline = resolvePipeline(pass.pipeline, pass);
         const executor = resolveExecutor(pass.executor, pass);
@@ -183,6 +196,12 @@ export class WebGpuGraphExecutor {
         const executor = resolveExecutor(pass.executor, pass);
         for (const id of [...(pass.inputs || []), pass.output, ...(pass.resources || [])]) resolveResource(id, pass);
         return Object.freeze({ kind: 'post', pass, pipeline, executor });
+      }
+      if (pass.kind === 'history') {
+        const pipeline = resolvePipeline(pass.pipeline, pass);
+        const executor = resolveExecutor(pass.executor, pass);
+        for (const id of [pass.source, pass.history, ...(pass.resources || [])]) resolveResource(id, pass);
+        return Object.freeze({ kind: 'history', pass, pipeline, executor });
       }
       if (pass.kind === 'composite') {
         if ((pass.output || 'swapchain') !== 'swapchain') throw fail(`Pass ${pass.id} composite output must be swapchain.`);
@@ -215,7 +234,11 @@ export class WebGpuGraphExecutor {
     if (!this.syncCanvasSize()) return false;
     let recreated = false;
     for (const resource of this.graph.resources || []) {
-      if (!resource.canvasSized || !['render-target', 'depth-target', 'instanced-depth-target'].includes(resource.type)) continue;
+      if (!resource.canvasSized || !['render-target', 'depth-target', 'instanced-depth-target', 'history-target'].includes(resource.type)) continue;
+      if (resource.type === 'history-target') {
+        recreated = this.ensureHistoryTargets(resource) || recreated;
+        continue;
+      }
       const existing = this.ownedTextures.get(resource.id);
       if (existing && existing.width === this.width && existing.height === this.height) continue;
       if (existing?.texture && typeof existing.texture.destroy === 'function') existing.texture.destroy();
@@ -233,6 +256,73 @@ export class WebGpuGraphExecutor {
     return true;
   }
 
+  ensureHistoryTargets(resource) {
+    const existing = this.historyStates.get(resource.id);
+    if (existing && existing.width === this.width && existing.height === this.height) return false;
+    if (existing) {
+      for (const texture of [existing.previousTexture, existing.nextTexture]) if (texture && typeof texture.destroy === 'function') texture.destroy();
+    }
+    const makeDescriptor = (role) => ({
+      label: `${this.graph.id}:${resource.id}:${role}`,
+      size: { width: this.width, height: this.height, depthOrArrayLayers: 1 },
+      format: resource.format || this.format,
+      usage: RENDER_ATTACHMENT | TEXTURE_BINDING | COPY_SRC,
+    });
+    const previousTexture = this.device.createTexture(makeDescriptor('previous'));
+    const nextTexture = this.device.createTexture(makeDescriptor('next'));
+    this.textureGeneration += 1;
+    this.historyStates.set(resource.id, {
+      id: resource.id,
+      descriptor: resource,
+      previousTexture,
+      nextTexture,
+      previousRole: 'previous',
+      nextRole: 'next',
+      width: this.width,
+      height: this.height,
+      parity: 0,
+      swapCount: 0,
+      resetCount: (existing?.resetCount || 0) + 1,
+      pendingReset: true,
+      pendingSwap: false,
+      resetReason: existing ? 'resize' : 'first-frame',
+    });
+    return true;
+  }
+
+  historyState(id) {
+    const state = this.historyStates.get(id);
+    if (!state) throw fail(`History resource ${id} is not allocated.`);
+    return state;
+  }
+
+  requestHistoryReset(id, reason = 'external-reset') {
+    const state = this.historyStates.get(id);
+    if (!state) return false;
+    state.pendingReset = true;
+    state.resetCount += 1;
+    state.resetReason = reason;
+    this.textureGeneration += 1;
+    this.recreateAutoBindGroups();
+    return true;
+  }
+
+  historyDiagnostics() {
+    return Object.freeze([...this.historyStates.values()].map((state) => Object.freeze({
+      id: state.id,
+      parity: state.parity,
+      swapCount: state.swapCount,
+      resetCount: state.resetCount,
+      pendingReset: state.pendingReset,
+      decay: state.descriptor.decay,
+      width: state.width,
+      height: state.height,
+      previousRole: state.previousRole,
+      nextRole: state.nextRole,
+      textureGeneration: this.textureGeneration,
+    })));
+  }
+
   ensureFullscreenSampler() {
     if (!this.fullscreenSampler) this.fullscreenSampler = this.device.createSampler ? this.device.createSampler({ label: `${this.graph.id}:fullscreen-linear`, magFilter: 'linear', minFilter: 'linear' }) : null;
     return this.fullscreenSampler;
@@ -247,6 +337,7 @@ export class WebGpuGraphExecutor {
       if (compiled.executor || !['post', 'composite'].includes(compiled.kind) || !compiled.pipeline || typeof compiled.pipeline.getBindGroupLayout !== 'function' || typeof this.device.createBindGroup !== 'function') continue;
       const sourceIds = compiled.kind === 'post' ? (compiled.pass.inputs || []) : (compiled.pass.layers || []);
       if (sourceIds.length !== 1) throw fail(`Pass ${compiled.pass.id} requires exactly one sampled source in this foundation.`);
+      if (this.historyStates.has(sourceIds[0])) continue;
       const sampler = this.ensureFullscreenSampler();
       const view = this.textureView(sourceIds[0]);
       if (!sampler || !view) throw fail(`Pass ${compiled.pass.id} cannot create fullscreen bind group.`);
@@ -260,11 +351,48 @@ export class WebGpuGraphExecutor {
 
   textureView(id) {
     if (id === 'swapchain') return this.context.getCurrentTexture().createView();
+    if (this.historyStates.has(id)) return this.historyState(id).nextTexture.createView();
     const owned = this.ownedTextures.get(id)?.texture;
     const registered = this.resourceRegistry.get(id);
     const texture = owned || registered;
     if (!texture || typeof texture.createView !== 'function') throw fail(`Resource ${id} is not a texture view source.`);
     return texture.createView();
+  }
+
+  historyTextureView(id, role) {
+    const state = this.historyState(id);
+    const texture = role === 'previous' ? state.previousTexture : state.nextTexture;
+    return texture.createView();
+  }
+
+  encodeHistoryResetIfNeeded(encoder, state, clearColor) {
+    if (!state.pendingReset) return;
+    for (const texture of [state.previousTexture, state.nextTexture]) {
+      const pass = encoder.beginRenderPass({
+        label: `${this.graph.id}:${state.id}:history-reset-clear`,
+        colorAttachments: [{ view: texture.createView(), clearValue: clearColor || { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
+      });
+      pass.end();
+    }
+  }
+
+  dynamicHistoryBindGroup(compiled) {
+    if (compiled.executor || compiled.kind !== 'composite' || !compiled.pipeline || typeof compiled.pipeline.getBindGroupLayout !== 'function' || typeof this.device.createBindGroup !== 'function') return null;
+    const sourceIds = compiled.pass.layers || [];
+    if (sourceIds.length !== 1 || !this.historyStates.has(sourceIds[0])) return null;
+    const state = this.historyState(sourceIds[0]);
+    const key = `${compiled.pass.id}:${sourceIds[0]}:${this.textureGeneration}:${state.parity}`;
+    const cached = this.autoBindGroups.get(key);
+    if (cached) return cached;
+    const sampler = this.ensureFullscreenSampler();
+    const view = this.textureView(sourceIds[0]);
+    const bindGroup = this.device.createBindGroup({
+      label: `${this.graph.id}:${compiled.pass.id}:history-bind-group:${state.parity}`,
+      layout: compiled.pipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: sampler }, { binding: 1, resource: view }],
+    });
+    this.autoBindGroups.set(key, bindGroup);
+    return bindGroup;
   }
 
   encodeCompute(encoder, compiled, frameContext) {
@@ -280,7 +408,8 @@ export class WebGpuGraphExecutor {
 
   encodeRenderLike(encoder, compiled, frameContext) {
     const passDef = compiled.pass;
-    const colorIds = compiled.kind === 'composite' ? ['swapchain'] : (compiled.kind === 'post' ? [passDef.output] : passDef.colorTargets);
+    const colorIds = compiled.kind === 'composite' ? ['swapchain'] : (compiled.kind === 'post' ? [passDef.output] : (compiled.kind === 'history' ? [passDef.history] : passDef.colorTargets));
+    if (compiled.kind === 'history') this.encodeHistoryResetIfNeeded(encoder, this.historyState(passDef.history), passDef.clearColor);
     const descriptor = {
       label: `${this.graph.id}:${passDef.id}`,
       colorAttachments: colorIds.map((id, index) => ({
@@ -295,15 +424,18 @@ export class WebGpuGraphExecutor {
     }
     const passEncoder = encoder.beginRenderPass(descriptor);
     if (compiled.pipeline) passEncoder.setPipeline(compiled.pipeline);
-    const autoBindGroup = this.autoBindGroups.get(passDef.id);
+    const autoBindGroup = this.autoBindGroups.get(passDef.id) || this.dynamicHistoryBindGroup(compiled);
     if (autoBindGroup && typeof passEncoder.setBindGroup === 'function') passEncoder.setBindGroup(0, autoBindGroup);
     bindPassResources(passEncoder, this.resourceRegistry, passDef);
     for (const [slot, id] of (passDef.vertexBuffers || []).entries()) passEncoder.setVertexBuffer(slot, this.resourceRegistry.get(id));
     if (passDef.indexBuffer) passEncoder.setIndexBuffer(this.resourceRegistry.get(passDef.indexBuffer), passDef.indexFormat || 'uint32');
-    if (compiled.executor) compiled.executor({ pass: passEncoder, device: this.device, resources: this.resourceRegistry, frameContext, graphPass: passDef, executor: this });
+    const callbackContext = compiled.kind === 'history'
+      ? { ...frameContext, history: this.historyState(passDef.history), historyReset: this.historyState(passDef.history).pendingReset }
+      : frameContext;
+    if (compiled.executor) compiled.executor({ pass: passEncoder, device: this.device, resources: this.resourceRegistry, frameContext: callbackContext, graphPass: passDef, executor: this });
     if (passDef.drawIndexed) passEncoder.drawIndexed(...passDef.drawIndexed);
     else if (passDef.draw) passEncoder.draw(...passDef.draw);
-    else if (compiled.kind === 'post' || compiled.kind === 'composite') passEncoder.draw(3, 1, 0, 0);
+    else if (compiled.kind === 'post' || compiled.kind === 'history' || compiled.kind === 'composite') passEncoder.draw(3, 1, 0, 0);
     passEncoder.end();
   }
 
@@ -315,12 +447,32 @@ export class WebGpuGraphExecutor {
     }
     const encoder = this.device.createCommandEncoder({ label: `${this.graph.id}:frame` });
     const executed = [];
+    const pendingHistorySwaps = [];
     for (const compiled of this.compiledPasses) {
       if (compiled.kind === 'compute') this.encodeCompute(encoder, compiled, frameContext);
-      else this.encodeRenderLike(encoder, compiled, frameContext);
+      else {
+        this.encodeRenderLike(encoder, compiled, frameContext);
+        if (compiled.kind === 'history') {
+          const state = this.historyState(compiled.pass.history);
+          state.pendingSwap = true;
+          pendingHistorySwaps.push(state);
+        }
+      }
       executed.push(compiled.pass.id);
     }
     this.device.queue.submit([encoder.finish()]);
+    for (const state of pendingHistorySwaps) {
+      const oldPrevious = state.previousTexture;
+      state.previousTexture = state.nextTexture;
+      state.nextTexture = oldPrevious;
+      const oldRole = state.previousRole;
+      state.previousRole = state.nextRole;
+      state.nextRole = oldRole;
+      state.parity = 1 - state.parity;
+      state.swapCount += 1;
+      state.pendingReset = false;
+      state.pendingSwap = false;
+    }
     return Object.freeze({ submitted: true, width: this.width, height: this.height, dpr: this.dpr, graphId: this.graph.id, passes: Object.freeze(executed) });
   }
 
@@ -328,7 +480,11 @@ export class WebGpuGraphExecutor {
     if (this.disposed) return;
     this.disposed = true;
     for (const entry of this.ownedTextures.values()) if (entry.texture && typeof entry.texture.destroy === 'function') entry.texture.destroy();
+    for (const state of this.historyStates.values()) {
+      for (const texture of [state.previousTexture, state.nextTexture]) if (texture && typeof texture.destroy === 'function') texture.destroy();
+    }
     this.ownedTextures.clear();
+    this.historyStates.clear();
     this.autoBindGroups.clear();
     this.fullscreenSampler = null;
     this.textureGeneration += 1;

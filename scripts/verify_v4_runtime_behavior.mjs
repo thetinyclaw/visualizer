@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { probeRenderer, RENDERER_MODES } from '../v4/capability.js';
 import { GpuLifecycle, GPU_LIFECYCLE_STATES } from '../v4/gpu-lifecycle.js';
-import { RenderGraph, storageBuffer, uniformBuffer, vertexBuffer, indexBuffer, renderTarget, depthTarget, instancedDepthTarget, computePass, renderPass, boundedVolumePass, feedbackPass, postPass, compositePass } from '../v4/render-graph.js';
+import { RenderGraph, storageBuffer, uniformBuffer, vertexBuffer, indexBuffer, renderTarget, depthTarget, historyTarget, instancedDepthTarget, computePass, renderPass, boundedVolumePass, feedbackPass, postPass, historyPass, compositePass } from '../v4/render-graph.js';
 import { validateSceneManifest } from '../v4/scene-manifest.js';
 import { startV4Runtime, hydrateRuntimeResources } from '../v4/runtime.js';
 import { DeviceResourceManager } from '../v4/resource-manager.js';
@@ -130,6 +130,84 @@ function testExecutableRenderGraphSubmission() {
   executor.dispose();
   assert.equal(calls.unconfigured, true);
   assert.equal(device.calls.textures.every((texture) => texture.destroyed), true, 'owned canvas-sized targets are destroyed');
+}
+
+function testExecutableHistoryPingPongTransactions() {
+  const calls = { passes: [], submissions: [], historyRoles: [] };
+  const context = {
+    configure() {},
+    getCurrentTexture() { return { createView: () => ({ id: 'swap-view' }) }; },
+    unconfigure() { calls.unconfigured = true; },
+  };
+  const canvas = { width: 320, height: 180, clientWidth: 320, clientHeight: 180, getBoundingClientRect: () => ({ width: 320, height: 180 }), getContext: (kind) => kind === 'webgpu' ? context : null };
+  const device = makeResourceDevice();
+  device.createCommandEncoder = () => ({
+    beginRenderPass(descriptor) {
+      calls.passes.push(descriptor);
+      return { setPipeline() {}, setBindGroup() {}, draw() {}, end() {} };
+    },
+    finish() { return { id: `history-command-${calls.submissions.length}` }; },
+  });
+  device.queue.submit = (buffers) => calls.submissions.push(buffers);
+  const graph = new RenderGraph({ id: 'history-transaction' })
+    .addResource(renderTarget('scene-color'))
+    .addResource(historyTarget('trail-history', { decay: 0.87 }))
+    .addPass(renderPass('scene-current', { pipeline: 'scene', colorTargets: ['scene-color'], draw: [3, 1, 0, 0] }))
+    .addPass(historyPass('history-feedback', { pipeline: 'history', source: 'scene-color', history: 'trail-history', executor: 'history-bind', draw: [3, 1, 0, 0] }))
+    .addPass(compositePass('history-composite', { layers: ['trail-history'], output: 'swapchain', pipeline: 'composite', draw: [3, 1, 0, 0] }))
+    .freeze();
+  const executor = new WebGpuGraphExecutor({
+    device,
+    canvas,
+    graph,
+    pipelines: new Map([['scene', makePipeline('scene')], ['history', makePipeline('history')], ['composite', makePipeline('composite')]]),
+    executors: new Map([['history-bind', ({ frameContext, graphPass, executor: activeExecutor }) => {
+      calls.historyRoles.push({
+        reset: frameContext.historyReset,
+        parity: frameContext.history.parity,
+        previous: activeExecutor.historyState(graphPass.history).previousTexture.descriptor.label,
+        next: activeExecutor.historyState(graphPass.history).nextTexture.descriptor.label,
+        source: activeExecutor.ownedTextures.get(graphPass.source).texture.descriptor.label,
+      });
+      assert.notEqual(calls.historyRoles.at(-1).source, calls.historyRoles.at(-1).previous, 'history source and previous target are physically distinct');
+      assert.notEqual(calls.historyRoles.at(-1).source, calls.historyRoles.at(-1).next, 'history source and next target are physically distinct');
+      assert.notEqual(calls.historyRoles.at(-1).previous, calls.historyRoles.at(-1).next, 'history previous and next targets are physically distinct');
+    }]]),
+  });
+  assert.equal(device.calls.textures.length, 3, 'scene plus two canvas-sized history targets allocated');
+  const first = executor.render();
+  assert.equal(first.submitted, true);
+  assert.equal(calls.historyRoles[0].reset, true, 'first frame deterministically clears history before sampling');
+  assert.equal(executor.historyDiagnostics()[0].swapCount, 1, 'history swap occurs after successful submit');
+  const firstPreviousAfterSwap = executor.historyDiagnostics()[0].previousRole;
+  const second = executor.render();
+  assert.equal(second.submitted, true);
+  assert.equal(calls.historyRoles[1].reset, false, 'second frame samples initialized previous history');
+  assert.notEqual(executor.historyDiagnostics()[0].previousRole, firstPreviousAfterSwap, 'physical previous/next roles alternate');
+  const bindGroupsAfterSecond = device.calls.bindGroups.length;
+  executor.render();
+  assert.equal(device.calls.bindGroups.length, bindGroupsAfterSecond, 'composite history bind groups are reused once both parity views are cached');
+  canvas.getBoundingClientRect = () => ({ width: 400, height: 200 });
+  executor.resizeTargets();
+  const afterResize = executor.historyDiagnostics()[0];
+  assert.equal(afterResize.pendingReset, true, 'resize requests deterministic history reset');
+  assert.equal(afterResize.width, 400);
+  const texturesBeforeDispose = [...device.calls.textures];
+  executor.dispose();
+  assert.equal(texturesBeforeDispose.every((texture) => texture.destroyed), true, 'dispose destroys scene and both history targets');
+
+  const failingDevice = makeResourceDevice();
+  let shouldFail = true;
+  failingDevice.queue.submit = () => { if (shouldFail) throw new Error('submit failed'); };
+  const failingExecutor = new WebGpuGraphExecutor({ device: failingDevice, canvas, graph, pipelines: new Map([['scene', makePipeline('scene')], ['history', makePipeline('history')], ['composite', makePipeline('composite')]]), executors: new Map([['history-bind', () => {}]]) });
+  const before = failingExecutor.historyDiagnostics()[0];
+  assert.throws(() => failingExecutor.render(), /submit failed/);
+  const after = failingExecutor.historyDiagnostics()[0];
+  assert.equal(after.swapCount, before.swapCount, 'failed queue.submit must not swap history targets');
+  assert.equal(after.parity, before.parity, 'failed queue.submit preserves parity');
+  shouldFail = false;
+  assert.equal(failingExecutor.render().submitted, true);
+  assert.equal(failingExecutor.historyDiagnostics()[0].swapCount, before.swapCount + 1, 'next successful submit swaps once');
 }
 
 function testExecutablePostStackAndCompositeSubmission() {
@@ -1234,6 +1312,7 @@ await testExplicitLifecycleBudgetResetOnly();
 await testStalePendingRetryCannotReplaceExplicitReacquire();
 await testRuntimeFallbackUpdatesPublicStatusContract();
 testExecutableRenderGraphSubmission();
+testExecutableHistoryPingPongTransactions();
 testExecutablePostStackAndCompositeSubmission();
 testExecutorCanvasSizingContracts();
 testExecutorFailsClosed();

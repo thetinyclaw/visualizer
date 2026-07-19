@@ -6,6 +6,7 @@ export const PASS_KINDS = Object.freeze({
   VOLUME: 'bounded-volume',
   FEEDBACK: 'feedback',
   POST: 'post',
+  HISTORY: 'history',
   COMPOSITE: 'composite',
 });
 
@@ -17,6 +18,7 @@ const RESOURCE_TYPES = Object.freeze({
   RENDER_TARGET: 'render-target',
   DEPTH_TARGET: 'depth-target',
   PING_PONG: 'ping-pong-state',
+  HISTORY_TARGET: 'history-target',
   INSTANCED_DEPTH: 'instanced-depth-target',
 });
 
@@ -56,6 +58,18 @@ export function pingPongState(id, descriptor) {
   return Object.freeze({ type: RESOURCE_TYPES.PING_PONG, id, current: `${id}-a`, next: `${id}-b`, descriptor });
 }
 
+export function historyTarget(id, { format = 'bgra8unorm', canvasSized = true, decay = 0.88 } = {}) {
+  return Object.freeze({
+    type: RESOURCE_TYPES.HISTORY_TARGET,
+    id,
+    format,
+    canvasSized,
+    previous: `${id}:previous`,
+    next: `${id}:next`,
+    decay: Math.max(0, Math.min(Number(decay) || 0, 0.98)),
+  });
+}
+
 export function instancedDepthTarget(id, { format = 'depth24plus', instances = 1 } = {}) {
   return Object.freeze({ type: RESOURCE_TYPES.INSTANCED_DEPTH, id, format, instances });
 }
@@ -78,6 +92,10 @@ export function feedbackPass(id, { source, history, output, blend = 0.92 }) {
 
 export function postPass(id, { pipeline, inputs = [], output, resources = [], draw = [3, 1, 0, 0], executor = null, clearColor = null, history = null } = {}) {
   return Object.freeze({ kind: PASS_KINDS.POST, id, pipeline, inputs, output, resources, draw, executor, clearColor, history });
+}
+
+export function historyPass(id, { pipeline, source, history, resources = [], draw = [3, 1, 0, 0], executor = null, clearColor = null, decay = null, clampMax = 1.0 } = {}) {
+  return Object.freeze({ kind: PASS_KINDS.HISTORY, id, pipeline, source, history, resources, draw, executor, clearColor, decay, clampMax });
 }
 
 export function compositePass(id, { layers = [], transition = null, output = 'swapchain', pipeline = null, resources = [], draw = null, executor = null, clearColor = null }) {
@@ -134,6 +152,9 @@ export class RenderGraph {
     for (const resource of this.resources) {
       if (resource?.type === RESOURCE_TYPES.PING_PONG) {
         for (const ref of [resource.current, resource.next]) if (!resourceIds.has(ref)) errors.push(`ping-pong resource ${resource.id} references missing buffer ${ref}`);
+      }
+      if (resource?.type === RESOURCE_TYPES.HISTORY_TARGET) {
+        if (resource.previous === resource.next) errors.push(`history resource ${resource.id} previous/next targets must be distinct`);
       }
     }
     const hasResource = (id) => id === 'swapchain' || resourceIds.has(id);
@@ -192,8 +213,21 @@ export class RenderGraph {
           if (hasReadWriteHazard(pass.inputs, pass.output, resourceById)) errors.push(`pass ${pass.id} post pass cannot sample from and render into the same target`);
           if (pass.history !== null) errors.push(`pass ${pass.id} history post mode is not executable in this foundation`);
           outputs.push(pass.output); break;
+        case PASS_KINDS.HISTORY: {
+          if (typeof pass.pipeline !== 'string' || pass.pipeline.length === 0) errors.push(`pass ${pass.id} requires pipeline`);
+          requireType(pass, 'source', pass.source, [RESOURCE_TYPES.RENDER_TARGET]);
+          requireType(pass, 'history', pass.history, [RESOURCE_TYPES.HISTORY_TARGET]);
+          const history = resourceById.get(pass.history);
+          if (history) {
+            const sourceIdentity = canonicalResourceId(pass.source, resourceById);
+            if (sourceIdentity === history.previous || sourceIdentity === history.next || sourceIdentity === canonicalResourceId(pass.history, resourceById)) errors.push(`pass ${pass.id} history source must not alias ping-pong targets`);
+          }
+          outputs.push(pass.history);
+          break;
+        }
         case PASS_KINDS.COMPOSITE:
           requireResourceList(pass, 'layer', pass.layers); requireResource(pass, 'output', pass.output || 'swapchain');
+          for (const layer of pass.layers || []) requireType(pass, 'layer', layer, [RESOURCE_TYPES.RENDER_TARGET, RESOURCE_TYPES.HISTORY_TARGET]);
           if ((pass.output || 'swapchain') !== 'swapchain') errors.push(`pass ${pass.id} composite output must be swapchain`);
           break;
         default: break;

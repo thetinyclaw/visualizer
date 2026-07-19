@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visualizer v4 · Safe History Trails</title>
+  <style>
+    html, body { margin: 0; min-height: 100%; background: #04060d; color: #dff7ff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    main { min-height: 100vh; display: grid; place-items: center; padding: 22px; }
+    section { width: min(880px, 100%); border: 1px solid rgba(117, 231, 255, .35); border-radius: 18px; padding: 20px; background: linear-gradient(145deg, rgba(9,20,38,.94), rgba(2,4,10,.98)); }
+    canvas { width: 100%; height: 420px; display: block; border-radius: 14px; background: radial-gradient(circle at 50% 42%, #132543, #03050a 75%); }
+    h1 { margin: 0 0 12px; letter-spacing: .08em; }
+    #status { margin: 14px 0 8px; color: #89ecff; }
+    #diag, #errors { white-space: pre-wrap; font-size: 13px; color: #9ab3c5; }
+    #errors { color: #ffb4cc; }
+  </style>
+</head>
+<body>
+<main><section>
+  <h1>VISUALIZER V4 SAFE PING-PONG HISTORY TRAILS</h1>
+  <canvas id="history-canvas" aria-label="safe WebGPU ping-pong history trails canvas"></canvas>
+  <div id="status">Probing renderer…</div>
+  <div id="diag"></div>
+  <div id="errors"></div>
+</section></main>
+<script type="module">
+import { startV4Runtime } from './runtime.js';
+import { RenderGraph, renderTarget, historyTarget, renderPass, historyPass, compositePass } from './render-graph.js';
+
+const params = new URLSearchParams(location.search);
+const seed = Number.parseInt(params.get('seed') || '491009', 10) || 491009;
+const lockedTime = params.has('time') ? Number.parseFloat(params.get('time')) : null;
+const locked = Number.isFinite(lockedTime);
+const decay = Math.max(0.60, Math.min(Number.parseFloat(params.get('decay') || '0.88'), 0.94));
+const start = performance.now();
+const state = { seed, lockedTime, decay, passKinds: [], history: [], frameSubmitted: false, note: 'Scope: restrained trails/history foundation only; not production bloom parity.' };
+window.__V4_HISTORY_TRAILS__ = state;
+
+const manifest = {
+  schemaVersion: 1,
+  id: 'runtime-history-trails-smoke',
+  title: 'Runtime History Trails Smoke',
+  assets: [],
+  pipelines: [
+    { id: 'trail-scene-pipeline', kind: 'render', entryPoint: 'scene' },
+    { id: 'trail-history-pipeline', kind: 'post', entryPoint: 'history' },
+    { id: 'trail-composite-pipeline', kind: 'composite', entryPoint: 'composite' },
+  ],
+  simulationBuffers: [],
+  controls: [{ id: 'decay', type: 'float', min: 0.6, max: 0.94, default: decay, pipeline: 'trail-history-pipeline' }],
+  transitions: [],
+};
+
+function makeGraph() {
+  return new RenderGraph({ id: 'runtime-history-trails-smoke' })
+    .addResource(renderTarget('scene-color'))
+    .addResource(historyTarget('trail-history', { decay }))
+    .addPass(renderPass('scene-current', {
+      pipeline: 'trail-scene-pipeline',
+      colorTargets: ['scene-color'],
+      executor: 'bind-scene-time',
+      draw: [3, 1, 0, 0],
+      clearColor: { r: 0.003, g: 0.005, b: 0.014, a: 1 },
+    }))
+    .addPass(historyPass('history-feedback', {
+      pipeline: 'trail-history-pipeline',
+      source: 'scene-color',
+      history: 'trail-history',
+      executor: 'bind-history-feedback',
+      draw: [3, 1, 0, 0],
+      clearColor: { r: 0, g: 0, b: 0, a: 1 },
+      decay,
+      clampMax: 0.96,
+    }))
+    .addPass(compositePass('history-composite', {
+      layers: ['trail-history'],
+      output: 'swapchain',
+      pipeline: 'trail-composite-pipeline',
+      draw: [3, 1, 0, 0],
+      clearColor: { r: 0.003, g: 0.004, b: 0.012, a: 1 },
+    }));
+}
+
+function makePipelines({ device, format }) {
+  const sceneModule = device.createShaderModule({ label: 'history-current-scene-wgsl', code: `
+struct Out { @builtin(position) position: vec4f, @location(0) uv: vec2f };
+struct SceneSettings { time: f32, seed: f32, _pad0: f32, _pad1: f32 };
+@group(0) @binding(0) var<uniform> sceneSettings: SceneSettings;
+@vertex fn vs(@builtin(vertex_index) i: u32) -> Out {
+  var p = array<vec2f, 3>(vec2f(-1.0, -3.0), vec2f(3.0, 1.0), vec2f(-1.0, 1.0));
+  var o: Out; let q = p[i]; o.position = vec4f(q, 0.0, 1.0); o.uv = q * vec2f(0.5, -0.5) + vec2f(0.5, 0.5); return o;
+}
+fn hash(v: vec2f) -> f32 { return fract(sin(dot(v, vec2f(127.1, 311.7))) * 43758.5453); }
+@fragment fn fs(in: Out) -> @location(0) vec4f {
+  let t = sceneSettings.time;
+  let s = sceneSettings.seed;
+  let p = in.uv - vec2f(0.5, 0.5);
+  let angle = t * 0.42 + s * 0.00017;
+  let center = vec2f(0.28 * cos(angle), 0.22 * sin(angle * 1.37));
+  let d = distance(p, center);
+  let core = 1.0 - smoothstep(0.035, 0.11, d);
+  let ring = (1.0 - smoothstep(0.13, 0.19, abs(distance(p, -center * 0.55) - 0.16))) * 0.55;
+  let grain = hash(floor(in.uv * 96.0) + vec2f(s, 19.0)) * 0.018;
+  let color = vec3f(0.06, 0.78, 1.0) * core + vec3f(1.0, 0.25, 0.62) * ring + vec3f(grain);
+  return vec4f(clamp(color, vec3f(0.0), vec3f(0.92)), 1.0);
+}` });
+  const fullscreenModule = device.createShaderModule({ label: 'history-feedback-composite-wgsl', code: `
+struct Out { @builtin(position) position: vec4f, @location(0) uv: vec2f };
+struct Settings { decay: f32, reset: f32, clampMax: f32, _pad: f32 };
+@group(0) @binding(0) var samp: sampler;
+@group(0) @binding(1) var currentTex: texture_2d<f32>;
+@group(0) @binding(2) var previousTex: texture_2d<f32>;
+@group(0) @binding(3) var<uniform> settings: Settings;
+@vertex fn vs(@builtin(vertex_index) i: u32) -> Out {
+  var p = array<vec2f, 3>(vec2f(-1.0, -3.0), vec2f(3.0, 1.0), vec2f(-1.0, 1.0));
+  var o: Out; let q = p[i]; o.position = vec4f(q, 0.0, 1.0); o.uv = q * vec2f(0.5, -0.5) + vec2f(0.5, 0.5); return o;
+}
+@fragment fn historyFs(in: Out) -> @location(0) vec4f {
+  let current = clamp(textureSample(currentTex, samp, in.uv).rgb, vec3f(0.0), vec3f(1.0));
+  let previous = clamp(textureSample(previousTex, samp, in.uv).rgb, vec3f(0.0), vec3f(settings.clampMax));
+  let carried = select(previous * settings.decay, vec3f(0.0), settings.reset > 0.5);
+  let combined = max(current, carried + current * 0.38);
+  return vec4f(clamp(combined, vec3f(0.0), vec3f(settings.clampMax)), 1.0);
+}
+@fragment fn compositeFs(in: Out) -> @location(0) vec4f {
+  let color = textureSample(currentTex, samp, in.uv).rgb;
+  let vignette = 0.82 + 0.18 * (1.0 - smoothstep(0.25, 0.78, distance(in.uv, vec2f(0.5))));
+  return vec4f(clamp(color * vignette, vec3f(0.0), vec3f(1.0)), 1.0);
+}` });
+  const sceneLayout = device.createBindGroupLayout({ label: 'history-scene-layout', entries: [
+    { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+  ]});
+  const historyLayout = device.createBindGroupLayout({ label: 'history-feedback-layout', entries: [
+    { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+    { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+  ]});
+  const compositeLayout = device.createBindGroupLayout({ label: 'history-composite-layout', entries: [
+    { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+    { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+  ]});
+  const scenePipelineLayout = device.createPipelineLayout({ label: 'history-scene-pipeline-layout', bindGroupLayouts: [sceneLayout] });
+  const historyPipelineLayout = device.createPipelineLayout({ label: 'history-feedback-pipeline-layout', bindGroupLayouts: [historyLayout] });
+  const compositePipelineLayout = device.createPipelineLayout({ label: 'history-composite-pipeline-layout', bindGroupLayouts: [compositeLayout] });
+  const scene = device.createRenderPipeline({ label: 'history-scene-pipeline', layout: scenePipelineLayout, vertex: { module: sceneModule, entryPoint: 'vs' }, fragment: { module: sceneModule, entryPoint: 'fs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } });
+  const history = device.createRenderPipeline({ label: 'history-feedback-pipeline', layout: historyPipelineLayout, vertex: { module: fullscreenModule, entryPoint: 'vs' }, fragment: { module: fullscreenModule, entryPoint: 'historyFs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } });
+  const composite = device.createRenderPipeline({ label: 'history-composite-pipeline', layout: compositePipelineLayout, vertex: { module: fullscreenModule, entryPoint: 'vs' }, fragment: { module: fullscreenModule, entryPoint: 'compositeFs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } });
+  const map = new Map([['trail-scene-pipeline', scene], ['trail-history-pipeline', history], ['trail-composite-pipeline', composite]]);
+  map.sceneLayout = sceneLayout;
+  map.historyLayout = historyLayout;
+  map.compositeLayout = compositeLayout;
+  return map;
+}
+
+const settingsArray = new Float32Array(4);
+const sceneSettingsArray = new Float32Array(4);
+function makeExecutors() {
+  return new Map([
+  ['bind-scene-time', ({ pass, device, frameContext, graphPass, executor }) => {
+    const pipeline = executor.pipelineRegistry.get(graphPass.pipeline);
+    const layout = executor.pipelineRegistry.sceneLayout || pipeline.getBindGroupLayout(0);
+    const buffer = executor._sceneSettings || (executor._sceneSettings = device.createBuffer({ label: 'history-scene-settings', size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
+    sceneSettingsArray[0] = Number.isFinite(frameContext.time) ? frameContext.time : 0;
+    sceneSettingsArray[1] = seed;
+    sceneSettingsArray[2] = 0;
+    sceneSettingsArray[3] = 0;
+    device.queue.writeBuffer(buffer, 0, sceneSettingsArray.buffer, sceneSettingsArray.byteOffset, sceneSettingsArray.byteLength);
+    const key = `scene:${executor.textureGeneration}`;
+    executor._sceneBindGroups = executor._sceneBindGroups || new Map();
+    let bindGroup = executor._sceneBindGroups.get(key);
+    if (!bindGroup) {
+      bindGroup = device.createBindGroup({ label: `history-scene:${key}`, layout, entries: [{ binding: 0, resource: { buffer } }] });
+      executor._sceneBindGroups.set(key, bindGroup);
+    }
+    pass.setBindGroup(0, bindGroup);
+  }],
+  ['bind-history-feedback', ({ pass, device, frameContext, graphPass, executor }) => {
+    const pipeline = executor.pipelineRegistry.get(graphPass.pipeline);
+    const layout = executor.pipelineRegistry.historyLayout || pipeline.getBindGroupLayout(0);
+    const sampler = executor._historySampler || (executor._historySampler = device.createSampler({ label: 'history-feedback-linear', magFilter: 'linear', minFilter: 'linear' }));
+    const settings = executor._historySettings || (executor._historySettings = device.createBuffer({ label: 'history-feedback-settings', size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
+    settingsArray[0] = graphPass.decay ?? frameContext.history.descriptor.decay;
+    settingsArray[1] = frameContext.historyReset ? 1 : 0;
+    settingsArray[2] = graphPass.clampMax ?? 0.96;
+    settingsArray[3] = 0;
+    device.queue.writeBuffer(settings, 0, settingsArray.buffer, settingsArray.byteOffset, settingsArray.byteLength);
+    const key = `${graphPass.id}:${executor.textureGeneration}:${frameContext.history.parity}:${frameContext.historyReset ? 1 : 0}`;
+    executor._historyBindGroups = executor._historyBindGroups || new Map();
+    let bindGroup = executor._historyBindGroups.get(key);
+    if (!bindGroup) {
+      bindGroup = device.createBindGroup({ label: `history-feedback:${key}`, layout, entries: [
+        { binding: 0, resource: sampler },
+        { binding: 1, resource: executor.textureView(graphPass.source) },
+        { binding: 2, resource: executor.historyTextureView(graphPass.history, 'previous') },
+        { binding: 3, resource: { buffer: settings } },
+      ]});
+      executor._historyBindGroups.set(key, bindGroup);
+    }
+    pass.setBindGroup(0, bindGroup);
+  }]]);
+}
+
+const canvas = document.getElementById('history-canvas');
+const statusElement = document.getElementById('status');
+const diagElement = document.getElementById('diag');
+const errorsElement = document.getElementById('errors');
+
+try {
+  const runtime = await startV4Runtime({
+    canvas,
+    statusElement,
+    manifest,
+    graphFactory: makeGraph,
+    pipelineRegistryFactory: makePipelines,
+    executorRegistry: makeExecutors(),
+    autoStart: !locked,
+    frameProvider: locked ? null : ({ time }) => ({ time: (time - start) / 1000 }),
+  });
+  await runtime.resourcesReady;
+  let frame = runtime.lastFrame;
+  if (locked && runtime.graphExecutor) { frame = runtime.renderFrame(lockedTime); runtime.stop(); }
+  function update() {
+    state.mode = runtime.mode;
+    state.frameSubmitted = Boolean(frame?.submitted || runtime.lastFrame?.submitted);
+    state.passKinds = runtime.graph?.passes.map((pass) => pass.kind) || [];
+    state.history = runtime.graphExecutor?.historyDiagnostics?.() || [];
+    state.frameCounters = runtime.frameCounters;
+    state.resourcesReady = statusElement.dataset.resourcesReady;
+    diagElement.textContent = JSON.stringify({ decay, locked, history: state.history, frameCounters: state.frameCounters, scope: state.note }, null, 2);
+    errorsElement.textContent = runtime.publicErrors.map((error) => `${error.code}: ${error.message}`).join('\n');
+  }
+  update();
+  if (!locked) setInterval(update, 500);
+  if (!runtime.graphExecutor) {
+    const ctx = canvas.getContext('2d');
+    canvas.width = Math.max(1, canvas.clientWidth || 880); canvas.height = Math.max(1, canvas.clientHeight || 420);
+    ctx.fillStyle = '#07101f'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#dff7ff'; ctx.font = '22px monospace'; ctx.fillText('WebGPU unavailable: safe fallback, no synthesized trails.', 28, 62);
+  }
+} catch (error) {
+  statusElement.textContent = 'History route failed safely';
+  errorsElement.textContent = 'history-route-start-failed';
+  console.error(error);
+}
+</script>
+</body>
+</html>

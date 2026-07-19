@@ -283,7 +283,17 @@ export async function startV4Runtime({
     get lastFrame() { return lastFrame; },
     renderFrame: submitOneFrame,
     stop: stopLoop,
-    resize() { return graphExecutor ? graphExecutor.resizeTargets() : false; },
+    resize() {
+      if (!graphExecutor) return false;
+      const resized = graphExecutor.resizeTargets();
+      for (const diag of graphExecutor.historyDiagnostics?.() || []) graphExecutor.requestHistoryReset(diag.id, 'resize');
+      return resized;
+    },
+    resetHistory(reason = 'scene-change') {
+      let changed = false;
+      for (const diag of graphExecutor?.historyDiagnostics?.() || []) changed = graphExecutor.requestHistoryReset(diag.id, reason) || changed;
+      return changed;
+    },
     dispose() { disposed = true; resetExecutionState(); resourceManager?.destroy?.(); resourceManager = null; lifecycle.dispose(); },
   });
 
