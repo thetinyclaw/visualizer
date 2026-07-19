@@ -118,6 +118,7 @@ require("bounds: [-1, -1, -1, 1, 1, 1]" in graph, "bounded volume pass missing e
 require("getContext('webgpu')" in executor and "context.configure" in executor, "GPUCanvasContext execution missing")
 require("createCommandEncoder" in executor and "beginRenderPass" in executor, "render-pass command encoding missing")
 require("depth24plus" in executor and "queue.submit" in executor, "depth target or GPU queue submission missing")
+require("'bounded-volume'" in executor and "passDef.outputs" in executor, "bounded volume pass is not executable")
 require("new WebGpuGraphExecutor" in runtime and "graphExecutor.render(" in runtime, "runtime does not execute the render graph")
 
 # Runtime/demo route.
@@ -133,6 +134,7 @@ require("No live GPU telemetry" in demo, "demo must not fake live GPU telemetry"
 require("createBuffer('smoke-telemetry-particles'" in demo and "createTexture('smoke-telemetry-lut'" in demo, "demo does not allocate real WebGPU smoke resources")
 require("external browser/driver GPU usage: unknown" in demo, "demo telemetry must report external usage as unknown")
 require("Runtime initialization failed safely" in demo, "demo safe failure path missing")
+require("boundedVolumePass('raymarch-bounded-volume'" in demo and "volumeBounds" in demo, "demo does not exercise/export the executable bounded volume path")
 require("data-renderer-mode" in demo or "rendererMode" in runtime, "demo mode reporting hook missing")
 require("import { startV4Runtime } from './runtime.js';" in demo, "demo does not load v4 runtime module")
 

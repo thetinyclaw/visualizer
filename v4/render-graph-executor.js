@@ -4,7 +4,7 @@ const RENDER_ATTACHMENT = globalThis.GPUTextureUsage?.RENDER_ATTACHMENT ?? 0x10;
 const TEXTURE_BINDING = globalThis.GPUTextureUsage?.TEXTURE_BINDING ?? 0x04;
 const COPY_SRC = globalThis.GPUTextureUsage?.COPY_SRC ?? 0x01;
 
-const EXECUTABLE_PASS_KINDS = new Set(['render', 'compute', 'post', 'history', 'composite']);
+const EXECUTABLE_PASS_KINDS = new Set(['render', 'bounded-volume', 'compute', 'post', 'history', 'composite']);
 const DEFAULT_CLEAR = Object.freeze({ r: 0.015, g: 0.025, b: 0.055, a: 1 });
 
 function fail(message) {
@@ -209,6 +209,13 @@ export class WebGpuGraphExecutor {
         if (!executor && !pass.draw && !pass.drawIndexed) throw fail(`Pass ${pass.id} must provide draw, drawIndexed, or executor.`);
         for (const id of [...(pass.resources || []), ...(pass.vertexBuffers || []), ...(pass.indexBuffer ? [pass.indexBuffer] : [])]) resolveResource(id, pass);
         return Object.freeze({ kind: 'render', pass, pipeline, executor });
+      }
+      if (pass.kind === 'bounded-volume') {
+        const pipeline = resolvePipeline(pass.pipeline, pass);
+        const executor = resolveExecutor(pass.executor, pass);
+        if (!executor && !pass.draw) throw fail(`Pass ${pass.id} must provide draw or executor.`);
+        for (const id of [...(pass.inputs || []), ...(pass.outputs || []), pass.depthTarget, ...(pass.resources || [])]) resolveResource(id, pass);
+        return Object.freeze({ kind: 'bounded-volume', pass, pipeline, executor });
       }
       if (pass.kind === 'post') {
         if (pass.history !== null) throw fail(`Pass ${pass.id} history post mode is not executable in this foundation.`);
@@ -428,7 +435,7 @@ export class WebGpuGraphExecutor {
 
   encodeRenderLike(encoder, compiled, frameContext) {
     const passDef = compiled.pass;
-    const colorIds = compiled.kind === 'composite' ? ['swapchain'] : (compiled.kind === 'post' ? [passDef.output] : (compiled.kind === 'history' ? [passDef.history] : passDef.colorTargets));
+    const colorIds = compiled.kind === 'composite' ? ['swapchain'] : (compiled.kind === 'post' ? [passDef.output] : (compiled.kind === 'history' ? [passDef.history] : (compiled.kind === 'bounded-volume' ? passDef.outputs : passDef.colorTargets)));
     if (compiled.kind === 'history') this.encodeHistoryResetIfNeeded(encoder, this.historyState(passDef.history), passDef.clearColor);
     const descriptor = {
       label: `${this.graph.id}:${passDef.id}`,

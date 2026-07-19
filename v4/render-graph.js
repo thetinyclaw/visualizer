@@ -82,8 +82,8 @@ export function renderPass(id, { pipeline, colorTargets = [], depthTarget: depth
   return Object.freeze({ kind: PASS_KINDS.RENDER, id, pipeline, colorTargets, depthTarget: depthRef, vertexBuffers, indexBuffer: indexRef, indexFormat, resources, draw, drawIndexed, executor, clearColor });
 }
 
-export function boundedVolumePass(id, { pipeline, bounds, depthTarget: depthRef, inputs = [], outputs = [] }) {
-  return Object.freeze({ kind: PASS_KINDS.VOLUME, id, pipeline, bounds, depthTarget: depthRef, inputs, outputs });
+export function boundedVolumePass(id, { pipeline, bounds, depthTarget: depthRef, inputs = [], outputs = [], resources = [], draw = [3, 1, 0, 0], executor = null, clearColor = null }) {
+  return Object.freeze({ kind: PASS_KINDS.VOLUME, id, pipeline, bounds, depthTarget: depthRef, inputs, outputs, resources, draw, executor, clearColor });
 }
 
 export function feedbackPass(id, { source, history, output, blend = 0.92 }) {
@@ -199,9 +199,11 @@ export class RenderGraph {
           break;
         case PASS_KINDS.VOLUME:
           if (typeof pass.pipeline !== 'string' || pass.pipeline.length === 0) errors.push(`pass ${pass.id} requires pipeline`);
-          if (!Array.isArray(pass.bounds) || pass.bounds.length !== 6 || pass.bounds.some((value) => typeof value !== 'number')) errors.push(`pass ${pass.id} requires six numeric bounds`);
-          requireResource(pass, 'depthTarget', pass.depthTarget);
+          if (!Array.isArray(pass.bounds) || pass.bounds.length !== 6 || pass.bounds.some((value) => !Number.isFinite(value)) || pass.bounds.slice(0, 3).some((value, index) => value >= pass.bounds[index + 3])) errors.push(`pass ${pass.id} requires ordered finite min/max bounds`);
+          if (!pass.executor && !pass.draw) errors.push(`pass ${pass.id} requires draw or executor`);
+          requireType(pass, 'depthTarget', pass.depthTarget, [RESOURCE_TYPES.DEPTH_TARGET, RESOURCE_TYPES.INSTANCED_DEPTH]);
           requireResourceList(pass, 'output', pass.outputs);
+          for (const target of pass.outputs || []) requireType(pass, 'output', target, [RESOURCE_TYPES.RENDER_TARGET]);
           outputs.push(...(pass.outputs || []));
           break;
         case PASS_KINDS.FEEDBACK:
@@ -247,7 +249,8 @@ export class RenderGraph {
   }
 }
 
-// Deliberately non-executable: roadmap graph until its volume/feedback/post executors exist.
+// Roadmap graph: bounded volume and post are executable; legacy feedback remains
+// intentionally fail-closed until it is represented by a history ping-pong pass.
 export function makeSceneGraphFoundation(sceneId) {
   return new RenderGraph({ id: sceneId })
     .addResource(storageBuffer('audio-features', 16 * 4, 'read-only'))
@@ -255,9 +258,10 @@ export function makeSceneGraphFoundation(sceneId) {
     .addResource(storageBuffer('particle-state-b', 1024 * 16, 'read-write'))
     .addResource(pingPongState('particle-state', { a: 'particle-state-a', b: 'particle-state-b' }))
     .addResource(instancedDepthTarget('scene-depth', { instances: 1024 }))
+    .addResource(renderTarget('volume-color'))
     .addResource(renderTarget('post-color'))
     .addPass(computePass('simulate', { pipeline: 'scene-simulate', inputs: ['audio-features', 'particle-state-a'], outputs: ['particle-state-b'], workgroups: [16, 1, 1] }))
-    .addPass(boundedVolumePass('volume', { pipeline: 'scene-volume', bounds: [-1, -1, -1, 1, 1, 1], depthTarget: 'scene-depth', inputs: ['particle-state-b'], outputs: ['scene-depth'] }))
+    .addPass(boundedVolumePass('volume', { pipeline: 'scene-volume', bounds: [-1, -1, -1, 1, 1, 1], depthTarget: 'scene-depth', inputs: ['particle-state-b'], outputs: ['volume-color'] }))
     .addPass(feedbackPass('feedback', { source: 'scene-depth', history: 'particle-state', output: 'post-color' }))
     .addPass(postPass('post', { pipeline: 'bloom-tonemap', inputs: ['scene-depth'], output: 'post-color' }))
     .addPass(compositePass('composite', { layers: ['post-color'], transition: 'crossfade', output: 'swapchain' }));

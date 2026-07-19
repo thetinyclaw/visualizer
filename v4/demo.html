@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Visualizer v4 Post/Composite Smoke</title>
+  <title>Visualizer v4 Volume/Post/Composite Smoke</title>
   <link rel="icon" href="data:,">
   <style>
     html, body { margin: 0; min-height: 100%; background: #05070d; color: #d9f2ff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -18,8 +18,8 @@
 <body>
 <main>
   <section>
-    <h1>VISUALIZER V4 POST/COMPOSITOR SMOKE</h1>
-    <canvas id="v4-canvas" aria-label="v4 authored clear/draw smoke canvas"></canvas>
+    <h1>VISUALIZER V4 VOLUME/POST/COMPOSITOR SMOKE</h1>
+    <canvas id="v4-canvas" aria-label="v4 authored bounded volume smoke canvas"></canvas>
     <div id="status">Probing renderer…</div>
     <div id="telemetry"></div>
     <div id="errors"></div>
@@ -27,15 +27,15 @@
 </main>
 <script type="module">
 import { startV4Runtime } from './runtime.js';
-import { RenderGraph, renderTarget, depthTarget, renderPass, postPass, compositePass } from './render-graph.js';
+import { RenderGraph, renderTarget, depthTarget, boundedVolumePass, postPass, compositePass } from './render-graph.js';
 
 const smokeManifest = {
   schemaVersion: 1,
   id: 'runtime-clear-draw-smoke',
-  title: 'Runtime Clear/Draw Smoke',
+  title: 'Runtime Bounded Volume Smoke',
   assets: [],
   pipelines: [
-    { id: 'v4-clear-draw-pipeline', kind: 'render', entryPoint: 'main' },
+    { id: 'v4-bounded-volume-pipeline', kind: 'render', entryPoint: 'main' },
     { id: 'v4-post-tonemap-pipeline', kind: 'post', entryPoint: 'fs' },
     { id: 'v4-composite-pipeline', kind: 'render', entryPoint: 'fs' },
   ],
@@ -49,9 +49,10 @@ function makeSmokeGraph() {
     .addResource(renderTarget('smoke-color'))
     .addResource(renderTarget('post-color'))
     .addResource(depthTarget('smoke-depth'))
-    .addPass(renderPass('draw-smoke-triangle', {
-      pipeline: 'v4-clear-draw-pipeline',
-      colorTargets: ['smoke-color'],
+    .addPass(boundedVolumePass('raymarch-bounded-volume', {
+      pipeline: 'v4-bounded-volume-pipeline',
+      bounds: [-1, -1, -2, 1, 1, 2],
+      outputs: ['smoke-color'],
       depthTarget: 'smoke-depth',
       draw: [3, 1, 0, 0],
       clearColor: { r: 0.01, g: 0.015, b: 0.035, a: 1 },
@@ -72,18 +73,31 @@ function makeSmokeGraph() {
 }
 
 function makePipelines({ device, format }) {
-  const sceneShader = device.createShaderModule({ label: 'v4-demo-authored-triangle-wgsl', code: `
-struct VertexOut { @builtin(position) position: vec4f, @location(0) color: vec3f };
+  const sceneShader = device.createShaderModule({ label: 'v4-demo-bounded-volume-wgsl', code: `
+struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f };
 @vertex fn vs(@builtin(vertex_index) vertexIndex: u32) -> VertexOut {
-  var positions = array<vec2f, 3>(vec2f(-0.82, -0.72), vec2f(0.82, -0.68), vec2f(0.02, 0.78));
-  var colors = array<vec3f, 3>(vec3f(0.08, 0.86, 1.0), vec3f(1.0, 0.16, 0.72), vec3f(0.96, 0.95, 0.24));
+  var positions = array<vec2f, 3>(vec2f(-1.0, -3.0), vec2f(3.0, 1.0), vec2f(-1.0, 1.0));
   var out: VertexOut;
   out.position = vec4f(positions[vertexIndex], 0.0, 1.0);
-  out.color = colors[vertexIndex];
+  out.uv = positions[vertexIndex] * vec2f(0.5, -0.5) + vec2f(0.5);
   return out;
 }
 @fragment fn fs(in: VertexOut) -> @location(0) vec4f {
-  return vec4f(in.color, 1.0);
+  let ray = vec3f((in.uv - vec2f(0.5)) * vec2f(2.0, 1.15), 0.0);
+  var color = vec3f(0.0);
+  var transmittance = 1.0;
+  for (var i = 0u; i < 40u; i += 1u) {
+    let z = -2.0 + f32(i) * 0.1;
+    let p = vec3f(ray.xy, z);
+    let shell = exp(-7.0 * abs(length(p * vec3f(1.0, 1.15, 0.55)) - 0.72));
+    let filaments = 0.5 + 0.5 * sin(p.x * 15.0 + sin(p.z * 3.0) * 2.2) * cos(p.y * 17.0 - p.z * 4.0);
+    let density = shell * (0.16 + 0.42 * filaments) * 0.1;
+    let hue = mix(vec3f(0.05, 0.45, 1.0), vec3f(1.0, 0.08, 0.65), filaments);
+    color += transmittance * density * hue * 2.4;
+    transmittance *= 1.0 - density;
+  }
+  color += vec3f(0.015, 0.025, 0.07) * (1.0 - length(ray.xy) * 0.35);
+  return vec4f(color, 1.0);
 }` });
   const fullscreenShader = device.createShaderModule({ label: 'v4-demo-post-composite-wgsl', code: `
 struct FullscreenOut { @builtin(position) position: vec4f, @location(0) uv: vec2f };
@@ -129,7 +143,7 @@ fn boundedToneMap(color: vec3f) -> vec3f {
   const sceneBase = { layout: 'auto', vertex: { module: sceneShader, entryPoint: 'vs' }, fragment: { module: sceneShader, entryPoint: 'fs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } };
   const fullscreenBase = { layout: fullscreenPipelineLayout, vertex: { module: fullscreenShader, entryPoint: 'vs' }, fragment: { module: fullscreenShader, targets: [{ format }] }, primitive: { topology: 'triangle-list' } };
   return new Map([
-    ['v4-clear-draw-pipeline', device.createRenderPipeline({ ...sceneBase, depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' } })],
+    ['v4-bounded-volume-pipeline', device.createRenderPipeline({ ...sceneBase, depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' } })],
     ['v4-post-tonemap-pipeline', device.createRenderPipeline({ ...fullscreenBase, fragment: { ...fullscreenBase.fragment, entryPoint: 'postFs' } })],
     ['v4-composite-pipeline', device.createRenderPipeline({ ...fullscreenBase, fragment: { ...fullscreenBase.fragment, entryPoint: 'compositeFs' } })],
   ]);
@@ -154,7 +168,7 @@ try {
     telemetryElement.textContent = 'WebGPU resource manager inactive; no GPU resources allocated on fallback route. No live GPU telemetry is displayed.';
   }
   errorsElement.textContent = runtime.publicErrors.map((error) => `${error.code}: ${error.message}`).join('\n');
-  window.__V4_RUNTIME_SMOKE__ = { label: 'authored triangle through real offscreen post stack and swapchain compositor; not Cathedral or full bloom parity', mode: runtime.mode, graphId: runtime.graph?.id, passes: runtime.graph?.passes.map((pass) => pass.id), passKinds: runtime.graph?.passes.map((pass) => pass.kind), resources: runtime.graph?.resources.map((resource) => resource.id), postStatus: 'bounded tone map plus restrained center glow, no history/trails', resourcesReady: statusElement.dataset.resourcesReady, frameSubmitted: statusElement.dataset.frameSubmitted, telemetry: resourceTelemetry };
+  window.__V4_RUNTIME_SMOKE__ = { label: 'authored bounded 3D volume raymarch through real offscreen post stack and swapchain compositor; foundation smoke, not a human-approved hero', mode: runtime.mode, graphId: runtime.graph?.id, passes: runtime.graph?.passes.map((pass) => pass.id), passKinds: runtime.graph?.passes.map((pass) => pass.kind), volumeBounds: runtime.graph?.passes.find((pass) => pass.kind === 'bounded-volume')?.bounds, resources: runtime.graph?.resources.map((resource) => resource.id), postStatus: 'bounded tone map plus restrained center glow, no history/trails', resourcesReady: statusElement.dataset.resourcesReady, frameSubmitted: statusElement.dataset.frameSubmitted, telemetry: resourceTelemetry };
   const ctx = runtime.graphExecutor ? null : canvas.getContext('2d');
   if (ctx) {
     canvas.width = Math.max(1, canvas.clientWidth || 960); canvas.height = Math.max(1, canvas.clientHeight || 360);

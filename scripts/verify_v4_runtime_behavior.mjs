@@ -298,6 +298,52 @@ function testExecutablePostStackAndCompositeSubmission() {
   customExecutor.dispose();
 }
 
+function testExecutableBoundedVolumeSubmission() {
+  const calls = { passes: [], bounds: null, submissions: [] };
+  const context = {
+    configure() {},
+    getCurrentTexture() { return { createView: () => ({ id: 'swap-view' }) }; },
+    unconfigure() {},
+  };
+  const canvas = { width: 320, height: 180, clientWidth: 320, clientHeight: 180, getBoundingClientRect: () => ({ width: 320, height: 180 }), getContext: (kind) => kind === 'webgpu' ? context : null };
+  const device = makeResourceDevice();
+  device.createCommandEncoder = () => ({
+    beginRenderPass(descriptor) {
+      calls.passes.push(descriptor);
+      return { setPipeline() {}, setBindGroup() {}, draw(...args) { calls.draw = args; }, end() {} };
+    },
+    finish() { return { id: 'volume-command-buffer' }; },
+  });
+  device.queue.submit = (buffers) => calls.submissions.push(buffers);
+  const graph = new RenderGraph({ id: 'bounded-volume' })
+    .addResource(renderTarget('volume-color'))
+    .addResource(depthTarget('volume-depth'))
+    .addPass(boundedVolumePass('raymarch-volume', {
+      pipeline: 'volume-pipeline',
+      bounds: [-1, -1, -2, 1, 1, 2],
+      depthTarget: 'volume-depth',
+      outputs: ['volume-color'],
+      executor: 'volume-bounds',
+      draw: [3, 1, 0, 0],
+    }))
+    .addPass(compositePass('volume-composite', { layers: ['volume-color'], output: 'swapchain', pipeline: 'composite-pipeline', draw: [3, 1, 0, 0] }))
+    .freeze();
+  const executor = new WebGpuGraphExecutor({
+    device,
+    canvas,
+    graph,
+    pipelines: new Map([['volume-pipeline', makePipeline('volume')], ['composite-pipeline', makePipeline('composite')]]),
+    executors: new Map([['volume-bounds', ({ graphPass }) => { calls.bounds = graphPass.bounds; }]]),
+  });
+  const frame = executor.render();
+  assert.deepEqual(frame.passes, ['raymarch-volume', 'volume-composite']);
+  assert.deepEqual(calls.bounds, [-1, -1, -2, 1, 1, 2], 'bounded volume executor receives authored world bounds');
+  assert.equal(calls.passes[0].colorAttachments[0].view.texture.descriptor.label, 'bounded-volume:volume-color');
+  assert.equal(calls.passes[0].depthStencilAttachment.view.texture.descriptor.label, 'bounded-volume:volume-depth');
+  assert.deepEqual(calls.draw, [3, 1, 0, 0], 'bounded volume encodes a fullscreen raymarch draw');
+  assert.equal(calls.submissions.length, 1);
+}
+
 async function testResourceManagerAndAssetCache() {
   const device = makeResourceDevice();
   const manager = new GpuResourceManager(device);
@@ -488,7 +534,9 @@ function testRenderGraphDeepValidation() {
   assert.ok(!base().addPass(compositePass('c', { layers: [], output: 'swapchain' })).validate().ok, 'composite layers required');
   assert.ok(!base().addPass(compositePass('c', { layers: ['missing'], output: 'swapchain' })).validate().ok, 'composite layer must exist');
   assert.ok(!base().addPass(boundedVolumePass('v', { pipeline: 'volume', bounds: [-1, -1, -1, 1, 1, 1], inputs: ['input'], outputs: ['output'] })).validate().ok, 'bounded volume depth target required');
-  assert.ok(base().addResource(storageBuffer('out2', 16)).addResource(renderTarget('out3')).addResource(renderTarget('out4'))
+  assert.ok(!base().addResource(storageBuffer('volume-storage-output', 16)).addPass(boundedVolumePass('bad-volume-output', { pipeline: 'volume', bounds: [-1, -1, -1, 1, 1, 1], depthTarget: 'depth', outputs: ['volume-storage-output'] })).validate().ok, 'bounded volume output must be a render target');
+  assert.ok(!base().addResource(renderTarget('reversed-volume-output')).addPass(boundedVolumePass('bad-volume-bounds', { pipeline: 'volume', bounds: [1, -1, -1, -1, 1, 1], depthTarget: 'depth', outputs: ['reversed-volume-output'] })).validate().ok, 'bounded volume bounds must be ordered min/max pairs');
+  assert.ok(base().addResource(renderTarget('out2')).addResource(renderTarget('out3')).addResource(renderTarget('out4'))
     .addPass(computePass('ok-compute', { pipeline: 'sim', inputs: ['input'], outputs: ['output'] }))
     .addPass(boundedVolumePass('ok-volume', { pipeline: 'volume', bounds: [-1, -1, -1, 1, 1, 1], depthTarget: 'depth', inputs: ['input'], outputs: ['out2'] }))
     .addPass(renderPass('ok-render-source', { pipeline: 'render', colorTargets: ['out3'], draw: [3, 1, 0, 0] }))
@@ -1494,6 +1542,7 @@ await testRuntimeFallbackUpdatesPublicStatusContract();
 testExecutableRenderGraphSubmission();
 testExecutableHistoryPingPongTransactions();
 testExecutablePostStackAndCompositeSubmission();
+testExecutableBoundedVolumeSubmission();
 testExecutorCanvasSizingContracts();
 testExecutorFailsClosed();
 await testRuntimeNoExecutorWhenUnavailableAndFallbackCleanup();
