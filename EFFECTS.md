@@ -124,6 +124,6 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Chromatic Iris Mycorrhiza:** biological toroidal iris with radial fiber bundles, spores, a breathing void, and angular 16-band ownership.
 - **Recursive Diamond Lattice:** tone-mapped folded diamond rails, circuit nodes, and FFT packet gates over controlled recursive scales.
 - **Neon Voxel Scan Cloud:** three occluding parallax voxel slices with spectral block ownership and moving scan faces.
-- **Scarlet Velocity Ribbons:** black/scarlet aerodynamic layers surrounding a nonliteral low-slung singularity, with FFT-controlled widths, wakes, and ring pressure.
+- **Scarlet Velocity Ribbons:** black/scarlet aerodynamic layers surrounding a nonliteral low-slung singularity, with FFT-controlled widths, wakes, and ring pressure; each primary layer reuses one analytic streak distance for its sharp core and broad glow masks.
 - **Cycle contract:** all six run through the shared main canvas, FFT bus, deterministic seed route, transitions, and benchmark system; standalone pages remain for focused iteration.
 - **Novelty boundary:** autonomous runs may refine them but must not collapse them into existing Hive, Mycelium, RGB, or Stipple fingerprints.

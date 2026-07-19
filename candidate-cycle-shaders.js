@@ -210,7 +210,19 @@ float cycleStreak(vec2 uv,float slope,float offset,float width) { return cycleIn
 vec3 cycleScarletVelocity(vec2 uv,float t) {
     vec2 p=uv; p.y+=.040*sin(p.x*2.1+t*.12); vec3 col=vec3(.003,0,.002);
     col+=vec3(.060,0,.008)*cycleInvSmooth(.12,1.35,length(p*vec2(.88,1.34)))+vec3(.55,.01,.018)*cycleInvSmooth(.008,.030,abs(p.y+.255))*(.28+bass*.25);
-    for(int i=0;i<12;i++) { float fi=float(i),key=fract(fi*.097+seed*.00021),b=fftBand(key),flow=fract(t*(.055+fi*.004+b*.050)+key),off=-.70+fi*.125+.075*sin(t*.18+fi*1.7)+(flow-.5)*.18,sl=mix(.065,.310,hash(vec2(fi,seed))),width=.0032+hash(vec2(seed,fi))*.0032+b*.0048,depth=mix(.42,1.0,fract(key*7.1)); vec2 rp=p*vec2(1.0+depth*.16,1.0)+vec2(depth*.19-.09,sin(t*.11+fi)*.016); rp.y+=.075*sin(rp.x*1.72+t*.10+fi*.31)*cycleInvSmooth(.18,1.05,abs(rp.x)); float gate=smoothstep(-.68,.42,rp.y)*cycleInvSmooth(.10,1.08,abs(rp.x)); vec3 sc=mix(vec3(.98,.020,.012),vec3(1,.13,.030),hash(vec2(fi,3))); col+=sc*cycleStreak(rp,sl,off,width)*gate*(.42+b*.76)*depth+vec3(.48,.006,.020)*cycleStreak(rp,sl,off,width*4.2)*gate*(.024+b*.040); }
+    for(int i=0;i<12;i++) {
+        float fi=float(i),key=fract(fi*.097+seed*.00021),b=fftBand(key),flow=fract(t*(.055+fi*.004+b*.050)+key);
+        float off=-.70+fi*.125+.075*sin(t*.18+fi*1.7)+(flow-.5)*.18,sl=mix(.065,.310,hash(vec2(fi,seed)));
+        float width=.0032+hash(vec2(seed,fi))*.0032+b*.0048,depth=mix(.42,1.0,fract(key*7.1));
+        vec2 rp=p*vec2(1.0+depth*.16,1.0)+vec2(depth*.19-.09,sin(t*.11+fi)*.016);
+        rp.y+=.075*sin(rp.x*1.72+t*.10+fi*.31)*cycleInvSmooth(.18,1.05,abs(rp.x));
+        float gate=smoothstep(-.68,.42,rp.y)*cycleInvSmooth(.10,1.08,abs(rp.x));
+        float streakDistance=abs(rp.y-rp.x*sl-off);
+        float streakCore=cycleInvSmooth(width,width*3.2,streakDistance);
+        float streakGlow=cycleInvSmooth(width*4.2,width*13.44,streakDistance);
+        vec3 sc=mix(vec3(.98,.020,.012),vec3(1,.13,.030),hash(vec2(fi,3)));
+        col+=sc*streakCore*gate*(.42+b*.76)*depth+vec3(.48,.006,.020)*streakGlow*gate*(.024+b*.040);
+    }
     for(int j=0;j<5;j++) { float fj=float(j),b=fftBand(fract(.37+fj*.141+seed*.00017)); vec2 ap=p; ap.y+=.10*sin(ap.x*(1.15+fj*.23)+t*.08+fj); col+=vec3(.82,.012,.018)*cycleStreak(ap,.16+fj*.035,-.38+fj*.12,.0045+b*.004)*smoothstep(-.62,.30,ap.y)*cycleInvSmooth(.12,.95,abs(ap.x))*(.20+b*.38); }
     vec2 body=p-vec2(.02,-.235); float keel=cycleBoxMetric(mat2(1,.06,-.08,1)*body,vec2(.54,.050)),upper=abs(body.y+.035+.050*cos((body.x+.02)*3.6));
     float singularity=cycleInvSmooth(.000,.030,keel)*cycleInvSmooth(.12,.70,abs(body.x))+cycleInvSmooth(.010,.040,upper)*cycleInvSmooth(.05,.55,abs(body.x+.02));

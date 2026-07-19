@@ -21,6 +21,7 @@
 - 2026-07-18: Recovered frequency-owned Voronoi work: stable bass/mid/treble generator affinity now changes individual cell area, motion, edge width, and nuclei instead of uniformly scaling the grid. A deterministic 120-frame run measured `15.48 FPS` at `756×469`, DPR `1.0`, with dense full-frame screenshot coverage.
 - 2026-07-18: Recovered standalone `fft.html` Observatory work. Browser QA entered explicit demo mode, produced non-empty peak/centroid/RMS telemetry, and matched `scrollWidth` to the `756px` viewport; structural checks cover secure microphone gating, log interpolation, smoothing, peaks, history cadence, and DPR.
 - 2026-07-18: Corrected five promoted candidate shaders that reapplied viewport aspect scaling after the main shader had already normalized UVs. A deterministic native `1280×720` Chromatic Iris render produced a textured 1.62 MB frame with full RGB range; the verifier now rejects duplicate candidate-cycle aspect correction.
+- 2026-07-18: Reused Scarlet Velocity Ribbons' per-layer streak distance for its core and glow masks instead of evaluating the same line equation twice. A deterministic 120-frame SwiftShader check at `1280×720`, seed `491009`, moved `1.99 → 2.06 FPS` and p95 `639.5 → 606.1 ms` at effective DPR `1.0`.
 
 ## Open questions
 - Which visual families hold 60 FPS on the slowest target TV/mobile GPU? Add measured per-pattern timing before making adaptive quality decisions.

@@ -77,6 +77,10 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - Mirrored 120-frame RGB Subpixels checks at `800×600`, seed `491009`, moved median `11.97 → 12.31 FPS` at effective DPR `1.0`; p95 remained effectively flat (`126.8 → 127.7 ms`).
 - Deterministic screenshots retained full-frame texture and increased measured edge variation slightly rather than blurring the image.
 
+## Scarlet Velocity Ribbons optimization (2026-07-18)
+- Reused each primary ribbon layer's analytic line distance for both core and glow masks, removing one duplicate line equation per layer without changing widths, FFT mapping, density, or composition.
+- Deterministic SwiftShader `1280×720`, seed `491009`, 120-frame check: `1.99 → 2.06 FPS`; p95 improved from `639.5 → 606.1 ms` at effective DPR `1.0`.
+
 ## Frequency-owned Voronoi cells (2026-07-18)
 - Replaced uniform bass-driven grid scaling with stable per-generator 16-bin logarithmic FFT affinity and weighted distance, so loud-bin cells consume area while quiet neighbors compress.
 - Audio also changes each owner’s motion rate, boundary width, and nucleus size without lowering global tessellation density.

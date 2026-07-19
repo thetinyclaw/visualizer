@@ -63,6 +63,10 @@ require("cycleFftIndex" in cycle_shaders and "fftBand(" in cycle_shaders,
         "candidate-cycle shaders are not connected to the shared FFT bus")
 require("resolution.x / resolution.y" not in cycle_shaders,
         "candidate-cycle shaders double-apply aspect correction to main-cycle UVs")
+require("float streakDistance=abs(rp.y-rp.x*sl-off);" in cycle_shaders and
+        "cycleStreak(rp,sl,off,width)" not in cycle_shaders and
+        "cycleStreak(rp,sl,off,width*4.2)" not in cycle_shaders,
+        "Scarlet Velocity duplicates core/glow streak-distance work")
 require("uniform " not in cycle_shaders and "void main" not in cycle_shaders,
         "candidate-cycle module duplicates main shader uniforms or entry point")
 require("vec3 spectralHiveShell(vec2 uv, float t)" in html and
