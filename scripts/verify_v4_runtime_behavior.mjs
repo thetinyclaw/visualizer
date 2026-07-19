@@ -4,6 +4,7 @@ import { GpuLifecycle, GPU_LIFECYCLE_STATES } from '../v4/gpu-lifecycle.js';
 import { RenderGraph, storageBuffer, instancedDepthTarget, computePass, boundedVolumePass, feedbackPass, postPass, compositePass } from '../v4/render-graph.js';
 import { validateSceneManifest } from '../v4/scene-manifest.js';
 import { startV4Runtime } from '../v4/runtime.js';
+import { AssetCache, GpuResourceManager } from '../v4/resource-manager.js';
 
 function deferred() {
   let resolve;
@@ -13,7 +14,8 @@ function deferred() {
 
 function makeDevice(id) {
   const lost = deferred();
-  return { id, lost: lost.promise, lose: (reason = 'unknown') => lost.resolve({ reason }), destroyed: false, destroy() { this.destroyed = true; } };
+  const resources = makeResourceDevice();
+  return { id, lost: lost.promise, lose: (reason = 'unknown') => lost.resolve({ reason }), destroyed: false, destroy() { this.destroyed = true; }, ...resources };
 }
 
 function makeCanvas() {
@@ -25,6 +27,53 @@ function makeCanvas() {
       return kind === 'webgl2' ? { kind } : { kind };
     },
   };
+}
+
+function makeResourceDevice() {
+  const calls = { buffers: [], textures: [], writes: [] };
+  return {
+    calls,
+    queue: { writeBuffer(...args) { calls.writes.push(['buffer', ...args]); }, writeTexture(...args) { calls.writes.push(['texture', ...args]); } },
+    createBuffer(descriptor) {
+      const resource = { descriptor, destroyed: false, destroy() { this.destroyed = true; } };
+      calls.buffers.push(resource);
+      return resource;
+    },
+    createTexture(descriptor) {
+      const resource = { descriptor, destroyed: false, destroy() { this.destroyed = true; }, createView() { return { texture: resource }; } };
+      calls.textures.push(resource);
+      return resource;
+    },
+  };
+}
+
+async function testResourceManagerAndAssetCache() {
+  const device = makeResourceDevice();
+  const manager = new GpuResourceManager(device);
+  const buffer = manager.createBuffer('particles', { byteLength: 32, usage: ['storage', 'copy-dst'], data: new Uint8Array([1, 2, 3, 4]) });
+  assert.equal(device.calls.buffers.length, 1);
+  assert.equal(device.calls.writes[0][0], 'buffer', 'initial buffer data reaches the GPU queue');
+  assert.equal(manager.get('particles'), buffer);
+  assert.throws(() => manager.createBuffer('particles', { byteLength: 32, usage: ['storage'] }), /already exists/);
+
+  let generatedCalls = 0;
+  const cache = new AssetCache({ generatedLoaders: { 'blue-noise': async () => { generatedCalls += 1; return { width: 2, height: 2, pixels: new Uint8Array(16).fill(127) }; } } });
+  const descriptor = { id: 'blue-noise', type: 'texture', uri: 'generated://blue-noise' };
+  const [first, second] = await Promise.all([cache.load(descriptor), cache.load(descriptor)]);
+  assert.equal(first, second, 'concurrent asset requests share one promise/value');
+  assert.equal(generatedCalls, 1, 'asset generator executes once');
+  const texture = manager.createTextureFromPixels('blue-noise', first);
+  assert.equal(device.calls.textures.length, 1);
+  assert.equal(device.calls.writes.at(-1)[0], 'texture', 'decoded pixels reach the GPU queue');
+  manager.dispose();
+  assert.equal(buffer.destroyed, true);
+  assert.equal(texture.destroyed, true);
+  assert.equal(manager.size, 0);
+
+  let attempts = 0;
+  const retrying = new AssetCache({ generatedLoaders: { flaky: async () => { attempts += 1; if (attempts === 1) throw new Error('private detail'); return new Uint8Array([9]); } } });
+  await assert.rejects(retrying.load({ id: 'flaky', type: 'binary', uri: 'generated://flaky' }), (error) => error.code === 'asset-load-failed' && !error.message.includes('private detail'));
+  assert.deepEqual(await retrying.load({ id: 'flaky', type: 'binary', uri: 'generated://flaky' }), new Uint8Array([9]), 'failed loads are evicted and retryable');
 }
 
 async function testRuntimeUsesLifecycleAndRetryBudget() {
@@ -52,10 +101,16 @@ async function testRuntimeUsesLifecycleAndRetryBudget() {
   assert.equal(runtime.mode, RENDERER_MODES.WEBGPU_REDUCED);
   assert.equal(requestCount, 1, 'initial requestDevice should happen during probing only');
   assert.equal(runtime.lifecycle.device, first, 'probed device must be adopted through lifecycle.acquire');
+  assert.equal(runtime.resourceManager.size, 3, 'ping-pong buffers and manifest texture are materialized');
+  assert.equal(first.calls.buffers.length, 2);
+  assert.equal(first.calls.textures.length, 1);
   adapter.requestDevice = async () => { requestCount += 1; return requestCount === 2 ? second : third; };
   first.lose('unknown');
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(runtime.lifecycle.device, second, 'first loss should reacquire');
+  await runtime.resourcesReady;
+  assert.equal(runtime.resourceManager.size, 3, 'device reacquisition rebuilds scene resources');
+  assert.equal(first.calls.buffers.every((buffer) => buffer.destroyed), true, 'lost-device buffers are destroyed');
   assert.equal(runtime.lifecycle.retryCount, 1, 'successful reacquire must not erase loss-cycle budget');
   second.lose('unknown');
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -231,6 +286,7 @@ await testRuntimeUsesLifecycleAndRetryBudget();
 await testExplicitLifecycleBudgetResetOnly();
 await testStalePendingRetryCannotReplaceExplicitReacquire();
 await testRuntimeFallbackUpdatesPublicStatusContract();
+await testResourceManagerAndAssetCache();
 testRenderGraphDeepValidation();
 testSceneManifestDeepValidation();
 await testFallbackCanvasSeparation();

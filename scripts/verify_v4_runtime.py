@@ -29,6 +29,7 @@ lifecycle = read("gpu-lifecycle.js")
 audio = read("audio-feature-bus.js")
 manifest = read("scene-manifest.js")
 graph = read("render-graph.js")
+resources = read("resource-manager.js")
 runtime = read("runtime.js")
 demo = read("demo.html")
 
@@ -51,6 +52,13 @@ require("device.lost.then" in lifecycle, "device.lost watcher missing")
 require("disposeResources()" in lifecycle and "this.resources.clear()" in lifecycle, "resource cleanup on loss missing")
 require("gpu-retry-limit-exceeded" in lifecycle, "retry exhaustion public error missing")
 require("error.message" not in lifecycle and "error.stack" not in lifecycle, "lifecycle leaks raw device errors")
+
+# Executable GPU resource and asset-cache coverage.
+require("device.createBuffer" in resources and "device.createTexture" in resources, "real GPU resource creation missing")
+require("device.queue.writeBuffer" in resources and "device.queue.writeTexture" in resources, "GPU queue uploads missing")
+require("class AssetCache" in resources and "this.entries.has(asset.id)" in resources, "deduplicated asset cache missing")
+require("bytesPerRow" in resources and "256" in resources, "texture upload row alignment missing")
+require("hydrateDeviceResources" in runtime and "lifecycle.registerResource(manager)" in runtime, "runtime resource lifecycle integration missing")
 
 # Audio feature bus contract.
 require("export const AUDIO_BAND_COUNT = 16" in audio, "16-band audio bus missing")
@@ -83,7 +91,7 @@ require("data-renderer-mode" in demo or "dataset.rendererMode" in runtime, "demo
 require("import { startV4Runtime } from './runtime.js';" in demo, "demo does not load v4 runtime module")
 
 # Native-density intent: no DPR lowering runtime trick in v4 foundation.
-for source_name, source in [("runtime.js", runtime), ("capability.js", capability), ("render-graph.js", graph)]:
+for source_name, source in [("runtime.js", runtime), ("capability.js", capability), ("render-graph.js", graph), ("resource-manager.js", resources)]:
     require("devicePixelRatio" not in source and "dpr" not in source.lower(), f"v4 {source_name} should not introduce DPR reduction")
 
 # Deterministic synthetic audio vector checks (independent Python mirror of the documented bus contract).
