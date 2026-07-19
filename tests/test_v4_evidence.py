@@ -1,17 +1,29 @@
 #!/usr/bin/env python3
 """Unit tests for Visualizer v4 evidence gates."""
 from pathlib import Path
+import binascii
 import json
+import struct
 import subprocess
 import tempfile
 import types
 import unittest
+import zlib
 from unittest import mock
 
 from v4.tools import visualizer_v4_evidence as ev
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "v4" / "evidence" / "fixtures"
+
+
+def write_solid_png(path, rgb, width=16, height=16):
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", binascii.crc32(kind + data) & 0xFFFFFFFF)
+    raw = b"".join(b"\x00" + bytes(rgb) * width for _ in range(height))
+    payload = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+               + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+    path.write_bytes(payload)
 
 
 def fixture(name):
@@ -62,6 +74,18 @@ def real_motion_sheet_with_captures(tmp):
 
 
 class EvidenceValidationTests(unittest.TestCase):
+    def test_capture_pixel_gate_rejects_black_and_accepts_visible_central_content(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as td:
+            black = Path(td) / "black.png"
+            visible = Path(td) / "visible.png"
+            write_solid_png(black, (0, 0, 0))
+            write_solid_png(visible, (20, 90, 180))
+            with self.assertRaises(ev.EvidenceError):
+                ev.require_nonblack_capture(black)
+            metrics = ev.require_nonblack_capture(visible)
+            self.assertEqual(metrics["bright_fraction"], 1.0)
+            self.assertEqual(metrics["sample_region"], "central-60-percent")
+
     def setUp(self):
         (ROOT / "v4" / "evidence" / "local-runs").mkdir(parents=True, exist_ok=True)
 

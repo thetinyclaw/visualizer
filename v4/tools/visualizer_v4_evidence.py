@@ -15,10 +15,12 @@ import math
 import os
 import shutil
 import shlex
+import struct
 import sys
 import threading
 import time
 import uuid
+import zlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -134,6 +136,92 @@ def compute_file_sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def png_central_visual_metrics(path: Path) -> Mapping[str, Any]:
+    """Decode an 8-bit Playwright PNG and measure the central canvas region."""
+    payload = path.read_bytes()
+    require(payload.startswith(b"\x89PNG\r\n\x1a\n"), "capture must be a PNG")
+    offset = 8
+    width = height = color_type = bit_depth = interlace = None
+    compressed = bytearray()
+    while offset + 12 <= len(payload):
+        length = struct.unpack(">I", payload[offset:offset + 4])[0]
+        kind = payload[offset + 4:offset + 8]
+        chunk = payload[offset + 8:offset + 8 + length]
+        require(offset + 12 + length <= len(payload), "capture PNG chunk is truncated")
+        if kind == b"IHDR":
+            width, height, bit_depth, color_type, compression, filtering, interlace = struct.unpack(">IIBBBBB", chunk)
+            require(compression == 0 and filtering == 0, "capture PNG uses unsupported compression/filter method")
+        elif kind == b"IDAT":
+            compressed.extend(chunk)
+        elif kind == b"IEND":
+            break
+        offset += 12 + length
+    require(isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0, "capture PNG missing valid IHDR")
+    require(bit_depth == 8 and color_type in {2, 6} and interlace == 0,
+            "capture PNG must be non-interlaced 8-bit RGB/RGBA")
+    assert isinstance(width, int) and isinstance(height, int)
+    width_value = width
+    height_value = height
+    channels = 3 if color_type == 2 else 4
+    stride = width_value * channels
+    decoded = zlib.decompress(bytes(compressed))
+    require(len(decoded) == (stride + 1) * height_value, "capture PNG scanline length mismatch")
+    previous = bytearray(stride)
+    rows: List[bytearray] = []
+
+    def paeth(a: int, b: int, c: int) -> int:
+        estimate = a + b - c
+        pa, pb, pc = abs(estimate - a), abs(estimate - b), abs(estimate - c)
+        return a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+
+    cursor = 0
+    for _ in range(height_value):
+        filter_kind = decoded[cursor]
+        raw = decoded[cursor + 1:cursor + 1 + stride]
+        cursor += stride + 1
+        row = bytearray(stride)
+        for index, value in enumerate(raw):
+            left = row[index - channels] if index >= channels else 0
+            up = previous[index]
+            upper_left = previous[index - channels] if index >= channels else 0
+            if filter_kind == 0: predictor = 0
+            elif filter_kind == 1: predictor = left
+            elif filter_kind == 2: predictor = up
+            elif filter_kind == 3: predictor = (left + up) // 2
+            elif filter_kind == 4: predictor = paeth(left, up, upper_left)
+            else: raise EvidenceError(f"capture PNG uses unsupported filter {filter_kind}")
+            row[index] = (value + predictor) & 0xFF
+        rows.append(row)
+        previous = row
+
+    x0, x1 = width_value // 5, width_value - width_value // 5
+    y0, y1 = height_value // 5, height_value - height_value // 5
+    sampled = bright = vivid = 0
+    max_rgb = 0
+    for y in range(y0, y1):
+        row = rows[y]
+        for x in range(x0, x1):
+            base = x * channels
+            r, g, b = row[base], row[base + 1], row[base + 2]
+            peak = max(r, g, b)
+            sampled += 1
+            max_rgb = max(max_rgb, peak)
+            if peak >= 64 and r + g + b >= 128:
+                bright += 1
+                if peak - min(r, g, b) >= 12: vivid += 1
+    require(sampled > 0, "capture PNG central sample region is empty")
+    return {"sample_region": "central-60-percent", "sampled_pixels": sampled, "bright_pixels": bright,
+            "bright_fraction": bright / sampled, "vivid_pixels": vivid, "vivid_fraction": vivid / sampled,
+            "max_rgb": max_rgb}
+
+
+def require_nonblack_capture(path: Path) -> Mapping[str, Any]:
+    metrics = png_central_visual_metrics(path)
+    require(metrics["max_rgb"] >= 64 and metrics["bright_fraction"] >= 0.002,
+            "capture central canvas region is black or lacks visible rendered content")
+    return metrics
 
 
 def repo_relative_path(text: str, field_name: str) -> Path:
@@ -758,6 +846,7 @@ def run_local_browser_capture(*, route: str, effect_id: str, seed: int, time_ms:
                         "observed page time did not advance chronologically")
                 capture_path = raw_dir / f"frame-{int(frame_index):04d}.png"
                 page.screenshot(path=str(capture_path), full_page=False)
+                visual_metrics = require_nonblack_capture(capture_path)
                 capture_sha = compute_file_sha256(capture_path)
                 if previous_sha is not None:
                     require(capture_sha != previous_sha, "adjacent requested motion captures are byte-identical; refusing mislabeled chronology")
@@ -770,6 +859,7 @@ def run_local_browser_capture(*, route: str, effect_id: str, seed: int, time_ms:
                     "time_ms": observed_time_ms,
                     "role": "spatial" if position == 0 else "chronological",
                     "renderer_attestation": renderer_attestation,
+                    "visual_metrics": visual_metrics,
                     "capture_path": raw_ref(final_raw_dir / capture_path.name), "capture_sha256": capture_sha,
                 })
                 page.close()
