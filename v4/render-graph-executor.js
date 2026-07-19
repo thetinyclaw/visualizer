@@ -1,5 +1,7 @@
 // Narrow executable WebGPU render-graph foundation for authored draw/dispatch passes.
 
+import { GpuTimestampTelemetry } from './gpu-timestamp-telemetry.js';
+
 const RENDER_ATTACHMENT = globalThis.GPUTextureUsage?.RENDER_ATTACHMENT ?? 0x10;
 const TEXTURE_BINDING = globalThis.GPUTextureUsage?.TEXTURE_BINDING ?? 0x04;
 const COPY_SRC = globalThis.GPUTextureUsage?.COPY_SRC ?? 0x01;
@@ -138,6 +140,7 @@ export class WebGpuGraphExecutor {
     executors = {},
     dprCap = 2,
     windowObject = globalThis,
+    timestampTelemetry = null,
   } = {}) {
     assertExecutableInputs(device, canvas, graph);
     const context = canvas.getContext('webgpu');
@@ -162,6 +165,14 @@ export class WebGpuGraphExecutor {
     this.dpr = 1;
     this.lastCanvasSize = Object.freeze({ width: 0, height: 0, reason: 'not-measured', source: 'none' });
     this.disposed = false;
+    this.timestampTelemetry = new GpuTimestampTelemetry({
+      device,
+      passIds: graph.passes.map((pass) => pass.id),
+      enabled: Boolean(timestampTelemetry?.enabled),
+      unavailableReason: timestampTelemetry?.unavailableReason || 'timestamp-query-not-requested',
+      ringSize: timestampTelemetry?.ringSize || 3,
+      label: `${graph.id}:gpu-telemetry`,
+    });
     this.context.configure({ device, format, alphaMode: 'opaque' });
     this.compiledPasses = this.compile(graph);
     this.resizeTargets();
@@ -416,7 +427,10 @@ export class WebGpuGraphExecutor {
   }
 
   encodeCompute(encoder, compiled, frameContext) {
-    const passEncoder = encoder.beginComputePass ? encoder.beginComputePass({ label: `${this.graph.id}:${compiled.pass.id}` }) : null;
+    const passDescriptor = { label: `${this.graph.id}:${compiled.pass.id}` };
+    const timestampWrites = this.timestampTelemetry.timestampWritesForPass(compiled.pass.id);
+    if (timestampWrites) passDescriptor.timestampWrites = timestampWrites;
+    const passEncoder = encoder.beginComputePass ? encoder.beginComputePass(passDescriptor) : null;
     if (!passEncoder) throw fail(`Compute pass ${compiled.pass.id} is not supported by this device.`);
     passEncoder.setPipeline(compiled.pipeline);
     bindPassResources(passEncoder, this.resourceRegistry, compiled.pass);
@@ -442,6 +456,8 @@ export class WebGpuGraphExecutor {
     if (passDef.depthTarget) {
       descriptor.depthStencilAttachment = { view: this.textureView(passDef.depthTarget), depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' };
     }
+    const timestampWrites = this.timestampTelemetry.timestampWritesForPass(passDef.id);
+    if (timestampWrites) descriptor.timestampWrites = timestampWrites;
     const passEncoder = encoder.beginRenderPass(descriptor);
     if (compiled.pipeline) passEncoder.setPipeline(compiled.pipeline);
     const autoBindGroup = this.autoBindGroups.get(passDef.id) || this.dynamicHistoryBindGroup(compiled);
@@ -466,6 +482,7 @@ export class WebGpuGraphExecutor {
       return Object.freeze({ submitted: false, skipped: 'zero-size', reason: measurement.reason, source: measurement.source, width: 0, height: 0, graphId: this.graph.id });
     }
     const encoder = this.device.createCommandEncoder({ label: `${this.graph.id}:frame` });
+    const telemetryFrame = this.timestampTelemetry.beginFrame(encoder, frameContext);
     const executed = [];
     const pendingHistorySwaps = [];
     for (const compiled of this.compiledPasses) {
@@ -480,7 +497,9 @@ export class WebGpuGraphExecutor {
       }
       executed.push(compiled.pass.id);
     }
+    this.timestampTelemetry.endFrame(encoder, telemetryFrame);
     this.device.queue.submit([encoder.finish()]);
+    this.timestampTelemetry.afterSubmit(telemetryFrame);
     for (const state of pendingHistorySwaps) {
       const oldPrevious = state.previousTexture;
       state.previousTexture = state.nextTexture;
@@ -494,7 +513,15 @@ export class WebGpuGraphExecutor {
       state.pendingSwap = false;
     }
     for (const callback of frameContext.afterSubmit || []) callback();
-    return Object.freeze({ submitted: true, width: this.width, height: this.height, dpr: this.dpr, graphId: this.graph.id, passes: Object.freeze(executed) });
+    return Object.freeze({ submitted: true, width: this.width, height: this.height, dpr: this.dpr, graphId: this.graph.id, passes: Object.freeze(executed), gpuTelemetry: this.timestampTelemetry.snapshot(frameContext) });
+  }
+
+  telemetrySnapshot(context = {}) {
+    return this.timestampTelemetry.snapshot(context);
+  }
+
+  flushTelemetry(options = {}) {
+    return this.timestampTelemetry.flushTelemetry(options);
   }
 
   dispose() {
@@ -508,6 +535,7 @@ export class WebGpuGraphExecutor {
     this.historyStates.clear();
     this.autoBindGroups.clear();
     this.fullscreenSampler = null;
+    this.timestampTelemetry.dispose();
     this.textureGeneration += 1;
     if (typeof this.context.unconfigure === 'function') this.context.unconfigure();
   }

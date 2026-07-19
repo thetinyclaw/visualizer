@@ -36,6 +36,7 @@ function updateState(state, runtime, scene, frame = null) {
   state.passes = state.graphPassIds;
   state.dpr = frame?.dpr || runtime.graphExecutor?.dpr || Math.max(1, globalThis.devicePixelRatio || 1);
   state.telemetry = runtime.resourceManager?.telemetry?.() || null;
+  state.gpuTelemetry = runtime.gpuTelemetry;
   state.fallbackReason = state.validationFailed ? 'webgpu-validation-failed' : (runtime.publicErrors?.map((error) => error.code).join(', ') || '');
   state.audio = scene.lastAudio;
   state.byteSignature = voxelByteSignature(scene);
@@ -87,7 +88,7 @@ export async function startVoxelRoute(windowObject = window) {
     seed: params.seed, time: params.lockedTime ?? 0, mode: params.mode, lockedTime: params.lockedTime,
     instances: { count: VOXEL_INSTANCE_COUNT }, compute: { instanceCount: VOXEL_INSTANCE_COUNT }, bounds: null, topology: null,
     graphPassIds: [], passes: [], dpr: Math.max(1, windowObject.devicePixelRatio || 1),
-    frame: null, telemetry: null, fallback: { href: './lab/neon-voxel-cloud.html', label: 'old WebGL lab fallback' }, fallbackReason: '',
+    frame: null, telemetry: null, gpuTelemetry: null, fallback: { href: './lab/neon-voxel-cloud.html', label: 'old WebGL lab fallback' }, fallbackReason: '',
     frameMode: locked ? 'locked-single-frame' : 'live-raf', frameCounters: null, lastFrameMs: 0, rafScheduled: false,
     structuralAudio: scene.structuralAudioMappings, materialHierarchy: scene.materialHierarchy, byteSignature: voxelByteSignature(scene),
     validationErrors: [], validationFailed: false, _validationProbeInstalled: false,

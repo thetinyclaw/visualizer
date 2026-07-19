@@ -148,12 +148,13 @@ try {
     runtime.resourceManager.createBuffer('smoke-telemetry-particles', { size: 32768, usage: bufferUsage, label: 'runtime-smoke:telemetry-particles' });
     runtime.resourceManager.createTexture('smoke-telemetry-lut', { size: [16, 16, 1], format: 'rgba8unorm', usage: textureUsage, label: 'runtime-smoke:telemetry-lut' });
     resourceTelemetry = runtime.resourceManager.telemetry();
-    telemetryElement.textContent = `Known manager allocation: ${resourceTelemetry.knownAllocatedBytes} bytes; external browser/driver GPU usage: unknown. No live GPU telemetry is displayed.`;
+    const gpuTelemetry = runtime.gpuTelemetry;
+    telemetryElement.textContent = `Known manager allocation: ${resourceTelemetry.knownAllocatedBytes} bytes; external browser/driver GPU usage: unknown. GPU timestamps: ${gpuTelemetry.latestFrameMs === null ? `unavailable/pending (${gpuTelemetry.unavailableReason || 'awaiting resolved sample'})` : `${gpuTelemetry.latestFrameMs.toFixed(3)} ms from ${gpuTelemetry.source}`}.`;
   } else {
-    telemetryElement.textContent = 'WebGPU resource manager inactive; no GPU resources allocated on fallback route. No live GPU telemetry is displayed.';
+    telemetryElement.textContent = `WebGPU resource manager inactive; no GPU resources allocated on fallback route. GPU timestamps unavailable (${runtime.gpuTelemetry.unavailableReason || 'webgpu inactive'}).`;
   }
   errorsElement.textContent = runtime.publicErrors.map((error) => `${error.code}: ${error.message}`).join('\n');
-  window.__V4_RUNTIME_SMOKE__ = { label: 'authored triangle through real offscreen post stack and swapchain compositor; not Cathedral or full bloom parity', mode: runtime.mode, graphId: runtime.graph?.id, passes: runtime.graph?.passes.map((pass) => pass.id), passKinds: runtime.graph?.passes.map((pass) => pass.kind), resources: runtime.graph?.resources.map((resource) => resource.id), postStatus: 'bounded tone map plus restrained center glow, no history/trails', resourcesReady: statusElement.dataset.resourcesReady, frameSubmitted: statusElement.dataset.frameSubmitted, telemetry: resourceTelemetry };
+  window.__V4_RUNTIME_SMOKE__ = { label: 'authored triangle through real offscreen post stack and swapchain compositor; not Cathedral or full bloom parity', mode: runtime.mode, graphId: runtime.graph?.id, passes: runtime.graph?.passes.map((pass) => pass.id), passKinds: runtime.graph?.passes.map((pass) => pass.kind), resources: runtime.graph?.resources.map((resource) => resource.id), postStatus: 'bounded tone map plus restrained center glow, no history/trails', resourcesReady: statusElement.dataset.resourcesReady, frameSubmitted: statusElement.dataset.frameSubmitted, telemetry: resourceTelemetry, gpuTelemetry: runtime.gpuTelemetry };
   const ctx = runtime.graphExecutor ? null : canvas.getContext('2d');
   if (ctx) {
     canvas.width = Math.max(1, canvas.clientWidth || 960); canvas.height = Math.max(1, canvas.clientHeight || 360);

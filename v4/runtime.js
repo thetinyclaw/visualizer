@@ -5,6 +5,7 @@ import { assertSceneManifest } from './scene-manifest.js';
 import { DeviceResourceManager } from './resource-manager.js';
 import { AssetCache } from './asset-loader.js';
 import { WebGpuGraphExecutor } from './render-graph-executor.js';
+import { unavailableTimestampTelemetry } from './gpu-timestamp-telemetry.js';
 
 const HYDRATED_BUFFER_TYPES = Object.freeze(new Map([
   ['uniform-buffer', ['uniform', 'copy-dst']],
@@ -87,7 +88,9 @@ function runtimeFallback({ safeManifest, audioBus, statusElement, publicErrors }
     get graphExecutor() { return null; },
     resourcesReady: Promise.resolve(null),
     publicErrors,
+    get gpuTelemetry() { return unavailableTimestampTelemetry('webgpu-inactive'); },
     renderFrame() { return null; },
+    flushTelemetry() { return Promise.resolve(unavailableTimestampTelemetry('webgpu-inactive')); },
     stop() {},
     resize() { return false; },
     dispose() {},
@@ -151,6 +154,7 @@ export async function startV4Runtime({
   let attemptedFrameCount = 0;
   let lastFrameMs = 0;
   let lastFrame = null;
+  let timestampTelemetryConfig = Object.freeze({ enabled: false, unavailableReason: 'webgpu-unavailable' });
   const publicErrors = [...probe.errors];
 
   const stopLoop = () => {
@@ -173,7 +177,7 @@ export async function startV4Runtime({
     if (disposed || token !== frameGeneration || !graphExecutor || lifecycle.state !== GPU_LIFECYCLE_STATES.READY) return null;
     attemptedFrameCount += 1;
     const started = windowObject?.performance?.now ? windowObject.performance.now() : Date.now();
-    const frame = graphExecutor.render({ time, scene: resolvedScene, audio: audioBus.snapshot ? audioBus.snapshot() : null });
+    const frame = graphExecutor.render({ time, scene: resolvedScene, audio: audioBus.snapshot ? audioBus.snapshot() : null, submittedFrameCount });
     const ended = windowObject?.performance?.now ? windowObject.performance.now() : Date.now();
     lastFrameMs = Math.max(0, ended - started);
     lastFrame = frame;
@@ -218,6 +222,7 @@ export async function startV4Runtime({
           executors: executorRegistry,
           dprCap,
           windowObject,
+          timestampTelemetry: timestampTelemetryConfig,
         });
         lifecycle.registerResource(graphExecutor);
         setDataset(statusElement, { resourcesReady: 'true' });
@@ -253,6 +258,10 @@ export async function startV4Runtime({
   });
 
   if (probe.webgpu && probe.webgpu.device && probe.webgpu.adapter) {
+    timestampTelemetryConfig = Object.freeze({
+      enabled: Boolean(probe.webgpu.telemetry?.timestampQuerySupported),
+      unavailableReason: probe.webgpu.telemetry?.unavailableReason || null,
+    });
     let adoptingProbedDevice = true;
     const requestDevice = async () => {
       if (adoptingProbedDevice) { adoptingProbedDevice = false; return probe.webgpu.device; }
@@ -280,8 +289,10 @@ export async function startV4Runtime({
     get resourcesReady() { return resourcesReady; },
     publicErrors,
     get frameCounters() { return Object.freeze({ attempted: attemptedFrameCount, submitted: submittedFrameCount, lastFrameMs, rafScheduled, rafId, generation: frameGeneration }); },
+    get gpuTelemetry() { return graphExecutor ? graphExecutor.telemetrySnapshot({ submittedFrameCount }) : unavailableTimestampTelemetry(timestampTelemetryConfig.unavailableReason || (selectedMode === RENDERER_MODES.WEBGL2_LEGACY ? 'webgpu-inactive' : 'timestamp-query-unavailable')); },
     get lastFrame() { return lastFrame; },
     renderFrame: submitOneFrame,
+    flushTelemetry({ timeoutMs = 1000 } = {}) { return graphExecutor ? graphExecutor.flushTelemetry({ timeoutMs, submittedFrameCount }) : Promise.resolve(unavailableTimestampTelemetry(timestampTelemetryConfig.unavailableReason || 'webgpu-inactive')); },
     stop: stopLoop,
     resize() {
       if (!graphExecutor) return false;

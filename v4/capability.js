@@ -8,9 +8,10 @@ export const RENDERER_MODES = Object.freeze({
 });
 
 const FULL_WEBGPU_FEATURES = Object.freeze([
-  'timestamp-query',
   'texture-compression-bc',
 ]);
+
+const OPTIONAL_TELEMETRY_FEATURES = Object.freeze(['timestamp-query']);
 
 const REDUCED_WEBGPU_LIMITS = Object.freeze({
   minStorageBuffersPerShaderStage: 4,
@@ -45,8 +46,18 @@ export async function probeRenderer({ navigatorObject = globalThis.navigator, ca
       const adapter = await navigatorObject.gpu.requestAdapter({ powerPreference: 'high-performance' });
       if (adapter && hasReducedLimits(adapter)) {
         const fullFeatures = FULL_WEBGPU_FEATURES.filter((feature) => hasFeature(adapter, feature));
-        const requiredFeatures = fullFeatures;
-        const device = await adapter.requestDevice({ requiredFeatures });
+        const telemetryFeatures = OPTIONAL_TELEMETRY_FEATURES.filter((feature) => hasFeature(adapter, feature));
+        let requiredFeatures = [...fullFeatures, ...telemetryFeatures];
+        let device;
+        let telemetryUnavailableReason = telemetryFeatures.includes('timestamp-query') ? null : 'timestamp-query-feature-unavailable';
+        try {
+          device = await adapter.requestDevice({ requiredFeatures });
+        } catch (error) {
+          if (!telemetryFeatures.includes('timestamp-query')) throw error;
+          telemetryUnavailableReason = 'timestamp-query-device-request-failed';
+          requiredFeatures = fullFeatures;
+          device = await adapter.requestDevice({ requiredFeatures: fullFeatures });
+        }
         const hasFullFeatures = FULL_WEBGPU_FEATURES.every((feature) => hasFeature(adapter, feature));
         result.mode = hasFullFeatures ? RENDERER_MODES.WEBGPU_FULL : RENDERER_MODES.WEBGPU_REDUCED;
         result.webgpu = {
@@ -54,6 +65,12 @@ export async function probeRenderer({ navigatorObject = globalThis.navigator, ca
           device,
           requiredFeatures,
           fullFeatures,
+          telemetryFeatures: telemetryUnavailableReason ? [] : telemetryFeatures,
+          telemetry: Object.freeze({
+            timestampQuerySupported: !telemetryUnavailableReason,
+            unavailableReason: telemetryUnavailableReason,
+            requestedFeatures: Object.freeze(telemetryUnavailableReason ? [] : telemetryFeatures),
+          }),
           limits: adapter.limits,
         };
         return Object.freeze(result);

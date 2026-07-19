@@ -32,6 +32,7 @@ function updateState(state, runtime, scene, frame = null) {
   state.graphPasses = runtime.graph?.passes?.map((p) => ({ id: p.id, kind: p.kind })) || [];
   state.graphPassIds = state.graphPasses.map((p) => p.id);
   state.telemetry = runtime.resourceManager?.telemetry?.() || null;
+  state.gpuTelemetry = runtime.gpuTelemetry;
   state.audio = scene.lastAudio;
   state.signature = scene.lastSignature;
   state.bounds = summary?.bounds || null;
@@ -62,7 +63,7 @@ export async function startFilamentRoute(windowObject = window) {
     seed: params.seed, mode: params.mode, time: params.lockedTime ?? 0, lockedTime: params.lockedTime,
     frameMode: locked ? 'locked-single-frame' : 'live-raf', strandCount: 118, segmentCount: 52, nodeCount: 6136,
     drawVertices: 36108, computeDispatches: 0, renderDrawCalls: 0, graphPasses: [], graphPassIds: [],
-    telemetry: null, audio: null, bounds: null, signature: '', buffers: {}, generation: 0,
+    telemetry: null, gpuTelemetry: null, audio: null, bounds: null, signature: '', buffers: {}, generation: 0,
     lifecycle: 'initializing', lock: locked, locked, fallback: false, fallbackHref: './lab/filament-vortex.html', fallbackReason: '', rafScheduled: false,
     webgpuValidationErrors: [], pingPong: { parity: 0, swapCount: 0, pending: null },
     structuralAudio: scene.structuralAudioMappings, materialHierarchy: scene.materialHierarchy,
