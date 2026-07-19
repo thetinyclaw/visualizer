@@ -400,7 +400,7 @@ export class WebGpuGraphExecutor {
     if (!passEncoder) throw fail(`Compute pass ${compiled.pass.id} is not supported by this device.`);
     passEncoder.setPipeline(compiled.pipeline);
     bindPassResources(passEncoder, this.resourceRegistry, compiled.pass);
-    if (compiled.executor) compiled.executor({ pass: passEncoder, device: this.device, resources: compiled.resources, frameContext, graphPass: compiled.pass });
+    if (compiled.executor) compiled.executor({ pass: passEncoder, device: this.device, resources: compiled.resources, frameContext, graphPass: compiled.pass, executor: this });
     const [x, y = 1, z = 1] = compiled.pass.workgroups;
     passEncoder.dispatchWorkgroups(x, y, z);
     passEncoder.end();

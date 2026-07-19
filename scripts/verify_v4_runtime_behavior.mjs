@@ -12,6 +12,9 @@ import { LiveAudioFeatureBridge, LIVE_AUDIO_STATES } from '../v4/live-audio-engi
 import { createPrismaticCathedralScene, sceneByteSignature } from '../v4/scenes/prismatic-cathedral/geometry.js';
 import { prismaticCathedralManifest, makePrismaticCathedralGraph } from '../v4/scenes/prismatic-cathedral/manifest.js';
 import { createPrismaticCathedralPipelines, createPrismaticCathedralExecutors } from '../v4/scenes/prismatic-cathedral/pipeline.js';
+import { createFilamentVortexScene, filamentSignature, FILAMENT_CONTRACT } from '../v4/scenes/filament-vortex/geometry.js';
+import { filamentVortexManifest, makeFilamentVortexGraph } from '../v4/scenes/filament-vortex/manifest.js';
+import { createFilamentVortexPipelines, createFilamentVortexExecutors } from '../v4/scenes/filament-vortex/pipeline.js';
 
 function deferred() {
   let resolve;
@@ -1263,6 +1266,66 @@ function testPrismaticCathedralExecutorUploadsAndDrawsIndexed() {
   assert.equal(device.calls.submissions.length, 2, 'repeat frame submits without bind-group churn');
 }
 
+function testFilamentVortexContracts() {
+  assert.equal(validateSceneManifest(filamentVortexManifest).ok, true, 'filament manifest validates relative WGSL metadata');
+  const graph = makeFilamentVortexGraph();
+  const validation = graph.validate();
+  assert.equal(validation.ok, true, validation.errors.join('; '));
+  const frozen = graph.freeze();
+  assert.deepEqual(frozen.passes.map((pass) => pass.id), ['filament-compute', 'filament-strands', 'filament-post', 'filament-composite'], 'compute → strands → post → composite graph order is explicit');
+  assert.equal(FILAMENT_CONTRACT.strandCount, 118);
+  assert.equal(FILAMENT_CONTRACT.segmentCount, 52);
+  assert.equal(FILAMENT_CONTRACT.drawVertices, 118 * 51 * 6);
+  const a = filamentSignature({ seed: 491009, time: 18, mode: 'demo' });
+  const b = filamentSignature({ seed: 491009, time: 18, mode: 'demo' });
+  const c = filamentSignature({ seed: 491009, time: 19, mode: 'demo' });
+  assert.equal(a, b, 'locked filament signature is deterministic for seed/time/mode');
+  assert.notEqual(a, c, 'changed locked time changes compute topology signature');
+  const scene = createFilamentVortexScene({ seed: 491009, mode: 'demo', locked: true });
+  const one = scene.prepareFrame({ time: 18, live: false });
+  scene.prepareFrame({ time: 11, live: false });
+  const two = scene.prepareFrame({ time: 18, live: false });
+  assert.equal(one.summary.signature, two.summary.signature, 'locked output is history-independent after unrelated prior times');
+  assert.ok(scene.structuralAudioMappings.some((entry) => /curl field/.test(entry)), 'audio structurally drives curl field, not exposure only');
+}
+
+function testFilamentExecutorDispatchDrawSubmitAndReuse() {
+  const calls = { computeBinds: [], renderBinds: [], dispatches: [], draws: [], submissions: [] };
+  const context = { configure() {}, getCurrentTexture() { return { createView: () => ({ id: 'swap-view' }) }; }, unconfigure() {} };
+  const canvas = { width: 640, height: 360, clientWidth: 640, clientHeight: 360, getBoundingClientRect: () => ({ width: 640, height: 360 }), getContext: (kind) => kind === 'webgpu' ? context : null };
+  const device = makeResourceDevice();
+  device.createCommandEncoder = () => ({
+    beginComputePass() { return { setPipeline() {}, setBindGroup(...args) { calls.computeBinds.push(args); }, dispatchWorkgroups(...args) { calls.dispatches.push(args); }, end() {} }; },
+    beginRenderPass(descriptor) { return { setPipeline() {}, setBindGroup(...args) { calls.renderBinds.push([descriptor.label, ...args]); }, draw(...args) { calls.draws.push([descriptor.label, args]); }, end() {} }; },
+    finish() { return { id: 'filament-command-buffer' }; },
+  });
+  device.queue.submit = (buffers) => calls.submissions.push(buffers);
+  const graph = makeFilamentVortexGraph().freeze();
+  const scene = createFilamentVortexScene({ seed: 491009, mode: 'demo', locked: false });
+  const pipelines = createFilamentVortexPipelines({ device, format: 'bgra8unorm' });
+  pipelines.computeLayout = { id: 'test-filament-compute-layout' };
+  pipelines.renderLayout = { id: 'test-filament-render-layout' };
+  const resources = new Map([
+    ['filament-uniforms', { id: 'uniforms' }],
+    ['filament-audio', { id: 'audio' }],
+    ['filament-positions', { id: 'positions' }],
+    ['filament-velocities', { id: 'velocities' }],
+    ['asset:filament-pixel', { id: 'filament-pixel', createView: () => ({ id: 'filament-pixel-view' }) }],
+  ]);
+  const executor = new WebGpuGraphExecutor({ device, canvas, graph, resources, pipelines, executors: createFilamentVortexExecutors(), windowObject: { devicePixelRatio: 1 } });
+  const first = executor.render({ time: 18, scene, audio: null });
+  assert.equal(first.submitted, true);
+  assert.deepEqual(first.passes, ['filament-compute', 'filament-strands', 'filament-post', 'filament-composite']);
+  assert.deepEqual(calls.dispatches[0], [FILAMENT_CONTRACT.workgroups[0], 1, 1], 'compute dispatchWorkgroups updates storage-buffer topology');
+  assert.deepEqual(calls.draws.find(([label]) => label.endsWith(':filament-strands'))[1], [FILAMENT_CONTRACT.drawVertices, 1, 0, 0], 'strand render draws ribbon triangle segment geometry');
+  assert.equal(calls.submissions.length, 1, 'commands are submitted');
+  assert.equal(device.calls.writes.filter((write) => write[0] === 'buffer').length, 2, 'only small uniform/audio writes occur per frame, no CPU position reupload');
+  const bindGroupsAfterFirst = device.calls.bindGroups.length;
+  executor.render({ time: 18.016, scene, audio: null });
+  assert.equal(device.calls.bindGroups.length, bindGroupsAfterFirst, 'same-size live frames reuse compute/render/post/composite bind groups');
+  assert.ok(scene.liveFrame >= 2, 'live mode persistently advances the scene frame counter');
+}
+
 async function testRuntimeAutoStartAndFrameCounters() {
   const device = makeDevice('locked-frame');
   const runtime = await startV4Runtime({
@@ -1330,6 +1393,8 @@ testSceneManifestDeepValidation();
 testPrismaticCathedralGeometryContracts();
 testPrismaticCathedralGraphAndManifestContracts();
 testPrismaticCathedralExecutorUploadsAndDrawsIndexed();
+testFilamentVortexContracts();
+testFilamentExecutorDispatchDrawSubmitAndReuse();
 await testRuntimeAutoStartAndFrameCounters();
 await testFallbackCanvasSeparation();
 testAudioFeatureBusLogBandsAndAllocationReuse();
