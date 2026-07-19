@@ -29,6 +29,7 @@ lifecycle = read("gpu-lifecycle.js")
 audio = read("audio-feature-bus.js")
 manifest = read("scene-manifest.js")
 graph = read("render-graph.js")
+executor = read("render-graph-executor.js")
 resources = read("resource-manager.js")
 runtime = read("runtime.js")
 demo = read("demo.html")
@@ -82,6 +83,10 @@ for token in ["compute", "ping-pong-state", "storage-buffer", "instanced-depth-t
 require("makeSceneGraphFoundation" in graph, "scene graph foundation factory missing")
 require("audio-features" in graph and "particle-state" in graph and "scene-depth" in graph, "foundation resources missing")
 require("bounds: [-1, -1, -1, 1, 1, 1]" in graph, "bounded volume pass missing explicit bounds")
+require("getContext('webgpu')" in executor and "context.configure" in executor, "GPUCanvasContext execution missing")
+require("createCommandEncoder" in executor and "beginRenderPass" in executor, "render-pass command encoding missing")
+require("depth24plus" in executor and "queue.submit" in executor, "depth target or GPU queue submission missing")
+require("new WebGpuGraphExecutor" in runtime and "graphExecutor.render()" in runtime, "runtime does not execute the render graph")
 
 # Runtime/demo route.
 require("startV4Runtime" in runtime and "probeRenderer" in runtime, "runtime orchestration missing")
@@ -91,7 +96,7 @@ require("data-renderer-mode" in demo or "dataset.rendererMode" in runtime, "demo
 require("import { startV4Runtime } from './runtime.js';" in demo, "demo does not load v4 runtime module")
 
 # Native-density intent: no DPR lowering runtime trick in v4 foundation.
-for source_name, source in [("runtime.js", runtime), ("capability.js", capability), ("render-graph.js", graph), ("resource-manager.js", resources)]:
+for source_name, source in [("runtime.js", runtime), ("capability.js", capability), ("render-graph.js", graph), ("render-graph-executor.js", executor), ("resource-manager.js", resources)]:
     require("devicePixelRatio" not in source and "dpr" not in source.lower(), f"v4 {source_name} should not introduce DPR reduction")
 
 # Deterministic synthetic audio vector checks (independent Python mirror of the documented bus contract).

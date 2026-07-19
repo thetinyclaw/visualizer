@@ -5,6 +5,7 @@ import { RenderGraph, storageBuffer, instancedDepthTarget, computePass, boundedV
 import { validateSceneManifest } from '../v4/scene-manifest.js';
 import { startV4Runtime } from '../v4/runtime.js';
 import { AssetCache, GpuResourceManager } from '../v4/resource-manager.js';
+import { WebGpuGraphExecutor } from '../v4/render-graph-executor.js';
 
 function deferred() {
   let resolve;
@@ -20,20 +21,37 @@ function makeDevice(id) {
 
 function makeCanvas() {
   const calls = [];
+  const webgpu = {
+    configure(descriptor) { calls.push(['configure', descriptor]); },
+    getCurrentTexture() { return { createView() { return { id: 'runtime-swap-view' }; } }; },
+    unconfigure() { calls.push('unconfigure'); },
+  };
   return {
     calls,
+    width: 640,
+    height: 360,
     getContext(kind) {
       calls.push(kind);
-      return kind === 'webgl2' ? { kind } : { kind };
+      return kind === 'webgpu' ? webgpu : { kind };
     },
   };
 }
 
 function makeResourceDevice() {
-  const calls = { buffers: [], textures: [], writes: [] };
+  const calls = { buffers: [], textures: [], writes: [], submissions: [] };
   return {
     calls,
-    queue: { writeBuffer(...args) { calls.writes.push(['buffer', ...args]); }, writeTexture(...args) { calls.writes.push(['texture', ...args]); } },
+    queue: {
+      writeBuffer(...args) { calls.writes.push(['buffer', ...args]); },
+      writeTexture(...args) { calls.writes.push(['texture', ...args]); },
+      submit(buffers) { calls.submissions.push(buffers); },
+    },
+    createCommandEncoder() {
+      return {
+        beginRenderPass(descriptor) { calls.renderPass = descriptor; return { end() {} }; },
+        finish() { return { id: 'runtime-command-buffer' }; },
+      };
+    },
     createBuffer(descriptor) {
       const resource = { descriptor, destroyed: false, destroy() { this.destroyed = true; } };
       calls.buffers.push(resource);
@@ -45,6 +63,40 @@ function makeResourceDevice() {
       return resource;
     },
   };
+}
+
+function testExecutableRenderGraphSubmission() {
+  const calls = { configure: [], passes: [], submissions: [] };
+  const context = {
+    configure(descriptor) { calls.configure.push(descriptor); },
+    getCurrentTexture() { return { createView: () => ({ id: 'swap-view' }) }; },
+    unconfigure() { calls.unconfigured = true; },
+  };
+  const canvas = { width: 640, height: 360, getContext: (kind) => kind === 'webgpu' ? context : null };
+  const device = makeResourceDevice();
+  device.createCommandEncoder = () => ({
+    beginRenderPass(descriptor) {
+      calls.passes.push(descriptor);
+      return { end() { calls.ended = true; } };
+    },
+    finish() { return { id: 'command-buffer' }; },
+  });
+  device.queue.submit = (buffers) => calls.submissions.push(buffers);
+  const graph = new RenderGraph({ id: 'executable' })
+    .addResource(instancedDepthTarget('scene-depth'))
+    .addResource(storageBuffer('post-color', 16))
+    .addPass(compositePass('composite', { layers: ['post-color'], output: 'swapchain' }))
+    .freeze();
+  const executor = new WebGpuGraphExecutor({ device, canvas, graph, format: 'bgra8unorm' });
+  assert.equal(calls.configure.length, 1, 'GPUCanvasContext is configured once');
+  const frame = executor.render({ clearColor: { r: 0.02, g: 0.04, b: 0.08, a: 1 } });
+  assert.equal(frame.submitted, true);
+  assert.equal(calls.passes.length, 1, 'a real render pass is encoded');
+  assert.equal(calls.passes[0].depthStencilAttachment.view.texture.descriptor.format, 'depth24plus');
+  assert.deepEqual(calls.submissions[0], [{ id: 'command-buffer' }], 'finished commands reach queue.submit');
+  executor.dispose();
+  assert.equal(calls.unconfigured, true);
+  assert.equal(device.calls.textures[0].destroyed, true, 'owned depth target is destroyed');
 }
 
 async function testResourceManagerAndAssetCache() {
@@ -103,7 +155,8 @@ async function testRuntimeUsesLifecycleAndRetryBudget() {
   assert.equal(runtime.lifecycle.device, first, 'probed device must be adopted through lifecycle.acquire');
   assert.equal(runtime.resourceManager.size, 3, 'ping-pong buffers and manifest texture are materialized');
   assert.equal(first.calls.buffers.length, 2);
-  assert.equal(first.calls.textures.length, 1);
+  assert.equal(first.calls.textures.length, 2, 'manifest texture and graph depth target are materialized');
+  assert.equal(first.calls.submissions.length, 1, 'runtime submits an initial WebGPU frame');
   adapter.requestDevice = async () => { requestCount += 1; return requestCount === 2 ? second : third; };
   first.lose('unknown');
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -287,6 +340,7 @@ await testExplicitLifecycleBudgetResetOnly();
 await testStalePendingRetryCannotReplaceExplicitReacquire();
 await testRuntimeFallbackUpdatesPublicStatusContract();
 await testResourceManagerAndAssetCache();
+testExecutableRenderGraphSubmission();
 testRenderGraphDeepValidation();
 testSceneManifestDeepValidation();
 await testFallbackCanvasSeparation();

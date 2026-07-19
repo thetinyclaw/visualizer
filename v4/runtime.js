@@ -4,6 +4,7 @@ import { AudioFeatureBus } from './audio-feature-bus.js';
 import { assertSceneManifest } from './scene-manifest.js';
 import { makeSceneGraphFoundation } from './render-graph.js';
 import { AssetCache, GpuResourceManager } from './resource-manager.js';
+import { WebGpuGraphExecutor } from './render-graph-executor.js';
 
 async function hydrateDeviceResources(device, manifest, assetCache) {
   const manager = new GpuResourceManager(device);
@@ -45,6 +46,7 @@ export async function startV4Runtime({
   const graph = makeSceneGraphFoundation(safeManifest.id).freeze();
   const assetCache = new AssetCache();
   let resourceManager = null;
+  let graphExecutor = null;
   let resourcesReady = Promise.resolve(null);
   let selectedMode = probe.mode;
   const publicErrors = [...probe.errors];
@@ -61,10 +63,22 @@ export async function startV4Runtime({
               manager.dispose();
               return null;
             }
-            resourceManager = manager;
-            lifecycle.registerResource(manager);
-            if (statusElement) statusElement.dataset.resourcesReady = 'true';
-            return manager;
+            const format = navigatorObject?.gpu?.getPreferredCanvasFormat?.() || 'bgra8unorm';
+            try {
+              graphExecutor = new WebGpuGraphExecutor({ device, canvas, graph, format });
+              const frame = graphExecutor.render();
+              resourceManager = manager;
+              lifecycle.registerResource(manager);
+              lifecycle.registerResource(graphExecutor);
+              if (statusElement) statusElement.dataset.resourcesReady = 'true';
+              if (statusElement) statusElement.dataset.frameSubmitted = String(frame.submitted);
+              return manager;
+            } catch (error) {
+              graphExecutor?.dispose();
+              graphExecutor = null;
+              manager.dispose();
+              throw error;
+            }
           })
           .catch(() => {
             if (statusElement) statusElement.dataset.resourcesReady = 'false';
@@ -114,6 +128,7 @@ export async function startV4Runtime({
     lifecycle,
     assetCache,
     get resourceManager() { return resourceManager; },
+    get graphExecutor() { return graphExecutor; },
     get resourcesReady() { return resourcesReady; },
     publicErrors,
   });

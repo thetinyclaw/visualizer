@@ -48,7 +48,7 @@ const errorsElement = document.getElementById('errors');
 try {
   const runtime = await startV4Runtime({ canvas, statusElement, manifest: smokeManifest });
   errorsElement.textContent = runtime.publicErrors.map((error) => `${error.code}: ${error.message}`).join('\n');
-  const ctx = canvas.getContext('2d');
+  const ctx = runtime.graphExecutor ? null : canvas.getContext('2d');
   if (ctx) {
     const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
     gradient.addColorStop(0, '#10284e');
