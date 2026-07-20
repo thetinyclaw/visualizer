@@ -292,13 +292,20 @@ require("float channelSpread = 0.105" in html and "vec2 halfPixel = vec2(0.080, 
         "RGB channels returned to obvious wide gutters")
 require("vec3 softSpill" in html and "vec3 edgeLight" in html,
         "RGB blur and luminous edge treatment missing")
-require("float extinctionPhase = fract(" in html and
-        "float extinctionRate = mix(0.045, 0.11, extinctionRateSeed);" in html,
-        "RGB clusters lack deterministic spatially random extinction cycles")
-require("float fadeOut = 1.0 - smoothstep(0.10, 0.20, extinctionPhase);" in html and
-        "float fadeIn = smoothstep(0.30, 0.44, extinctionPhase);" in html and
-        "float clusterVisibility = max(fadeOut, fadeIn);" in html,
-        "RGB extinction does not include smooth fade-out, full-dark hold, and return")
+require("float sizeClass = smoothstep(0.0, 1.0, scaleSeed);" in html and
+        "mix(0.92, 0.04, sizeClass)" in html,
+        "RGB cluster size does not assign large emitters to low frequencies")
+require("float extinctionRate = mix(0.18, 0.035, sizeClass)" in html and
+        "float fadeOutEnd = mix(0.15, 0.22, sizeClass);" in html and
+        "float fadeInStart = mix(0.29, 0.24, sizeClass);" in html,
+        "RGB small emitters do not cycle more often and fade faster")
+require("float dimOnly = step(mix(0.90, 0.18, sizeClass), dimOnlySeed);" in html and
+        "float extinctionFloor = dimOnly * mix(0.08, 0.42, sizeClass);" in html and
+        "float clusterVisibility = mix(extinctionFloor, 1.0, fadeEnvelope);" in html,
+        "RGB large emitters are not biased toward dimming instead of full extinction")
+require("float frequencyPresence = smoothstep(" in html and
+        "float emitterBrightness = frequencyPresence * (0.18 + bandAmplitude * 3.20);" in html,
+        "RGB appearance and brightness are not strongly owned by frequency amplitude")
 require("return col * clusterVisibility;" in html,
         "RGB spill, contours, or glints remain visible during cluster extinction")
 require("if (secondDistance2 < 0.24)" in html,

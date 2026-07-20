@@ -71,8 +71,8 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 ### RGB Subpixels
 - **Composition:** irregular full-frame field of independently scaled and rotated RGB clusters
 - **Primitive:** jittered two-nearest generators with overlapping RGB box-distance cores, soft spill, and luminous edge contours
-- **Motion:** frequency-owned drift, rotation, breathing scale, sparse spectral glints, and independent seeded 9–22 second extinction cycles that fade complete clusters to black, hold, and return at random screen locations
-- **Audio:** every cluster owns one of 16 logarithmic FFT bins controlling size, brightness, motion, blur pressure, and edge intensity
+- **Motion:** frequency-owned drift, rotation, breathing scale, sparse spectral glints, and size-class extinction cycles; small emitters fade quickly every 5–7 seconds while large emitters dim slowly over roughly 24–34 seconds
+- **Audio:** size assigns specific logarithmic FFT ownership—large clusters map to low frequencies and small clusters to higher bins; owned amplitude gates appearance and drives up to 3.38× core brightness plus stronger spill, edges, and glints
 - **Material:** crisp emissive subpixels suspended in restrained chromatic bloom
 - **Cost:** nine cheap generator comparisons shade one cluster plus a distance-gated second cluster; rare glint square roots are branch-gated
 

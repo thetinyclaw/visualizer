@@ -1362,15 +1362,33 @@ vec3 shadeRgbCluster(vec2 pixelDelta, vec2 pixelCell, vec2 uv, float t) {
     float identity = hash(pixelCell + seed * 2.11);
     float scaleSeed = hash(pixelCell + seed * 4.73 + 19.0);
     float angleSeed = hash(pixelCell + seed * 7.31 + 53.0);
-    float bandKey = hash(pixelCell + seed * 3.17 + 101.0);
+    float sizeClass = smoothstep(0.0, 1.0, scaleSeed);
+    float frequencyJitter = (identity - 0.5) * 0.12;
+    float bandKey = clamp(mix(0.92, 0.04, sizeClass) + frequencyJitter, 0.0, 1.0);
     float bandAmplitude = fftBand(bandKey);
     float extinctionPhaseSeed = fract(identity * 1.618 + angleSeed * 0.754 + scaleSeed * 0.31);
     float extinctionRateSeed = fract(scaleSeed * 1.414 + bandKey * 0.73 + identity * 0.19);
-    float extinctionRate = mix(0.045, 0.11, extinctionRateSeed);
+    float extinctionRate = mix(0.18, 0.035, sizeClass) * mix(0.86, 1.14, extinctionRateSeed);
     float extinctionPhase = fract(t * extinctionRate + extinctionPhaseSeed);
-    float fadeOut = 1.0 - smoothstep(0.10, 0.20, extinctionPhase);
-    float fadeIn = smoothstep(0.30, 0.44, extinctionPhase);
-    float clusterVisibility = max(fadeOut, fadeIn);
+    float fadeOutEnd = mix(0.15, 0.22, sizeClass);
+    float fadeInStart = mix(0.29, 0.24, sizeClass);
+    float fadeInEnd = mix(0.38, 0.42, sizeClass);
+    float fadeOut = 1.0 - smoothstep(0.10, fadeOutEnd, extinctionPhase);
+    float fadeIn = smoothstep(fadeInStart, fadeInEnd, extinctionPhase);
+    float fadeEnvelope = max(fadeOut, fadeIn);
+    float dimOnlySeed = fract(angleSeed * 1.271 + identity * 0.619 + scaleSeed * 0.413);
+    float dimOnly = step(mix(0.90, 0.18, sizeClass), dimOnlySeed);
+    float extinctionFloor = dimOnly * mix(0.08, 0.42, sizeClass);
+    float clusterVisibility = mix(extinctionFloor, 1.0, fadeEnvelope);
+
+    // Small clusters own upper bins and trigger easily; large clusters own low
+    // frequencies and carry their amplitude as much brighter, slower emitters.
+    float appearanceThreshold = mix(0.025, 0.065, sizeClass);
+    float appearanceWidth = mix(0.16, 0.24, sizeClass);
+    float frequencyPresence = smoothstep(
+        appearanceThreshold, appearanceThreshold + appearanceWidth, bandAmplitude
+    );
+    float emitterBrightness = frequencyPresence * (0.18 + bandAmplitude * 3.20);
 
     // Every cluster owns a log-frequency bin. Its signal controls size, drift,
     // brightness, and halo pressure while the seeded scale keeps the field varied.
@@ -1398,13 +1416,13 @@ vec3 shadeRgbCluster(vec2 pixelDelta, vec2 pixelCell, vec2 uv, float t) {
     vec3 drive = 0.84 + 0.16 * sin(vec3(1.07, 1.31, 1.59) * t +
         vec3(identity, scaleSeed, angleSeed) * TAU);
     float pulse = 0.82 + 0.18 * sin(t * (0.65 + bandKey) + identity * 11.0);
-    float spectralLevel = 0.24 + bandAmplitude * 1.26;
-    vec3 rgb = core * drive * pulse * spectralLevel;
+    vec3 rgb = core * drive * pulse * emitterBrightness;
 
     // Soft chromatic spill bridges the channels; a tighter luminous contour
     // preserves crisp pixel edges inside the restrained blur.
-    vec3 softSpill = halo * (1.0 - core) * (0.055 + bandAmplitude * 0.22);
-    vec3 edgeLight = edge * (0.10 + bandAmplitude * 0.34);
+    vec3 softSpill = halo * (1.0 - core) * frequencyPresence *
+        (0.10 + bandAmplitude * 0.70);
+    vec3 edgeLight = edge * frequencyPresence * (0.18 + bandAmplitude * 0.85);
     float whiteContour = dot(edge, vec3(0.3333));
 
     float scan = 0.92 + 0.08 * sin((uv.y + t * 0.055) * 150.0);
@@ -1412,12 +1430,14 @@ vec3 shadeRgbCluster(vec2 pixelDelta, vec2 pixelCell, vec2 uv, float t) {
     col += rgb * scan;
     col += softSpill;
     col += edgeLight;
-    col += mix(color3, vec3(1.0), 0.48) * whiteContour * (0.015 + bandAmplitude * 0.055);
+    col += mix(color3, vec3(1.0), 0.48) * whiteContour * frequencyPresence *
+        (0.025 + bandAmplitude * 0.15);
 
     // Rare spectral glints keep the scattered field alive without restoring panels.
     float glintSeed = hash(pixelCell + seed * 9.7 + 211.0);
     if (glintSeed > 0.965) {
-        float glint = (1.0 - smoothstep(0.0, 0.055, length(p))) * bandAmplitude;
+        float glint = (1.0 - smoothstep(0.0, 0.055, length(p))) * bandAmplitude *
+            frequencyPresence * (0.80 + emitterBrightness * 0.50);
         col += mix(vec3(1.0, 0.35, 0.18), vec3(0.35, 0.72, 1.0), identity) * glint;
     }
     return col * clusterVisibility;
