@@ -88,6 +88,14 @@ const liveAudio = read('v4/live-audio.html');
 assert.match(liveAudio, /never auto-requests microphone access/, 'live-audio route must say mic is not automatic');
 assert.match(liveAudio, /start-mic'.*addEventListener\('click'/s, 'microphone request must stay click-gated');
 
+const cathedralRoute = read('v4/cathedral-route.js');
+const cathedralHtml = read('v4/cathedral.html');
+assert.match(cathedralRoute, /createLiveAudioFeatureBridge/, 'Cathedral must instantiate the shared live-audio bridge');
+assert.match(cathedralRoute, /audioBus:\s*audioBridge\.bus/, 'Cathedral runtime and live bridge must share one structural feature bus');
+assert.match(cathedralRoute, /createActivationToken\(event\)/, 'Cathedral microphone access must mint activation inside the click handler');
+assert.match(cathedralHtml, /id="start-mic"/, 'Cathedral must expose an explicit Start Mic control');
+assert.match(cathedralHtml, /data-audio-source="idle"/, 'Cathedral must expose an honest initial audio source label');
+
 for (const [routeHtml, routeModule] of [['v4/cathedral.html', 'v4/cathedral-route.js'], ['v4/filament.html', 'v4/filament-route.js']]) {
   assert.match(read(routeHtml), /id="query-text"/, `${routeHtml} must expose dynamic query text instead of hard-coded locks`);
   assert.match(read(routeHtml), /id="fallback-link"/, `${routeHtml} must expose a dynamic fallback link`);

@@ -1643,6 +1643,20 @@ async function testRuntimeAutoStartAndFrameCounters() {
   assert.equal(callbacks.size, 0, 'dispose cancels queued RAF');
 }
 
+async function testRuntimeUsesInjectedAudioBus() {
+  const audioBus = new AudioFeatureBus();
+  const runtime = await startV4Runtime({
+    canvas: makeCanvas(),
+    statusElement: { dataset: {}, textContent: '' },
+    manifest: validManifest(),
+    graphFactory: smokeGraph,
+    audioBus,
+    navigatorObject: {},
+    createFallbackCanvas: makeCanvas,
+  });
+  assert.equal(runtime.audioBus, audioBus, 'runtime must expose the caller-owned audio bus so a live microphone bridge can drive scene frames');
+}
+
 await testRuntimeUsesLifecycleAndRetryBudget();
 await testExplicitLifecycleBudgetResetOnly();
 await testStalePendingRetryCannotReplaceExplicitReacquire();
@@ -1677,6 +1691,7 @@ testNeonVoxelCloudGeometryContracts();
 testNeonVoxelCloudGraphAndManifestContracts();
 testNeonVoxelCloudExecutorDispatchAndInstancedDrawReuse();
 await testRuntimeAutoStartAndFrameCounters();
+await testRuntimeUsesInjectedAudioBus();
 await testFallbackCanvasSeparation();
 testAudioFeatureBusLogBandsAndAllocationReuse();
 await testLiveAudioSecureContextAndPermissionDenial();

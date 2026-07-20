@@ -11,7 +11,7 @@
 - Filament Vortex: compute ping-pong → ribbon render → post → composite.
 - Neon Voxel Cloud: compute-updated 260-cell instanced render → post → composite.
 - Shared runtime: resource lifecycle, render graph, bounded volume, transactional history/trails, bloom, chromatic optics, ACES output, and two-layer crossfade.
-- Live audio: trusted-click microphone access with honestly labeled Demo/Flat modes.
+- Live audio: trusted-click microphone access with honestly labeled Demo/Flat modes; Cathedral now consumes the same live feature bus for structural geometry/camera response.
 - Evidence: immutable automation-browser capture packs for all three heroes; external GPU memory remains unknown and timestamp timing remains nullable when quantized/unavailable.
 
 ## Verification contract

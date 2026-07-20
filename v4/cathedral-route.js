@@ -2,6 +2,7 @@ import { startV4Runtime } from './runtime.js';
 import { createPrismaticCathedralScene, demoBands } from './scenes/prismatic-cathedral/geometry.js';
 import { prismaticCathedralManifest, makePrismaticCathedralGraph } from './scenes/prismatic-cathedral/manifest.js';
 import { createPrismaticCathedralPipelines, createPrismaticCathedralExecutors } from './scenes/prismatic-cathedral/pipeline.js';
+import { createLiveAudioFeatureBridge } from './live-audio-engine.js';
 
 function parseParams(windowObject) {
   const params = new URLSearchParams(windowObject.location.search);
@@ -9,7 +10,7 @@ function parseParams(windowObject) {
   return {
     seed: Number.parseInt(params.get('seed') || '491009', 10) || 491009,
     lockedTime: Number.isFinite(lockedTime) ? lockedTime : null,
-    mode: params.get('mode') === 'flat' ? 'flat' : 'demo',
+    mode: ['flat', 'live'].includes(params.get('mode')) ? params.get('mode') : 'demo',
   };
 }
 
@@ -64,11 +65,16 @@ export async function startCathedralRoute(windowObject = window) {
   const params = parseParams(windowObject);
   const queryText = document.getElementById('query-text');
   const fallbackLink = document.getElementById('fallback-link');
+  const startMic = document.getElementById('start-mic');
+  const stopAudio = document.getElementById('stop-audio');
+  const audioStatus = document.getElementById('audio-status');
   const routeQuery = new URLSearchParams({ seed: String(params.seed), mode: params.mode });
   if (Number.isFinite(params.lockedTime)) routeQuery.set('time', String(params.lockedTime));
   if (queryText) queryText.textContent = `?${routeQuery}`;
   if (fallbackLink) fallbackLink.href = `./lab/prismatic-cathedral.html?${routeQuery}`;
   const scene = createPrismaticCathedralScene({ seed: params.seed, mode: params.mode });
+  const audioBridge = createLiveAudioFeatureBridge({ windowObject, navigatorObject: windowObject.navigator });
+  let audioInputActive = params.mode === 'live';
   const demo = new Float32Array(16);
   const start = windowObject.performance.now();
   const locked = Number.isFinite(params.lockedTime);
@@ -79,6 +85,7 @@ export async function startCathedralRoute(windowObject = window) {
     frame: null, telemetry: null, fallbackReason: '', fallbackHref: './lab/prismatic-cathedral.html',
     frameMode: locked ? 'locked-single-frame' : 'live-raf', frameCounters: null, lastFrameMs: 0, rafScheduled: false,
     structuralAudio: scene.structuralAudioMappings, materialHierarchy: scene.materialHierarchy,
+    audioDiagnostics: audioBridge.getDiagnostics(),
     validationFailed: false, webgpuValidationErrors: [],
   };
   windowObject.__V4_CATHEDRAL_WEBGPU__ = state;
@@ -89,10 +96,13 @@ export async function startCathedralRoute(windowObject = window) {
     manifest: prismaticCathedralManifest,
     graphFactory: makePrismaticCathedralGraph,
     scene,
+    audioBus: audioBridge.bus,
     frameProvider: locked ? null : ({ time, audioBus }) => {
       const seconds = Number.isFinite(params.lockedTime) ? params.lockedTime : (time - start) / 1000;
-      demoBands(demo, seconds, params.seed, params.mode);
-      audioBus.processBandFrame(demo, 1 / 60, { source: params.mode === 'flat' ? 'flat' : 'demo', state: params.mode });
+      if (!audioInputActive) {
+        demoBands(demo, seconds, params.seed, params.mode);
+        audioBus.processBandFrame(demo, 1 / 60, { source: params.mode === 'flat' ? 'flat' : 'demo', state: params.mode });
+      }
       return { time: seconds };
     },
     autoStart: !locked,
@@ -106,6 +116,30 @@ export async function startCathedralRoute(windowObject = window) {
     recordCathedralValidationError(state, event, status, errors);
   });
   await runtime.resourcesReady;
+  const updateAudioStatus = () => {
+    const diagnostics = audioBridge.getDiagnostics();
+    state.audioDiagnostics = { ...diagnostics };
+    if (audioStatus) {
+      const syntheticSource = !audioInputActive && (params.mode === 'demo' || params.mode === 'flat');
+      audioStatus.textContent = syntheticSource
+        ? (params.mode === 'flat' ? 'FLAT TEST SIGNAL · no microphone' : 'DEMO SYNTHETIC · no microphone')
+        : diagnostics.label;
+      audioStatus.dataset.audioSource = syntheticSource ? params.mode : diagnostics.source;
+    }
+  };
+  audioBridge.onStateChange = updateAudioStatus;
+  updateAudioStatus();
+  startMic?.addEventListener('click', async (event) => {
+    const activationToken = audioBridge.createActivationToken(event);
+    audioInputActive = true;
+    await audioBridge.startMicrophone({ activationToken });
+    updateAudioStatus();
+  });
+  stopAudio?.addEventListener('click', async () => {
+    await audioBridge.stop();
+    audioInputActive = true;
+    updateAudioStatus();
+  });
   const initialTime = Number.isFinite(params.lockedTime) ? params.lockedTime : 0;
   let frame = runtime.lastFrame;
   if (locked) {
@@ -121,8 +155,8 @@ export async function startCathedralRoute(windowObject = window) {
     runtime.resize();
     updateState(state, runtime, scene, state.frame);
   });
-  windowObject.addEventListener('pagehide', () => runtime.dispose(), { once: true });
-  return { runtime, scene, state };
+  windowObject.addEventListener('pagehide', () => { audioBridge.stop(); runtime.dispose(); }, { once: true });
+  return { runtime, scene, state, audioBridge };
 }
 
 if (globalThis.document) startCathedralRoute(globalThis).catch((error) => {

@@ -112,6 +112,7 @@ export async function startV4Runtime({
   autoStart = true,
   initialFrameTime = 0,
   onFrame = null,
+  audioBus: providedAudioBus = null,
   assetCache = new AssetCache(),
   createFallbackCanvas = () => {
     if (typeof OffscreenCanvas === 'function') return new OffscreenCanvas(1, 1);
@@ -122,7 +123,10 @@ export async function startV4Runtime({
   const safeManifest = assertSceneManifest(manifest);
   const fallbackCanvas = createFallbackCanvas ? createFallbackCanvas() : null;
   const probe = await probeRenderer({ navigatorObject, canvas, fallbackCanvas });
-  const audioBus = new AudioFeatureBus();
+  const audioBus = providedAudioBus || new AudioFeatureBus();
+  if (typeof audioBus.snapshot !== 'function' || typeof audioBus.processBandFrame !== 'function') {
+    throw new TypeError('audioBus must implement the AudioFeatureBus contract.');
+  }
   const resolvedScene = scene || (sceneFactory ? await sceneFactory({ manifest: safeManifest, audioBus }) : null);
   let authoredGraph;
   try {
