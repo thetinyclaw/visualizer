@@ -216,6 +216,15 @@ require(galaxy_match is not None and "vec4 infinityWellField(" in html and
 require("step(0.42" in html and "infinityContours" in galaxy_shader and
         "infinityCores" in galaxy_shader,
         "Infinity Wells are not numerous or visually explicit in Galaxy")
+require("smoothstep(0.040, 0.210, abs(sin(saddle)))" in html and
+        "float wellStrength = spawn * (0.68 + wellBand * 0.56);" in html,
+        "Infinity Well saddle contours are too thin or weak")
+require("float infinityEnergy = infinityWells.w;" in galaxy_shader and
+        "float gravityMoat = infinityEnergy * 0.18;" in galaxy_shader,
+        "Infinity Wells lack a local contrast moat against the galaxy")
+require("infinityContours * (0.34 + mid * 0.28)" in galaxy_shader and
+        "infinityCores * (0.60 + treble * 0.45)" in galaxy_shader,
+        "Infinity Well contour/core composition is not prominent enough")
 require("float peripheralArmFloor = 0.48;" in galaxy_shader and
         "float peripheralDustFloor = 0.34;" in galaxy_shader and
         "dust *= armGlow" not in galaxy_shader,

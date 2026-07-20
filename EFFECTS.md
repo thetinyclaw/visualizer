@@ -61,7 +61,7 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 
 ### Galaxy
 - **Composition:** three-arm galactic disk with a dense nucleus, field-wide stars, and seed-random **Infinity Wells** distributed across center and periphery
-- **Primitive:** analytic polar spiral, cell-local hashed stars, and a seamless coarse well field whose `x²-y²` saddle contours form literal hyperbolic/asymptotic arms
+- **Primitive:** analytic polar spiral, cell-local hashed stars, and a seamless coarse well field whose `x²-y²` saddle contours form thick hyperbolic arms around bright singularity cores, broad halos, and local dark gravity moats
 - **Motion:** differential arm rotation, a slowly orbiting stellar lattice, and subtle FFT-owned Infinity Well phase drift
 - **Audio:** bass opens the nucleus and well halos, mids change spiral topology and well contours, and treble intensifies dust, stars, and well cores
 - **Material:** luminous stellar dust and bright singularity nodes suspended in a velvet void

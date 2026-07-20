@@ -938,10 +938,10 @@ vec4 infinityWellField(vec2 uv, float t) {
             );
             float saddle = (wellP.x * wellP.x - wellP.y * wellP.y) * (18.0 + cellHash.y * 12.0);
             saddle += t * (0.018 + wellBand * 0.045) + cellHash.x * PI;
-            float contour = (1.0 - smoothstep(0.025, 0.145, abs(sin(saddle)))) * envelope;
-            float core = smoothstep(0.012 + wellBand * 0.007, 0.0005, distance2);
-            float halo = smoothstep(0.075 + wellBand * 0.035, 0.003, distance2);
-            float wellStrength = spawn * (0.46 + wellBand * 0.42);
+            float contour = (1.0 - smoothstep(0.040, 0.210, abs(sin(saddle)))) * envelope;
+            float core = smoothstep(0.018 + wellBand * 0.010, 0.0008, distance2);
+            float halo = smoothstep(0.120 + wellBand * 0.050, 0.004, distance2);
+            float wellStrength = spawn * (0.68 + wellBand * 0.56);
             contours = max(contours, contour * wellStrength);
             cores = max(cores, core * spawn);
             halos = max(halos, halo * wellStrength);
@@ -994,6 +994,7 @@ vec3 galaxy(vec2 uv, float t) {
     float infinityContours = infinityWells.x;
     float infinityCores = infinityWells.y;
     float infinityHalos = infinityWells.z;
+    float infinityEnergy = infinityWells.w;
 
     vec3 armColor = mix(color1, color2, clamp(radius * 0.75 + armGlow * 0.25, 0.0, 1.0));
     vec3 col = color4 * (0.16 + 0.10 * smoothstep(1.45, 0.15, radius));
@@ -1001,9 +1002,11 @@ vec3 galaxy(vec2 uv, float t) {
     col += mix(armColor, color3, 0.30) * armCore * (0.34 + mid * 0.34);
     col += color2 * dust;
     vec3 infinityColor = mix(color2, color3, 0.64);
-    col += infinityColor * infinityContours * (0.20 + mid * 0.18);
-    col += infinityColor * infinityHalos * (0.16 + bass * 0.18);
-    col += mix(color3, vec3(1.0), 0.72) * infinityCores * (0.42 + treble * 0.34);
+    float gravityMoat = infinityEnergy * 0.18;
+    col = mix(col, color4 * 0.10, gravityMoat);
+    col += infinityColor * infinityContours * (0.34 + mid * 0.28);
+    col += infinityColor * infinityHalos * (0.24 + bass * 0.26);
+    col += mix(color3, vec3(1.0), 0.72) * infinityCores * (0.60 + treble * 0.45);
     col += mix(color2, color3, hash(starCell + 7.0)) * starHalo * 0.18;
     col += mix(color3, vec3(1.0), treble * 0.45) * star * (twinkle + treble * 0.38);
 
