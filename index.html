@@ -741,8 +741,8 @@ vec3 reaction(vec2 uv, float t) {
 // PATTERN 5: VORONOI CELLS
 // ─────────────────────────────────────────────────────────────────
 vec3 voronoi(vec2 uv, float t) {
-    // Keep generator density stable so audio changes individual cell area rather
-    // than shrinking the entire tessellation uniformly.
+    // Keep generator topology stable and glacial. Audio acts inside each cell as
+    // pressure, membrane flare, and color—not weighted power-diagram takeover.
     // Deliberately glacial: 4.17x slower than the previous effect-local clock.
     const float VORONOI_TIME_SCALE = 0.08;
     float voronoiMotionTime = t * VORONOI_TIME_SCALE;
@@ -762,17 +762,15 @@ vec3 voronoi(vec2 uv, float t) {
             vec2 neighbor = vec2(float(i), float(j));
             vec2 pointSeed = hash2(n + neighbor + seed);
             float bandKey = fract(dot(pointSeed, vec2(0.75487766, 0.56984029)));
-            float bandAmplitude = fftBand(bandKey);
+            float bandAmplitude = fftBandBranchless(bandKey);
             
-            // Each generator has a stable one-of-sixteen spectral affinity. Loud bins move
-            // their generators more assertively and receive much lower distance
-            // weight, so their cells consume dramatically more area.
+            // Each generator has stable one-of-sixteen spectral affinity. Its
+            // glacial site motion remains subtle; pressure shading below reacts fast.
             vec2 point = 0.5 + 0.5 * sin(voronoiMotionTime * (0.22 + bandAmplitude * 0.92) + TAU * pointSeed);
             
             vec2 diff = neighbor + point - f;
             float rawDist2 = dot(diff, diff);
-            float frequencyCellWeight = mix(2.20, 0.24, bandAmplitude);
-            float dist2 = rawDist2 * frequencyCellWeight;
+            float dist2 = rawDist2;
             
             if (dist2 < minDist2) {
                 secondDist2 = minDist2;
@@ -792,18 +790,35 @@ vec3 voronoi(vec2 uv, float t) {
     float edge = sqrt(secondDist2) - minDist;
     float edgeWidth = mix(0.025, 0.115, winningBandAmplitude);
     float edgeLine = smoothstep(0.0, edgeWidth, edge);
+
+    // Geometry remains glacial, but changing bin energy launches pressure waves
+    // from each nucleus. Amplitude advances phase directly, so FFT transients are
+    // immediate even though the generator sites barely move.
+    float spectralPressurePhase = minDist * (20.0 + winningBandKey * 24.0) -
+        winningBandAmplitude * (8.0 + winningBandKey * 7.0) - t * 0.10;
+    float pressureSignal = 0.5 + 0.5 * cos(spectralPressurePhase);
+    float pressureWave = pow(pressureSignal, 10.0) * winningBandAmplitude;
+    float pressureDisplacement = (pressureWave - winningBandAmplitude * 0.16) *
+        (0.045 + winningBandAmplitude * 0.055);
+    float pressurizedDistance = max(0.0, minDist - pressureDisplacement);
+    float pressureRing = pressureWave * smoothstep(0.08, 0.22, minDist) *
+        smoothstep(0.96, 0.28, minDist);
+    float membraneFlare = (1.0 - edgeLine) * winningBandAmplitude *
+        (0.28 + pressureWave * 0.92);
     
     vec3 lowMidColor = mix(color1, color2, smoothstep(0.08, 0.62, winningBandKey));
     vec3 cellColor = mix(lowMidColor, color3, smoothstep(0.56, 0.96, winningBandKey));
     cellColor = mix(cellColor, color3, winningBandAmplitude * 0.22 + minPoint.y * 0.08);
     
-    vec3 col = cellColor * edgeLine;
-    col += color3 * (1.0 - edgeLine) * (0.72 + winningBandAmplitude * 1.55);
+    vec3 col = cellColor * edgeLine * (0.66 + pressureWave * 0.28);
+    col += color3 * (1.0 - edgeLine) * (0.38 + winningBandAmplitude * 0.92);
+    col += mix(cellColor, color3, 0.72) * pressureRing * (0.18 + winningBandAmplitude * 0.42);
+    col += mix(color2, color3, winningBandKey) * membraneFlare * 0.30;
     
     // Loud frequency-owned cells develop broader, brighter nuclei.
     float centerRadius = mix(0.20, 0.64, winningBandAmplitude);
-    float centerGlow = smoothstep(centerRadius, 0.0, minDist);
-    col += mix(cellColor, color3, 0.55) * centerGlow * (0.12 + winningBandAmplitude * 0.82);
+    float centerGlow = smoothstep(centerRadius, 0.0, pressurizedDistance);
+    col += mix(cellColor, color3, 0.55) * centerGlow * (0.08 + winningBandAmplitude * 0.60);
     
     return col;
 }

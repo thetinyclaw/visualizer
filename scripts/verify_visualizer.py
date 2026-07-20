@@ -224,14 +224,24 @@ require("float rawDist2 = dot(diff, diff);" in html, "Voronoi squared-distance c
 require("float minDist = sqrt(minDist2);" in html, "Voronoi final nearest-distance recovery missing")
 require("float dist = length(diff);" not in html, "Voronoi returned to nine square roots per fragment")
 require("float winningBandAmplitude" in html, "Voronoi per-frequency cell ownership missing")
-require("float frequencyCellWeight = mix(2.20, 0.24, bandAmplitude);" in html,
-        "Voronoi dramatic frequency-weighted cell sizing missing")
+require("float bandAmplitude = fftBandBranchless(bandKey);" in html,
+        "Voronoi 3x3 search returned to divergent per-fragment FFT selection")
+require("float dist2 = rawDist2;" in html and "frequencyCellWeight" not in html,
+        "Voronoi topology is still FFT-weighted instead of reserving audio for pressure response")
 require("const float VORONOI_TIME_SCALE = 0.08;" in html,
         "Voronoi-specific glacial one-twelfth motion scale missing")
 require("sin(voronoiMotionTime * (0.22 + bandAmplitude * 0.92)" in html,
         "Voronoi motion is not using the slowed time scale while preserving FFT acceleration")
 require("sin(t * (0.22 + bandAmplitude * 0.92)" not in html,
         "Voronoi generator motion returned to full-speed time")
+require("float spectralPressurePhase" in html and "winningBandAmplitude *" in html and
+        "winningBandKey *" in html,
+        "Voronoi lacks frequency-owned spectral pressure-wave phase modulation")
+require("float pressureWave" in html and "float pressureDisplacement" in html and
+        "float pressurizedDistance" in html,
+        "Voronoi pressure response does not structurally displace cell interiors")
+require("float membraneFlare" in html and "float pressureRing" in html,
+        "Voronoi pressure response lacks visible membrane and nucleus-to-edge propagation")
 require("uv * (8.0 + bass * 4.0)" not in html,
         "Voronoi returned to uniform bass-driven grid scaling")
 require("const FFT_BIN_EDGES = new Float32Array" in html and "const fftBins = new Float32Array(16)" in html,

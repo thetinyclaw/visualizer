@@ -44,12 +44,12 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Material:** wet cellular membrane
 
 ### Voronoi
-- **Composition:** animated stained-glass cells
-- **Primitive:** 16-bin frequency-affinity weighted nearest/second-nearest Voronoi distance
-- **Motion:** oscillating cell sites run at a glacial `VORONOI_TIME_SCALE = 0.08`—4.17× slower than the prior revision and 12.5× slower than the original clock—while still accelerating independently with their assigned logarithmic FFT bin
-- **Audio:** stable one-of-sixteen spectral ownership changes individual cell area and motion; louder owned cells widen boundaries and nuclei without changing global grid density
-- **Material:** stained glass / living cells
-- **Cost:** squared-distance ordering across the 3×3 neighborhood with only two final square roots for shading
+- **Composition:** coherent stained-glass cells with independent nucleus-to-membrane spectral pressure waves
+- **Primitive:** stable nearest/second-nearest Voronoi topology plus frequency-owned interior displacement, concentric pressure rings, and membrane flares
+- **Motion:** generator sites remain glacial at `VORONOI_TIME_SCALE = 0.08`; changing FFT amplitude advances each cell’s pressure phase immediately without accelerating the tessellation
+- **Audio:** every cell owns one logarithmic FFT bin controlling pressure phase, interior contraction, nucleus radius, ring propagation, boundary flare, and color; topology is intentionally unweighted to prevent block seams
+- **Material:** stained glass / living pressurized cells
+- **Cost:** squared-distance ordering across the 3×3 neighborhood with branchless FFT selection and only two final square roots for shading
 
 ### Ribbons
 - **Composition:** layered horizontal waveform bands
