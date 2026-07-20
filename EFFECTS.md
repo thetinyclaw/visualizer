@@ -45,7 +45,7 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 
 ### Voronoi
 - **Composition:** coherent stained-glass cells with independent nucleus-to-membrane spectral pressure waves
-- **Primitive:** stable nearest/second-nearest Voronoi topology plus frequency-owned interior displacement, concentric pressure rings, and membrane flares
+- **Primitive:** stable nearest/runner-up Voronoi topology with the F2 neighborhood centered on the winning generator cell; winner/runner-up colors, nuclei, and pressure rings blend through a softened membrane, excluding search-tile and shading split points without a full 5×5 pass
 - **Motion:** generator sites remain glacial at `VORONOI_TIME_SCALE = 0.08`; changing FFT amplitude advances each cell’s pressure phase immediately without accelerating the tessellation
 - **Audio:** every cell owns one logarithmic FFT bin controlling pressure phase, interior contraction, nucleus radius, ring propagation, boundary flare, and color; topology is intentionally unweighted to prevent block seams
 - **Material:** stained glass / living pressurized cells

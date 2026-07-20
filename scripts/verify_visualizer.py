@@ -223,6 +223,17 @@ require("float peripheralArmFloor = 0.48;" in galaxy_shader and
 require("float rawDist2 = dot(diff, diff);" in html, "Voronoi squared-distance comparison missing")
 require("float minDist = sqrt(minDist2);" in html, "Voronoi final nearest-distance recovery missing")
 require("float dist = length(diff);" not in html, "Voronoi returned to nine square roots per fragment")
+require("vec2 winningCellOffset = vec2(0.0);" in html and
+        "vec2 candidateOffset = winningCellOffset + neighbor;" in html and
+        "float secondDist2 = 100.0;" in html,
+        "Voronoi lacks the seam-safe runner-up pass centered on the winning generator")
+require("float secondBandAmplitude = 0.0;" in html and "float secondBandKey = 0.0;" in html and
+        "secondDist2 = candidateDist2;" in html,
+        "Voronoi seam-safe runner-up pass does not preserve F2 spectral ownership")
+require("float boundaryBlend" in html and
+        "mix(winningPressureWave, secondPressureWave, boundaryBlend)" in html and
+        "cellColor = mix(cellColor, secondCellColor, boundaryBlend);" in html,
+        "Voronoi still hard-cuts pressure or color at legitimate cell boundaries")
 require("float winningBandAmplitude" in html, "Voronoi per-frequency cell ownership missing")
 require("float bandAmplitude = fftBandBranchless(bandKey);" in html,
         "Voronoi 3x3 search returned to divergent per-fragment FFT selection")

@@ -752,8 +752,8 @@ vec3 voronoi(vec2 uv, float t) {
     vec2 f = fract(p);
     
     float minDist2 = 100.0;
-    float secondDist2 = 100.0;
     vec2 minPoint;
+    vec2 winningCellOffset = vec2(0.0);
     float winningBandAmplitude = 0.0;
     float winningBandKey = 0.0;
     
@@ -773,23 +773,47 @@ vec3 voronoi(vec2 uv, float t) {
             float dist2 = rawDist2;
             
             if (dist2 < minDist2) {
-                secondDist2 = minDist2;
                 minDist2 = dist2;
                 minPoint = point;
+                winningCellOffset = neighbor;
                 winningBandAmplitude = bandAmplitude;
                 winningBandKey = bandKey;
-            } else if (dist2 < secondDist2) {
-                secondDist2 = dist2;
             }
         }
     }
 
-    // Compare squared distances in the 3x3 search, then recover only the two
-    // distances used for shading: two roots per fragment instead of nine.
+    // Seam-safe F2: rebuild the runner-up neighborhood around the winning
+    // generator's absolute cell. Unlike a runner-up set centered on floor(p),
+    // this candidate set stays stable across search-tile boundaries.
+    float secondDist2 = 100.0;
+    float secondBandAmplitude = 0.0;
+    float secondBandKey = 0.0;
+    for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+            if (i == 0 && j == 0) continue;
+            vec2 neighbor = vec2(float(i), float(j));
+            vec2 candidateOffset = winningCellOffset + neighbor;
+            vec2 pointSeed = hash2(n + candidateOffset + seed);
+            float bandKey = fract(dot(pointSeed, vec2(0.75487766, 0.56984029)));
+            float bandAmplitude = fftBandBranchless(bandKey);
+            vec2 point = 0.5 + 0.5 * sin(
+                voronoiMotionTime * (0.22 + bandAmplitude * 0.92) + TAU * pointSeed
+            );
+            vec2 diff = candidateOffset + point - f;
+            float candidateDist2 = dot(diff, diff);
+            if (candidateDist2 < secondDist2) {
+                secondDist2 = candidateDist2;
+                secondBandAmplitude = bandAmplitude;
+                secondBandKey = bandKey;
+            }
+        }
+    }
+
     float minDist = sqrt(minDist2);
     float edge = sqrt(secondDist2) - minDist;
     float edgeWidth = mix(0.025, 0.115, winningBandAmplitude);
     float edgeLine = smoothstep(0.0, edgeWidth, edge);
+    float boundaryBlend = (1.0 - smoothstep(0.0, edgeWidth * 1.6, edge)) * 0.5;
 
     // Geometry remains glacial, but changing bin energy launches pressure waves
     // from each nucleus. Amplitude advances phase directly, so FFT transients are
@@ -797,27 +821,45 @@ vec3 voronoi(vec2 uv, float t) {
     float spectralPressurePhase = minDist * (20.0 + winningBandKey * 24.0) -
         winningBandAmplitude * (8.0 + winningBandKey * 7.0) - t * 0.10;
     float pressureSignal = 0.5 + 0.5 * cos(spectralPressurePhase);
-    float pressureWave = pow(pressureSignal, 10.0) * winningBandAmplitude;
+    float winningPressureWave = pow(pressureSignal, 10.0) * winningBandAmplitude;
+    float secondDist = sqrt(secondDist2);
+    float secondPressurePhase = secondDist * (20.0 + secondBandKey * 24.0) -
+        secondBandAmplitude * (8.0 + secondBandKey * 7.0) - t * 0.10;
+    float secondPressureSignal = 0.5 + 0.5 * cos(secondPressurePhase);
+    float secondPressureWave = pow(secondPressureSignal, 10.0) * secondBandAmplitude;
+    float pressureWave = mix(winningPressureWave, secondPressureWave, boundaryBlend);
     float pressureDisplacement = (pressureWave - winningBandAmplitude * 0.16) *
         (0.045 + winningBandAmplitude * 0.055);
     float pressurizedDistance = max(0.0, minDist - pressureDisplacement);
-    float pressureRing = pressureWave * smoothstep(0.08, 0.22, minDist) *
+    float winningPressureRing = winningPressureWave * smoothstep(0.08, 0.22, minDist) *
         smoothstep(0.96, 0.28, minDist);
-    float membraneFlare = (1.0 - edgeLine) * winningBandAmplitude *
+    float secondPressureRing = secondPressureWave * smoothstep(0.08, 0.22, secondDist) *
+        smoothstep(0.96, 0.28, secondDist);
+    float pressureRing = mix(winningPressureRing, secondPressureRing, boundaryBlend);
+    float membraneAmplitude = mix(winningBandAmplitude, secondBandAmplitude, boundaryBlend);
+    float membraneFlare = (1.0 - edgeLine) * membraneAmplitude *
         (0.28 + pressureWave * 0.92);
     
     vec3 lowMidColor = mix(color1, color2, smoothstep(0.08, 0.62, winningBandKey));
     vec3 cellColor = mix(lowMidColor, color3, smoothstep(0.56, 0.96, winningBandKey));
     cellColor = mix(cellColor, color3, winningBandAmplitude * 0.22 + minPoint.y * 0.08);
+    vec3 secondLowMidColor = mix(color1, color2, smoothstep(0.08, 0.62, secondBandKey));
+    vec3 secondCellColor = mix(secondLowMidColor, color3, smoothstep(0.56, 0.96, secondBandKey));
+    secondCellColor = mix(secondCellColor, color3, secondBandAmplitude * 0.22);
+    cellColor = mix(cellColor, secondCellColor, boundaryBlend);
     
-    vec3 col = cellColor * edgeLine * (0.66 + pressureWave * 0.28);
-    col += color3 * (1.0 - edgeLine) * (0.38 + winningBandAmplitude * 0.92);
+    float cellInterior = 0.24 + edgeLine * 0.76;
+    vec3 col = cellColor * cellInterior * (0.66 + pressureWave * 0.28);
+    col += color3 * (1.0 - edgeLine) * (0.18 + membraneAmplitude * 0.52);
     col += mix(cellColor, color3, 0.72) * pressureRing * (0.18 + winningBandAmplitude * 0.42);
-    col += mix(color2, color3, winningBandKey) * membraneFlare * 0.30;
+    col += mix(color2, color3, winningBandKey) * membraneFlare * 0.18;
     
     // Loud frequency-owned cells develop broader, brighter nuclei.
     float centerRadius = mix(0.20, 0.64, winningBandAmplitude);
     float centerGlow = smoothstep(centerRadius, 0.0, pressurizedDistance);
+    float secondCenterRadius = mix(0.20, 0.64, secondBandAmplitude);
+    float secondCenterGlow = smoothstep(secondCenterRadius, 0.0, secondDist);
+    centerGlow = mix(centerGlow, secondCenterGlow, boundaryBlend);
     col += mix(cellColor, color3, 0.55) * centerGlow * (0.08 + winningBandAmplitude * 0.60);
     
     return col;
