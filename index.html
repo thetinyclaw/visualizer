@@ -850,6 +850,50 @@ vec3 ribbons(vec2 uv, float t) {
 // ─────────────────────────────────────────────────────────────────
 // PATTERN 7: PARTICLE GALAXY
 // ─────────────────────────────────────────────────────────────────
+const float INFINITY_WELL_GRID = 2.8;
+vec4 infinityWellField(vec2 uv, float t) {
+    vec2 wellSpace = uv * INFINITY_WELL_GRID;
+    vec2 baseCell = floor(wellSpace);
+    float contours = 0.0;
+    float cores = 0.0;
+    float halos = 0.0;
+    float energy = 0.0;
+
+    // A 3x3 neighborhood keeps jittered well envelopes continuous at cell edges.
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 cell = baseCell + vec2(float(x), float(y));
+            float spawn = step(0.42, hash(cell + seed * 0.019));
+            vec2 cellHash = hash2(cell + seed * 0.031);
+            vec2 center = cell + 0.5 + (cellHash - 0.5) * 0.40;
+            vec2 q = wellSpace - center;
+            float rotation = cellHash.x * TAU + seed * 0.0007;
+            float wellCos = cos(rotation), wellSin = sin(rotation);
+            vec2 wellP = mat2(wellCos, -wellSin, wellSin, wellCos) * q;
+            float distance2 = dot(wellP, wellP);
+            float envelope = 1.0 - smoothstep(0.06, 0.46, distance2);
+
+            // x²-y² contours are literal hyperbolas with four asymptotic arms.
+            float wellBand = mix(
+                mix(fftBinsA.w, fftBinsB.z, cellHash.x),
+                mix(fftBinsC.y, fftBinsD.z, cellHash.y),
+                cellHash.x * cellHash.y
+            );
+            float saddle = (wellP.x * wellP.x - wellP.y * wellP.y) * (18.0 + cellHash.y * 12.0);
+            saddle += t * (0.018 + wellBand * 0.045) + cellHash.x * PI;
+            float contour = (1.0 - smoothstep(0.025, 0.145, abs(sin(saddle)))) * envelope;
+            float core = smoothstep(0.012 + wellBand * 0.007, 0.0005, distance2);
+            float halo = smoothstep(0.075 + wellBand * 0.035, 0.003, distance2);
+            float wellStrength = spawn * (0.46 + wellBand * 0.42);
+            contours = max(contours, contour * wellStrength);
+            cores = max(cores, core * spawn);
+            halos = max(halos, halo * wellStrength);
+            energy = max(energy, envelope * wellStrength);
+        }
+    }
+    return vec4(contours, cores, halos, energy);
+}
+
 vec3 galaxy(vec2 uv, float t) {
     float radius = length(uv);
     float angle = atan(uv.y, uv.x);
@@ -859,8 +903,11 @@ vec3 galaxy(vec2 uv, float t) {
     float orbit = angle - t * (0.12 + 0.22 / (radius + 0.32));
     float armPhase = orbit * 3.0 - radius * (10.0 + mid * 4.5) + seed;
     float armDistance = abs(sin(armPhase));
-    float armGlow = (1.0 - smoothstep(0.18, 0.92, armDistance)) * smoothstep(1.38, 0.10, radius);
-    float armCore = (1.0 - smoothstep(0.025, 0.19, armDistance)) * smoothstep(1.28, 0.16, radius);
+    float peripheralArmFloor = 0.48;
+    float radialArmEnvelope = mix(peripheralArmFloor, 1.0, smoothstep(1.52, 0.10, radius));
+    float armGlow = (1.0 - smoothstep(0.18, 0.92, armDistance)) * radialArmEnvelope;
+    float armCore = (1.0 - smoothstep(0.025, 0.19, armDistance)) *
+        mix(0.30, 1.0, smoothstep(1.42, 0.16, radius));
 
     // One cell-local star evaluation replaces 100 full-screen distance tests.
     // Rotating the sampling domain carries the dust along the galactic disk.
@@ -878,15 +925,28 @@ vec3 galaxy(vec2 uv, float t) {
     float twinkle = 0.68 + 0.32 * sin(t * 5.0 + hash(starCell) * TAU);
 
     // Fine dust lanes give the disk continuous depth between point highlights.
+    // A nonzero floor keeps peripheral structure visible instead of erasing it.
     float dustPhase = orbit * 13.0 - radius * 39.0 + sin(armPhase) * 2.2;
     float dust = 1.0 - smoothstep(0.015, 0.16, abs(sin(dustPhase)));
-    dust *= armGlow * (0.12 + treble * 0.42);
+    float peripheralDustFloor = 0.34;
+    dust *= (peripheralDustFloor + armGlow * (1.0 - peripheralDustFloor)) * (0.12 + treble * 0.42);
+
+    // Infinity Wells: seed-random local saddle singularities distributed across
+    // the disk rather than decaying from one privileged center.
+    vec4 infinityWells = infinityWellField(uv, t);
+    float infinityContours = infinityWells.x;
+    float infinityCores = infinityWells.y;
+    float infinityHalos = infinityWells.z;
 
     vec3 armColor = mix(color1, color2, clamp(radius * 0.75 + armGlow * 0.25, 0.0, 1.0));
     vec3 col = color4 * (0.16 + 0.10 * smoothstep(1.45, 0.15, radius));
     col += armColor * armGlow * 0.22;
     col += mix(armColor, color3, 0.30) * armCore * (0.34 + mid * 0.34);
     col += color2 * dust;
+    vec3 infinityColor = mix(color2, color3, 0.64);
+    col += infinityColor * infinityContours * (0.20 + mid * 0.18);
+    col += infinityColor * infinityHalos * (0.16 + bass * 0.18);
+    col += mix(color3, vec3(1.0), 0.72) * infinityCores * (0.42 + treble * 0.34);
     col += mix(color2, color3, hash(starCell + 7.0)) * starHalo * 0.18;
     col += mix(color3, vec3(1.0), treble * 0.45) * star * (twinkle + treble * 0.38);
 

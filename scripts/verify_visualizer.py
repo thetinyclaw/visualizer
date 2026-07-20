@@ -208,6 +208,18 @@ require("reactionCurl" not in html, "Reaction returned to expensive 3D curl work
 require("for (float b = 0.0; b < 64.0; b++)" not in html, "legacy 256-segment Branches loop returned")
 require("for (float i = 0.0; i < 100.0; i++)" not in html, "legacy 100-star Galaxy loop returned")
 require("vec2 starCell = floor(starUv)" in html, "cell-local Galaxy stars missing")
+galaxy_match = re.search(r"vec3 galaxy\(vec2 uv, float t\) \{(.*?)\n\}", html, re.S)
+galaxy_shader = galaxy_match.group(1) if galaxy_match else ""
+require(galaxy_match is not None and "vec4 infinityWellField(" in html and
+        "const float INFINITY_WELL_GRID = 2.8;" in html,
+        "Galaxy lacks the named seed-random Infinity Well field")
+require("step(0.42" in html and "infinityContours" in galaxy_shader and
+        "infinityCores" in galaxy_shader,
+        "Infinity Wells are not numerous or visually explicit in Galaxy")
+require("float peripheralArmFloor = 0.48;" in galaxy_shader and
+        "float peripheralDustFloor = 0.34;" in galaxy_shader and
+        "dust *= armGlow" not in galaxy_shader,
+        "Galaxy still erases arms/dust from the center outward instead of preserving peripheral wells")
 require("float rawDist2 = dot(diff, diff);" in html, "Voronoi squared-distance comparison missing")
 require("float minDist = sqrt(minDist2);" in html, "Voronoi final nearest-distance recovery missing")
 require("float dist = length(diff);" not in html, "Voronoi returned to nine square roots per fragment")

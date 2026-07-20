@@ -60,12 +60,13 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Cost:** loop-invariant phases, gradient, and layer division are hoisted; compact cubic halos replace one exponential per ribbon
 
 ### Galaxy
-- **Composition:** centered three-arm disk with a dense nucleus, dust lanes, and field-wide stars
-- **Primitive:** analytic polar spiral plus cell-local hashed stars
-- **Motion:** differential arm rotation and a slowly orbiting stellar lattice
-- **Audio:** bass opens the nucleus, mids change spiral topology, and treble increases dust microstructure
-- **Material:** luminous stellar dust suspended in a velvet void
-- **Cost:** one local star test per fragment replaces 100 full-screen star-distance tests
+- **Composition:** three-arm galactic disk with a dense nucleus, field-wide stars, and seed-random **Infinity Wells** distributed across center and periphery
+- **Primitive:** analytic polar spiral, cell-local hashed stars, and a seamless coarse well field whose `x²-y²` saddle contours form literal hyperbolic/asymptotic arms
+- **Motion:** differential arm rotation, a slowly orbiting stellar lattice, and subtle FFT-owned Infinity Well phase drift
+- **Audio:** bass opens the nucleus and well halos, mids change spiral topology and well contours, and treble intensifies dust, stars, and well cores
+- **Material:** luminous stellar dust and bright singularity nodes suspended in a velvet void
+- **Visibility:** arm intensity retains a `0.48` peripheral floor and dust retains `0.34`, preventing center-out attenuation from erasing off-axis Infinity Wells
+- **Cost:** cell-local stars plus a bounded 3×3 Infinity Well neighborhood; no full-screen star/well particle loops
 
 ### RGB Subpixels
 - **Composition:** irregular full-frame field of independently scaled and rotated RGB clusters
