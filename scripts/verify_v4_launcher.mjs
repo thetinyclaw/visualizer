@@ -94,6 +94,9 @@ const spectralWaterfallRoute = read('v4/spectrogram-route.js');
 assert.match(spectralWaterfallHtml, /id="spectrogram-canvas"/, 'Spectral Waterfall needs a full-frame canvas');
 assert.match(spectralWaterfallHtml, /id="start-mic"/, 'Spectral Waterfall needs an explicit microphone control');
 assert.match(spectralWaterfallHtml, /data-audio-source="demo synthetic"/, 'Spectral Waterfall must truthfully label synthetic demo audio');
+assert.match(spectralWaterfallHtml, /id="normalize"[^>]+aria-pressed="false"/, 'Spectral Waterfall normalization must be off by default');
+assert.match(spectralWaterfallHtml, /id="normalization-amount"[^>]+type="range"[^>]+value="65"/,
+  'Spectral Waterfall normalization amount slider missing');
 assert.match(spectralWaterfallRoute, /const HIGH_CONTRAST_STOPS = Object\.freeze/, 'Spectral Waterfall high-contrast palette missing');
 assert.match(spectralWaterfallRoute, /function updateSpectrogramHistory/, 'Spectral Waterfall history transport missing');
 assert.match(spectralWaterfallRoute, /spectralFlux/, 'Spectral Waterfall lacks flux reactivity');
@@ -102,6 +105,14 @@ assert.match(spectralWaterfallRoute, /startMic\.addEventListener\('click', start
   'Spectral Waterfall microphone must stay click-gated');
 assert.match(spectralWaterfallRoute, /microphoneAutoRequested:\s*false/, 'Spectral Waterfall must expose no-auto-mic telemetry');
 assert.match(spectralWaterfallRoute, /windowObject\.__V4_SPECTRAL_WATERFALL__/, 'Spectral Waterfall route telemetry missing');
+assert.match(spectralWaterfallRoute, /const normalizationReference = new Float32Array\(BAND_COUNT\)/,
+  'Spectral Waterfall adaptive per-band normalization state missing');
+assert.match(spectralWaterfallRoute, /function applyAdaptiveNormalization/, 'Spectral Waterfall normalization transform missing');
+assert.match(spectralWaterfallRoute, /normalizationEnabled:\s*false/, 'Spectral Waterfall normalization telemetry must default off');
+assert.match(spectralWaterfallRoute, /normalizeButton\.addEventListener\('click', toggleNormalization\)/,
+  'Spectral Waterfall normalization button is not wired');
+assert.match(spectralWaterfallRoute, /event\.key\.toLowerCase\(\) === 'n'/,
+  'Spectral Waterfall N-key normalization toggle missing');
 
 const cathedralRoute = read('v4/cathedral-route.js');
 const cathedralHtml = read('v4/cathedral.html');

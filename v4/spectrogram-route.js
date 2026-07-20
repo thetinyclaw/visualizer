@@ -64,6 +64,9 @@ export function startSpectralWaterfall(windowObject = window) {
   const statusLabel = document.getElementById('status');
   const startMic = document.getElementById('start-mic');
   const startDemo = document.getElementById('start-demo');
+  const normalizeButton = document.getElementById('normalize');
+  const normalizationSlider = document.getElementById('normalization-amount');
+  const normalizationValue = document.getElementById('normalization-value');
   const freezeButton = document.getElementById('freeze');
   const fullscreenButton = document.getElementById('fullscreen');
   queryText.textContent = `?${fallbackQuery}`;
@@ -73,6 +76,7 @@ export function startSpectralWaterfall(windowObject = window) {
   const previousBands = new Float32Array(BAND_COUNT);
   const rawBands = new Float32Array(BAND_COUNT);
   const peakHolds = new Float32Array(BAND_COUNT);
+  const normalizationReference = new Float32Array(BAND_COUNT);
   let frequencyData = new Uint8Array(FFT_SIZE / 2);
   let audioContext = null;
   let analyser = null;
@@ -96,6 +100,10 @@ export function startSpectralWaterfall(windowObject = window) {
   let frameCount = 0;
   let frameWindowStarted = lastFrame;
   let measuredFps = 0;
+  let normalizationEnabled = false;
+  let normalizationAmount = 0.65;
+  let normalizationGainMin = 1;
+  let normalizationGainMax = 1;
 
   const state = {
     sceneId: 'spectral-waterfall', rendererMode: 'canvas2d', active: true,
@@ -104,6 +112,8 @@ export function startSpectralWaterfall(windowObject = window) {
     bandCount: BAND_COUNT, historySize: [HISTORY_WIDTH, HISTORY_HEIGHT], historyColumns: 0,
     paletteStops: HIGH_CONTRAST_STOPS.length, renderScale: RENDER_SCALE, spectralFlux: 0, onsetFlash: 0,
     centroidHz: 0, peakHz: 0, energy: 0, bassEnergy: 0, fps: 0, averageFps: 0,
+    normalizationEnabled: false, normalizationAmount: 0.65,
+    normalizationGainMin: 1, normalizationGainMax: 1,
     frozen: false, errors: [], frame: 0,
   };
   windowObject.__V4_SPECTRAL_WATERFALL__ = state;
@@ -202,10 +212,38 @@ export function startSpectralWaterfall(windowObject = window) {
     }
   }
 
+  function applyAdaptiveNormalization(deltaSeconds) {
+    let rawMean = 0;
+    for (let i = 0; i < BAND_COUNT; i += 1) {
+      const raw = rawBands[i];
+      if (normalizationReference[i] <= 0) normalizationReference[i] = Math.max(0.035, raw);
+      const response = raw > normalizationReference[i] ? 1.8 : 0.12;
+      const amount = 1 - Math.exp(-deltaSeconds * response);
+      normalizationReference[i] += (raw - normalizationReference[i]) * amount;
+      rawMean += raw;
+    }
+
+    const target = Math.max(0.10, Math.min(0.38, rawMean / BAND_COUNT * 1.25));
+    normalizationGainMin = 4;
+    normalizationGainMax = 0;
+    for (let i = 0; i < BAND_COUNT; i += 1) {
+      const raw = rawBands[i];
+      const gain = Math.max(0.55, Math.min(3.4, target / (normalizationReference[i] + 0.025)));
+      const noiseGate = clamp01((raw - 0.006) / 0.035);
+      const normalized = clamp01(raw * gain);
+      if (normalizationEnabled) rawBands[i] = lerp(raw, normalized, normalizationAmount * noiseGate);
+      normalizationGainMin = Math.min(normalizationGainMin, gain);
+      normalizationGainMax = Math.max(normalizationGainMax, gain);
+    }
+    state.normalizationGainMin = normalizationGainMin;
+    state.normalizationGainMax = normalizationGainMax;
+  }
+
   function updateFeatures(deltaSeconds, seconds) {
     if (mode === 'demo') synthesizeDemo(seconds);
     else if (mode === 'mic' && analyser) sampleMicrophone();
     else rawBands.fill(0);
+    applyAdaptiveNormalization(deltaSeconds);
 
     let sum = 0;
     let weighted = 0;
@@ -402,8 +440,33 @@ export function startSpectralWaterfall(windowObject = window) {
     setSource('demo', 'Synthetic demo · high-contrast history · no microphone capture');
   }
 
+  function renderNormalizationControl() {
+    normalizeButton.textContent = normalizationEnabled ? 'NORMALIZE ON · N' : 'NORMALIZE OFF · N';
+    normalizeButton.setAttribute('aria-pressed', String(normalizationEnabled));
+    normalizeButton.classList.toggle('active', normalizationEnabled);
+    normalizationValue.textContent = `${Math.round(normalizationAmount * 100)}%`;
+    state.normalizationEnabled = normalizationEnabled;
+    state.normalizationAmount = normalizationAmount;
+  }
+
+  function toggleNormalization() {
+    normalizationEnabled = !normalizationEnabled;
+    renderNormalizationControl();
+  }
+
   startMic.addEventListener('click', startMicrophone);
   startDemo.addEventListener('click', startDemoSignal);
+  normalizeButton.addEventListener('click', toggleNormalization);
+  normalizationSlider.addEventListener('input', () => {
+    normalizationAmount = Number(normalizationSlider.value) / 100;
+    renderNormalizationControl();
+  });
+  windowObject.addEventListener('keydown', (event) => {
+    if (event.key.toLowerCase() === 'n' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      toggleNormalization();
+    }
+  });
   freezeButton.addEventListener('click', () => {
     frozen = !frozen;
     freezeButton.textContent = frozen ? 'RESUME' : 'FREEZE';
@@ -418,6 +481,7 @@ export function startSpectralWaterfall(windowObject = window) {
   }, { once: true });
 
   resize();
+  renderNormalizationControl();
   if (requestedMode === 'demo') setSource('demo', 'Synthetic demo · high-contrast history · no microphone capture');
   else if (requestedMode === 'flat') setSource('flat', 'Flat no-signal source · deterministic black-floor verification');
   else setSource('idle', 'Live mode selected · microphone remains idle until Start Mic is clicked');

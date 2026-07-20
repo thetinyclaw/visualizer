@@ -31,7 +31,7 @@ Web-based raw WebGL/GLSL for a Milkdrop/trippy/fractal-style aesthetic.
 - [x] Port Cathedral, Filament, and Voxel as genuine deterministic WebGPU hero routes with immutable automation-browser evidence (2026-07-19)
 - [x] Add bounded volume, history/trails, bloom, chromatic optics, ACES output, and two-layer compositor transactions (2026-07-19)
 - [x] Add unified v4 launcher and machine-readable route/evidence registry without hidden GPU or microphone work (2026-07-19)
-- [x] Promote the FFT Observatory spectrogram into the high-contrast 192-band Spectral Waterfall v4 VEffect with flux/onset reactivity and click-gated microphone mode (2026-07-19)
+- [x] Promote the FFT Observatory spectrogram into the high-contrast 192-band Spectral Waterfall v4 VEffect with flux/onset reactivity, optional adaptive normalization, and click-gated microphone mode (2026-07-19)
 - [ ] Complete Safari/TV HTTPS target-device acceptance and explicit human visual/release approval
 
 ## Recent Refresh (2026-07-05)

@@ -19,6 +19,10 @@
     .controls { pointer-events:auto; display:flex; justify-content:flex-end; flex-wrap:wrap; gap:7px; }
     button, a { appearance:none; min-height:34px; padding:7px 10px; border:1px solid rgba(130,220,255,.32); border-radius:999px; background:rgba(2,6,16,.90); color:#bdefff; font:inherit; font-size:9px; letter-spacing:.07em; text-decoration:none; cursor:pointer; }
     button:hover, button:focus-visible, a:hover, a:focus-visible { border-color:var(--cyan); color:white; outline:none; box-shadow:0 0 18px rgba(77,246,255,.2); }
+    button.active { color:#efffc4; border-color:rgba(216,255,77,.72); box-shadow:0 0 18px rgba(216,255,77,.18); }
+    .normalization-amount { min-height:34px; padding:5px 10px; display:flex; align-items:center; gap:7px; border:1px solid rgba(130,220,255,.24); border-radius:999px; background:rgba(2,6,16,.90); color:#8facbf; font-size:9px; letter-spacing:.05em; }
+    .normalization-amount input { width:86px; accent-color:var(--lime); cursor:pointer; }
+    .normalization-amount output { min-width:26px; color:#dff5ff; text-align:right; }
     .bottom { position:absolute; left:max(14px, env(safe-area-inset-left)); right:max(14px, env(safe-area-inset-right)); bottom:max(13px, env(safe-area-inset-bottom)); display:flex; justify-content:space-between; align-items:flex-end; gap:18px; }
     .metrics { display:grid; grid-template-columns:repeat(4, minmax(66px,auto)); gap:8px 18px; padding:8px 10px; border-radius:12px; background:rgba(1,4,12,.90); color:#8facbf; font-size:9px; letter-spacing:.08em; }
     .metrics b { display:block; margin-top:3px; color:#ebfbff; font-size:12px; font-weight:500; }
@@ -37,6 +41,8 @@
       <div class="controls">
         <button id="start-demo" type="button">DEMO SIGNAL</button>
         <button id="start-mic" type="button">START MIC</button>
+        <button id="normalize" type="button" aria-pressed="false" title="Toggle normalization (N)">NORMALIZE OFF · N</button>
+        <label class="normalization-amount" title="Blend adaptive cross-band normalization"><span>AMOUNT</span><input id="normalization-amount" type="range" min="0" max="100" value="65" step="1" aria-label="Normalization amount"><output id="normalization-value" for="normalization-amount">65%</output></label>
         <button id="freeze" type="button">FREEZE</button>
         <button id="fullscreen" type="button">FULLSCREEN</button>
         <a id="fallback-link" href="../fft.html">FFT OBSERVATORY</a>

@@ -52,7 +52,7 @@ Visualizer v4 lives in the isolated `v4/` module surface. Open `http://127.0.0.1
 - `v4/cathedral.html` — native WebGPU Prismatic Cathedral geometry → post → composite.
 - `v4/filament.html` — compute ping-pong Filament Vortex → ribbons → post → composite.
 - `v4/voxel.html` — compute-updated 260-cell instanced Neon Voxel Cloud → post → composite.
-- `v4/spectrogram.html` — high-contrast 192-band Spectral Waterfall VEffect with history, flux/onset response, synthetic demo, and click-gated live microphone.
+- `v4/spectrogram.html` — high-contrast 192-band Spectral Waterfall VEffect with history, flux/onset response, optional adaptive cross-band normalization (`N` toggle plus amount slider), synthetic demo, and click-gated live microphone.
 - `v4/history.html` — transactional ping-pong history/trails diagnostic.
 - `v4/demo.html` — bounded volume → bloom/chromatic optics/ACES → two-layer crossfade smoke.
 - `v4/live-audio.html` — trusted-click microphone bridge with honestly labeled Demo/Flat modes.
