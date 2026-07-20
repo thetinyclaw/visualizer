@@ -112,7 +112,7 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 
 ### Filament Vortex Candidate
 - **Composition:** full-frame plasma hair filaments spiraling into a seed-varied dark aperture; Randomize changes its lobe count, eccentricity, phase, center offset, and radius
-- **Primitive:** log-polar analytic stripe fields, radial advection, antialiased lane distances, seeded clump cells; all angular harmonics and lane counts are integer-periodic across the `atan` branch cut
+- **Primitive:** log-polar analytic stripe fields, radial advection, antialiased lane distances, and seeded clump cells; angular harmonics/lane counts are integer-periodic, FFT ownership interpolates circularly from bin 15 back to bin 0, and bundle hashing uses a `cos/sin` embedding instead of an unwrapped `atan` index
 - **Motion:** inward spiral drift with organic phase perturbations around a stable vortex throat
 - **Audio:** 16 logarithmic FFT bands structurally control aperture size, curl strength, radial advection, filament width, and treble hair splitting; brightness is secondary
 - **Material:** six seeded palette families—ice, ember, aurora, ultraviolet, citrus, and ocean—preserve bright fibers over a dark cosmic void while making Randomize visually consequential

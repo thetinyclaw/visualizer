@@ -75,6 +75,12 @@ require("float paletteIndex" in filament_cycle and "vec3 paletteFiberA" in filam
         "Filament Vortex palette is not seed-varied on Randomize")
 require("localTreble * 16.0" not in filament_cycle,
         "Filament Vortex lane count can become non-integral and reopen the angular seam")
+require("float cycleFftCircular" in cycle_shaders and "float owned = cycleFftCircular(" in filament_cycle and
+        "fftBand(bandKey)" not in filament_cycle,
+        "Filament Vortex FFT ownership is not circularly interpolated across 9 o'clock")
+require("vec2 bundleDirection = vec2(cos(angularFlow), sin(angularFlow));" in filament_cycle and
+        "angularFlow / TAU * 42.0" not in filament_cycle,
+        "Filament Vortex bundle hashing still uses an unwrapped angular cell index")
 require("float streakDistance=abs(rp.y-rp.x*sl-off);" in cycle_shaders and
         "cycleStreak(rp,sl,off,width)" not in cycle_shaders and
         "cycleStreak(rp,sl,off,width*4.2)" not in cycle_shaders,

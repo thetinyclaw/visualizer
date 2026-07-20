@@ -3,6 +3,13 @@ window.CANDIDATE_CYCLE_SHADER_BLOCK = String.raw`
 float cycleInvSmooth(float lo, float hi, float x) { return 1.0 - smoothstep(lo, hi, x); }
 mat2 cycleRot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
 float cycleFftIndex(float index) { return fftBand((mod(index, 16.0) + 0.01) / 16.0); }
+float cycleFftCircular(float phase) {
+    float binPhase = fract(phase) * 16.0;
+    float baseBin = floor(binPhase);
+    float blend = fract(binPhase);
+    blend = blend * blend * (3.0 - 2.0 * blend);
+    return mix(cycleFftIndex(baseBin), cycleFftIndex(baseBin + 1.0), blend);
+}
 float cycleBoxMetric(vec2 p, vec2 b) { vec2 d = abs(p) - b; return max(d.x, d.y); }
 float cycleAaLine(float v, float width) {
     float d = abs(fract(v) - 0.5);
@@ -45,8 +52,7 @@ vec3 cycleFilamentVortex(vec2 uv, float t) {
     angularFlow += 0.055 * sin(a * 17.0 + logR * 17.0 + seed * 0.003 + t * 0.23);
     float inward = 1.0 / (r + 0.12);
     float radialAdvection = r * (8.4 + localBass * 2.0) - t * (0.28 + lowMid * 0.58) + 0.36 * sin(angularFlow * 2.0 + t * 0.17);
-    float bandKey = fract(angularFlow / TAU + 0.5 + seed * 0.000019);
-    float owned = fftBand(bandKey);
+    float owned = cycleFftCircular(angularFlow / TAU + 0.5 + seed * 0.000019);
     float filamentWidth = mix(0.018, 0.052, clamp(owned + localTreble * 0.35, 0.0, 1.0));
     // Counts remain integral so a full angular turn lands on the same filament lane.
     float laneCountA = 88.0 + floor(material * 22.0);
@@ -55,7 +61,13 @@ vec3 cycleFilamentVortex(vec2 uv, float t) {
     float familyA = cycleAaLine(angularFlow / TAU * laneCountA + radialAdvection * 0.019 + sin(radialAdvection * 0.71) * 0.11, filamentWidth);
     float familyB = cycleAaLine((angularFlow + sin(r * 15.0 - t * 0.24) * 0.035) / TAU * laneCountB - radialAdvection * (0.037 + highMid * 0.035), 0.013 + owned * 0.022);
     float familyC = cycleAaLine((angularFlow + sin(radialAdvection * 1.9 + a * 5.0) * 0.055) / TAU * laneCountC + radialAdvection * (0.071 + localTreble * 0.05), 0.0085 + localTreble * 0.012);
-    vec2 bundleCell = floor(vec2(angularFlow / TAU * 42.0 + sin(logR * 4.0), log(r + 0.045) * 24.0 - t * 0.10));
+    // Hash clumps in a circular embedding; an unwrapped angular cell index leaves
+    // a full radial reset exactly on atan's negative-X (9 o'clock) branch cut.
+    vec2 bundleDirection = vec2(cos(angularFlow), sin(angularFlow));
+    vec2 bundleCell = floor(vec2(
+        bundleDirection.x * 21.0 + sin(logR * 4.0),
+        bundleDirection.y * 21.0 + log(r + 0.045) * 24.0 - t * 0.10
+    ));
     float shred = 0.54 + 0.58 * smoothstep(0.10, 0.92, hash(bundleCell + seed * 0.113) + owned * 0.32);
     float brokenBundle = 0.70 + 0.36 * smoothstep(0.04, 0.88, hash(bundleCell + vec2(17.0, 71.0) + floor(t * 0.65)) + owned * 0.24 + highMid * 0.16);
     float radialGate = smoothstep(seededApertureRadius - 0.004, seededApertureRadius + 0.030, r) * cycleInvSmooth(1.04, 1.50, r);
