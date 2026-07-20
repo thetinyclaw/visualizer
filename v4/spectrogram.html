@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#02030a">
+  <title>Visualizer v4 · Spectral Waterfall</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root { color-scheme: dark; --ink:#02030a; --cyan:#4df6ff; --lime:#d8ff4d; --hot:#ff3b81; --text:#f2fbff; --muted:#8aa3bb; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; width:100%; height:100%; overflow:hidden; background:var(--ink); color:var(--text); font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    #spectrogram-canvas { position:fixed; inset:0; width:100vw; height:100vh; display:block; background:#02030a; }
+    .hud { position:fixed; inset:0; z-index:2; pointer-events:none; }
+    .top { position:absolute; top:max(14px, env(safe-area-inset-top)); left:max(14px, env(safe-area-inset-left)); right:max(14px, env(safe-area-inset-right)); display:flex; justify-content:space-between; align-items:flex-start; gap:14px; }
+    .brand { padding:8px 10px; border-radius:12px; background:rgba(1,4,12,.88); text-shadow:0 0 24px rgba(77,246,255,.42); }
+    .brand strong { display:block; font-size:13px; letter-spacing:.26em; }
+    .brand span { display:block; margin-top:5px; color:rgba(208,235,255,.58); font-size:9px; letter-spacing:.12em; }
+    .controls { pointer-events:auto; display:flex; justify-content:flex-end; flex-wrap:wrap; gap:7px; }
+    button, a { appearance:none; min-height:34px; padding:7px 10px; border:1px solid rgba(130,220,255,.32); border-radius:999px; background:rgba(2,6,16,.90); color:#bdefff; font:inherit; font-size:9px; letter-spacing:.07em; text-decoration:none; cursor:pointer; }
+    button:hover, button:focus-visible, a:hover, a:focus-visible { border-color:var(--cyan); color:white; outline:none; box-shadow:0 0 18px rgba(77,246,255,.2); }
+    .bottom { position:absolute; left:max(14px, env(safe-area-inset-left)); right:max(14px, env(safe-area-inset-right)); bottom:max(13px, env(safe-area-inset-bottom)); display:flex; justify-content:space-between; align-items:flex-end; gap:18px; }
+    .metrics { display:grid; grid-template-columns:repeat(4, minmax(66px,auto)); gap:8px 18px; padding:8px 10px; border-radius:12px; background:rgba(1,4,12,.90); color:#8facbf; font-size:9px; letter-spacing:.08em; }
+    .metrics b { display:block; margin-top:3px; color:#ebfbff; font-size:12px; font-weight:500; }
+    .status { max-width:min(520px, 48vw); padding:8px 10px; border-radius:12px; background:rgba(1,4,12,.92); color:#b7cad8; font-size:10px; line-height:1.45; text-align:right; }
+    .source { color:var(--lime); }
+    body[data-audio-source="idle"] .source { color:#ffd26a; }
+    body[data-audio-source="error"] .source { color:#ff7ca8; }
+    @media (max-width:760px) { .top { flex-direction:column; } .controls { justify-content:flex-start; } .bottom { align-items:flex-start; } .metrics { grid-template-columns:repeat(2,minmax(64px,auto)); } .status { max-width:42vw; } }
+  </style>
+</head>
+<body data-audio-source="demo synthetic">
+  <canvas id="spectrogram-canvas" aria-label="High-contrast live logarithmic spectral waterfall"></canvas>
+  <section class="hud" aria-live="polite">
+    <div class="top">
+      <div class="brand"><strong>SPECTRAL WATERFALL</strong><span>FFT OBSERVATORY · VEFFECT</span></div>
+      <div class="controls">
+        <button id="start-demo" type="button">DEMO SIGNAL</button>
+        <button id="start-mic" type="button">START MIC</button>
+        <button id="freeze" type="button">FREEZE</button>
+        <button id="fullscreen" type="button">FULLSCREEN</button>
+        <a id="fallback-link" href="../fft.html">FFT OBSERVATORY</a>
+        <a href="./index.html">V4 LAUNCHER</a>
+      </div>
+    </div>
+    <div class="bottom">
+      <div class="metrics">
+        <span>PEAK<b id="peak">—</b></span>
+        <span>CENTROID<b id="centroid">—</b></span>
+        <span>FLUX<b id="flux">0%</b></span>
+        <span>ENERGY<b id="energy">0%</b></span>
+      </div>
+      <div class="status"><span class="source" id="source">DEMO SYNTHETIC</span><br><span id="status">High-contrast logarithmic history · microphone never starts automatically</span><br><code id="query-text"></code></div>
+    </div>
+  </section>
+  <script type="module" src="./spectrogram-route.js"></script>
+</body>
+</html>

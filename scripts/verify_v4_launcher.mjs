@@ -18,6 +18,7 @@ assert.deepEqual(visualizerV4SceneRegistry.scenes.map((scene) => scene.title), [
   'Prismatic Cathedral',
   'Filament Vortex',
   'Neon Voxel Cloud',
+  'Spectral Waterfall',
   'History Trails',
   'Demo',
   'Live Audio',
@@ -87,6 +88,20 @@ assert.match(registrySource, /No artifacts are implied by this launcher/, 'captu
 const liveAudio = read('v4/live-audio.html');
 assert.match(liveAudio, /never auto-requests microphone access/, 'live-audio route must say mic is not automatic');
 assert.match(liveAudio, /start-mic'.*addEventListener\('click'/s, 'microphone request must stay click-gated');
+
+const spectralWaterfallHtml = read('v4/spectrogram.html');
+const spectralWaterfallRoute = read('v4/spectrogram-route.js');
+assert.match(spectralWaterfallHtml, /id="spectrogram-canvas"/, 'Spectral Waterfall needs a full-frame canvas');
+assert.match(spectralWaterfallHtml, /id="start-mic"/, 'Spectral Waterfall needs an explicit microphone control');
+assert.match(spectralWaterfallHtml, /data-audio-source="demo synthetic"/, 'Spectral Waterfall must truthfully label synthetic demo audio');
+assert.match(spectralWaterfallRoute, /const HIGH_CONTRAST_STOPS = Object\.freeze/, 'Spectral Waterfall high-contrast palette missing');
+assert.match(spectralWaterfallRoute, /function updateSpectrogramHistory/, 'Spectral Waterfall history transport missing');
+assert.match(spectralWaterfallRoute, /spectralFlux/, 'Spectral Waterfall lacks flux reactivity');
+assert.match(spectralWaterfallRoute, /onsetFlash/, 'Spectral Waterfall lacks onset flash response');
+assert.match(spectralWaterfallRoute, /startMic\.addEventListener\('click', startMicrophone\)/,
+  'Spectral Waterfall microphone must stay click-gated');
+assert.match(spectralWaterfallRoute, /microphoneAutoRequested:\s*false/, 'Spectral Waterfall must expose no-auto-mic telemetry');
+assert.match(spectralWaterfallRoute, /windowObject\.__V4_SPECTRAL_WATERFALL__/, 'Spectral Waterfall route telemetry missing');
 
 const cathedralRoute = read('v4/cathedral-route.js');
 const cathedralHtml = read('v4/cathedral.html');
