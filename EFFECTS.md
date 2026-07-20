@@ -10,7 +10,7 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Motion:** rolling surface and drifting flow
 - **Audio:** five wave harmonics own deterministic FFT bins that change elevation, frequency, and travel speed; spatially interpolated bins bend the curl cloth; every dot owns a logarithmic bin controlling offset, radius, pulse cadence, color, and glow
 - **Material:** luminous point-cloud cloth
-- **Cost:** one five-harmonic loop reuses phase calculations for both surface height and analytic normals
+- **Cost:** five fixed direct-bin harmonic calls reuse each phase for height and analytic normals; branchless per-dot bin ownership and analytic curl-like flow avoid divergent selectors and three 3D-noise samples per pixel
 
 ### Neurons
 - **Composition:** dense cellular somas joined by two field-wide families of luminous axons

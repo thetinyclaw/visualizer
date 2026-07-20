@@ -168,16 +168,20 @@ require("float flowPhaseA" in html, "analytic Flow Field implementation missing"
 stipple_match = re.search(r"vec3 stippleWaves\(vec2 uv, float t\) \{(.*?)\n\}", html, re.S)
 stipple = stipple_match.group(1) if stipple_match else ""
 require(stipple_match is not None, "Stipple Waves shader function missing")
-require("float harmonicBand = fftBand(" in stipple and "float flowBand = fftBandSmooth(" in stipple and
-        "float dotBand = fftBand(" in stipple,
-        "Stipple Waves is not structurally owned by harmonic, flow-field, and per-dot FFT bins")
-require("harmonicBand * 0.90" in stipple and "flowBand * 0.110" in stipple and
+require("void addStippleHarmonic(" in html and
+        all(call in stipple for call in ("fftBinsA.x", "fftBinsA.w", "fftBinsB.z", "fftBinsC.y", "fftBinsD.z")),
+        "Stipple Waves does not map five fixed logarithmic FFT bins directly to its wave harmonics")
+require("float fftBandBranchless(" in html and "float dotBand = fftBandBranchless(" in stipple and "float flowBand" in stipple,
+        "Stipple Waves lacks per-dot and flow-field FFT ownership")
+require("curl(" not in stipple and "vec2 flowOffset = vec2(" in stipple,
+        "Stipple Waves still pays for three 3D-noise samples per pixel instead of analytic FFT flow")
+require("band * 0.90" in html and "flowBand * 0.105" in stipple and
         "dotBand * 0.75" in stipple,
         "Stipple Waves FFT bins do not materially alter elevation, distortion, and dot morphology")
 require("float dotPulse" in stipple and "dotBand * 0.90" in stipple,
         "Stipple Waves per-dot FFT ownership does not drive motion and emissive response")
-require(html.count("for (float i = 1.0; i <= 5.0; i++)") == 1,
-        "Stipple Waves harmonic work is split across duplicate loops")
+require(stipple.count("addStippleHarmonic(") == 5 and "for (float i = 1.0; i <= 5.0; i++)" not in stipple,
+        "Stipple Waves must use five fixed direct-bin harmonic calls without dynamic selector loops")
 require("float backgroundFlow = noise" in html, "Flow Field returned to multi-octave background work")
 require("float nebula = mix(warpA, warpB" in html,
         "Cosmic Mycelium does not reuse its domain warp for nebula shading")
