@@ -358,6 +358,16 @@ float fftBand(float key) {
     return dot(values, laneMask);
 }
 
+float fftBandSmooth(float key) {
+    float phase = fract(key) * 16.0;
+    float baseBin = floor(phase);
+    float blend = fract(phase);
+    blend = blend * blend * (3.0 - 2.0 * blend);
+    float a = fftBand((mod(baseBin, 16.0) + 0.01) / 16.0);
+    float b = fftBand((mod(baseBin + 1.0, 16.0) + 0.01) / 16.0);
+    return mix(a, b, blend);
+}
+
 // ─────────────────────────────────────────────────────────────────
 // NOISE FUNCTIONS
 // ─────────────────────────────────────────────────────────────────
@@ -442,10 +452,12 @@ vec3 stippleWaves(vec2 uv, float t) {
     float zx = 0.0;
     float zy = 0.0;
     for (float i = 1.0; i <= 5.0; i++) {
-        float freq = i * dotWaveFreq * 0.5;
-        float amp = dotWaveAmp / i;
-        float waveX = uv.x * freq + t * flowSpeed * i + seed;
-        float waveY = uv.y * freq * 0.7 + t * flowSpeed * 0.8 * i;
+        float harmonicBand = fftBand(fract(seed * 0.000013 + i * 0.173));
+        float freq = i * dotWaveFreq * (0.44 + harmonicBand * 0.16);
+        float amp = dotWaveAmp / i * (0.58 + harmonicBand * 0.90);
+        float bandSpeed = 0.62 + harmonicBand * 1.15;
+        float waveX = uv.x * freq + t * flowSpeed * i * bandSpeed + seed;
+        float waveY = uv.y * freq * 0.7 + t * flowSpeed * 0.8 * i * bandSpeed;
         z += sin(waveX) * amp + cos(waveY) * amp * 0.7;
         zx += cos(waveX) * amp * freq;
         zy -= sin(waveY) * amp * 0.49 * freq;
@@ -455,25 +467,31 @@ vec3 stippleWaves(vec2 uv, float t) {
     z *= 1.0 + bass * 0.5;
     vec3 normal = normalize(vec3(-zx, -zy, 1.0));
     
-    // Stipple grid with flow distortion
-    vec2 flowOffset = curl(uv * flowScale, t * flowSpeed) * 0.1;
+    // Spatial regions own FFT bins, so spectral motion bends the actual cloth
+    // rather than applying a screen-wide brightness multiplier.
+    float flowBand = fftBandSmooth(uv.x * 0.19 + uv.y * 0.13 + seed * 0.000021 + 0.5);
+    vec2 flowOffset = curl(uv * flowScale, t * flowSpeed * (0.62 + flowBand * 1.05)) *
+        (0.045 + flowBand * 0.110);
     vec2 stippleUV = (uv + flowOffset) * dotDensity;
     vec2 gridId = floor(stippleUV);
     vec2 gridUV = fract(stippleUV) - 0.5;
     
-    // Randomize dot position within cell
-    vec2 randOffset = (hash2(gridId + seed) - 0.5) * 0.5;
+    // Every dot cell owns one of the 16 logarithmic FFT bins.
+    float dotBand = fftBand(hash(gridId + seed * 1.31));
+    vec2 randOffset = (hash2(gridId + seed) - 0.5) * (0.34 + dotBand * 0.32);
     vec2 dotPos = gridUV - randOffset;
     
-    // Dot size varies with surface angle and audio
+    // Bin energy changes dot morphology and local pulse cadence.
     float dotRadius = dotSize * dotDensity * (0.3 + normal.z * 0.7);
-    dotRadius *= 1.0 + mid * 0.3;
+    float dotPulse = 0.82 + 0.18 * sin(t * (1.0 + dotBand * 2.4) + hash(gridId + 19.0) * TAU);
+    dotRadius *= (0.68 + dotBand * 0.75 + mid * 0.16) * dotPulse;
     
     float dot = smoothstep(dotRadius, dotRadius * 0.5, length(dotPos));
     
     // Color based on surface orientation and position
     float colorMix = normal.z * 0.5 + 0.5;
     colorMix += sin(uv.x * 3.0 + t * 0.2 + colorShift) * 0.2;
+    colorMix += (dotBand - 0.5) * 0.28;
     
     vec3 warmColor = mix(color2, color3, colorMix);
     vec3 coolColor = mix(color1, color4, 1.0 - colorMix);
@@ -483,7 +501,7 @@ vec3 stippleWaves(vec2 uv, float t) {
     float glow = exp(-length(dotPos) * 20.0) * 0.3;
     
     col = mix(col, dotColor, dot);
-    col += dotColor * glow * (0.5 + treble * 0.5);
+    col += dotColor * glow * (0.24 + dotBand * 0.90 + treble * 0.24);
     
     return col;
 }

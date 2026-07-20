@@ -8,7 +8,7 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Composition:** flowing dotted terrain across the full screen
 - **Primitive:** displaced grid, curl noise, analytic dots
 - **Motion:** rolling surface and drifting flow
-- **Audio:** bass breathes elevation; mids resize dots; treble brightens glow
+- **Audio:** five wave harmonics own deterministic FFT bins that change elevation, frequency, and travel speed; spatially interpolated bins bend the curl cloth; every dot owns a logarithmic bin controlling offset, radius, pulse cadence, color, and glow
 - **Material:** luminous point-cloud cloth
 - **Cost:** one five-harmonic loop reuses phase calculations for both surface height and analytic normals
 
