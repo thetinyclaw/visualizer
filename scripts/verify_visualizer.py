@@ -292,6 +292,15 @@ require("float channelSpread = 0.105" in html and "vec2 halfPixel = vec2(0.080, 
         "RGB channels returned to obvious wide gutters")
 require("vec3 softSpill" in html and "vec3 edgeLight" in html,
         "RGB blur and luminous edge treatment missing")
+require("float extinctionPhase = fract(" in html and
+        "float extinctionRate = mix(0.045, 0.11, extinctionRateSeed);" in html,
+        "RGB clusters lack deterministic spatially random extinction cycles")
+require("float fadeOut = 1.0 - smoothstep(0.10, 0.20, extinctionPhase);" in html and
+        "float fadeIn = smoothstep(0.30, 0.44, extinctionPhase);" in html and
+        "float clusterVisibility = max(fadeOut, fadeIn);" in html,
+        "RGB extinction does not include smooth fade-out, full-dark hold, and return")
+require("return col * clusterVisibility;" in html,
+        "RGB spill, contours, or glints remain visible during cluster extinction")
 require("if (secondDistance2 < 0.24)" in html,
         "RGB seam-free distance-gated second cluster missing")
 require("vec2 grid = uv * vec2(4.8, 3.2)" not in html,
