@@ -36,6 +36,12 @@ Decision: Gate rays from multiple front-surface gap samples, amplify gap displac
 Reason: Gap breathing, ball rotation, and radius motion should communicate distinct musical qualities.
 Tradeoff: Multi-depth front-gap sampling costs additional analytic lattice evaluations and requires spatial partitioning and re-benchmarking.
 
+## 2026-07-20 — Require immutable per-effect previews and explicit acceptance
+Context: Focused Tailnet links used `?fix=<hash>` as a cache-buster while serving the mutable current checkout. Older links silently changed after later commits, obscuring which visual revision had actually been reviewed and making superseded good work appear lost.
+Decision: Every focused effect revision lives on a `candidate/<effect>/<description>` branch with one coherent commit. Preview URLs must use `/@git/<commit>/...`, candidates remain off `main`, and only an explicit `accept <commit>` may authorize mainlining. Track candidate, accepted, mainlined, and superseded states in `EFFECT_ACCEPTANCE.md`.
+Reason: A reviewed visual must remain byte-for-byte reproducible, and human aesthetic approval must be distinct from implementation completion or test success.
+Tradeoff: Mainline integration gains an explicit review step and retains more candidate refs, but visual provenance and rollback become reliable.
+
 ## 2026-07-18 — Treat the complete gap network as line emitters
 Context: Selecting individual front-gap intersections produces dot sources and column-like rays instead of illuminated seams.
 Decision: Integrate narrow seam energy across multiple front-surface depths for every angle, render all visible gaps as continuous luminous lines, and remove discrete source flares.

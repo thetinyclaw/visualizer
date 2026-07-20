@@ -1,6 +1,8 @@
 {
   "type": "module",
   "scripts": {
+    "preview": "python3 -u scripts/commit_preview_server.py --bind 127.0.0.1 --port 8789",
+    "test:preview": "python3 scripts/verify_commit_preview.py",
     "test:v4-runtime": "node scripts/verify_v4_runtime_behavior.mjs",
     "test:v4-launcher": "node scripts/verify_v4_launcher.mjs"
   }

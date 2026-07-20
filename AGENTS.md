@@ -38,6 +38,20 @@ Every run must end in exactly one of these states:
 
 A final response claiming completion is invalid unless `git status --short` was checked after the commit.
 
+## Human acceptance boundary for effect edits
+
+Focused visual-effect work must not land directly on `main`.
+
+1. Branch from `main` as `candidate/<effect>/<description>`.
+2. Commit one coherent effect revision with its focused tests and ledger update.
+3. Preview only through `@git` commit routes from `scripts/commit_preview_server.py`; a `?fix=<hash>` query is only a cache-buster and is not immutable evidence.
+4. Record the candidate in `EFFECT_ACCEPTANCE.md` and send its exact commit hash and commit-pinned URL.
+5. Do not merge until SeaKoala explicitly says `accept <hash>` (or unambiguously accepts that exact hash).
+6. Preserve superseded candidate branches/hashes for comparison. Never infer acceptance from silence or from praise of another revision.
+7. After acceptance, verify the exact commit, merge it while preserving the accepted commit as a `main` ancestor, run mainline verification, and record the resulting mainline commit.
+
+Scheduled/autonomous work may create and verify candidate commits, but it may not autonomously accept or mainline visual changes.
+
 ## Visual and performance gates
 
 - Preserve effective DPR of at least `1.0`.

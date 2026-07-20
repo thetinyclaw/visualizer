@@ -125,6 +125,22 @@ benchmark.html?autorun=1&seed=491009&frames=120
 
 `EFFECT_PIPELINE.md` defines the native-density, comparative frame-rate, visual-grade, and accept/reject gates used by autonomous runs.
 
+### Immutable commit previews
+
+Run the local/Tailnet preview server with:
+
+```bash
+python3 -u scripts/commit_preview_server.py --bind 127.0.0.1 --port 8789
+```
+
+The normal route serves the current checkout. `/@git/<commit>/...` serves files directly from that commit's git objects and marks them immutable. Example:
+
+```text
+http://127.0.0.1:8789/@git/8add53f/?pattern=0&seed=491009&mode=demo
+```
+
+Use `EFFECT_ACCEPTANCE.md` for candidate/accepted/mainlined status. A `?fix=<hash>` query does not pin content and must not be used as acceptance evidence.
+
 ## Deployment
 
 Any static host works: GitHub Pages, local Mac mini HTTP service, nginx, Caddy, or a TV/cast browser pointed at the file over HTTP.
