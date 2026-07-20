@@ -63,6 +63,18 @@ require("cycleFftIndex" in cycle_shaders and "fftBand(" in cycle_shaders,
         "candidate-cycle shaders are not connected to the shared FFT bus")
 require("resolution.x / resolution.y" not in cycle_shaders,
         "candidate-cycle shaders double-apply aspect correction to main-cycle UVs")
+filament_match = re.search(r"vec3 cycleFilamentVortex\(vec2 uv, float t\) \{(.*?)\n\}", cycle_shaders, re.S)
+filament_cycle = filament_match.group(1) if filament_match else ""
+require(filament_match is not None, "Filament Vortex shader body missing")
+require(all(term not in filament_cycle for term in ("a * 2.7", "a * 6.3", "(a + logR) * 17.0")),
+        "Filament Vortex contains non-periodic atan harmonics that create a negative-X seam")
+require("float rimLobesA" in filament_cycle and "float seededApertureRadius" in filament_cycle,
+        "Filament Vortex center silhouette is not seed-varied on Randomize")
+require("float paletteIndex" in filament_cycle and "vec3 paletteFiberA" in filament_cycle and
+        "vec3 paletteFiberB" in filament_cycle,
+        "Filament Vortex palette is not seed-varied on Randomize")
+require("localTreble * 16.0" not in filament_cycle,
+        "Filament Vortex lane count can become non-integral and reopen the angular seam")
 require("float streakDistance=abs(rp.y-rp.x*sl-off);" in cycle_shaders and
         "cycleStreak(rp,sl,off,width)" not in cycle_shaders and
         "cycleStreak(rp,sl,off,width*4.2)" not in cycle_shaders,

@@ -15,6 +15,12 @@ vec3 cycleFilamentVortex(vec2 uv, float t) {
     vec2 center = vec2((centerKey - 0.5) * 0.16, (hash(vec2(seed, 29.0)) - 0.5) * 0.10);
     float baseTwist = 2.65 + hash(vec2(seed, 41.0)) * 0.8;
     float material = hash(vec2(seed, 53.0));
+    float rimLobesA = 3.0 + floor(hash(vec2(seed, 61.0)) * 6.0);
+    float rimLobesB = rimLobesA + 3.0 + floor(hash(vec2(seed, 67.0)) * 5.0);
+    float rimLobesC = rimLobesB + 4.0 + floor(hash(vec2(seed, 71.0)) * 6.0);
+    float shapeRotation = hash(vec2(seed, 73.0)) * TAU;
+    float shapeEccentricity = mix(0.025, 0.105, hash(vec2(seed, 79.0)));
+    float paletteIndex = floor(hash(vec2(seed, 83.0)) * 6.0);
     vec2 p = uv - center;
     float r = length(p) + 0.0007;
     float a = atan(p.y, p.x);
@@ -22,25 +28,28 @@ vec3 cycleFilamentVortex(vec2 uv, float t) {
     float lowMid = (fftBinsB.x + fftBinsB.y + fftBinsB.z + fftBinsB.w) * 0.25;
     float highMid = (fftBinsC.x + fftBinsC.y + fftBinsC.z + fftBinsC.w) * 0.25;
     float localTreble = (fftBinsD.x + fftBinsD.y + fftBinsD.z + fftBinsD.w) * 0.25;
-    float rimWarp = 0.014 * sin(a * 3.0 + seed * 0.011 + t * 0.07) +
-        0.008 * sin(a * 7.0 - seed * 0.017 + lowMid * 2.6) +
-        0.005 * sin(a * 11.0 + t * 0.16 + highMid * 3.1);
-    float aperture = 0.050 + localBass * 0.052 + fftBinsA.w * 0.018;
-    float apertureRadius = aperture + rimWarp;
-    float apertureDelta = r - apertureRadius;
+    float rimWarp = shapeEccentricity * 0.30 * cos((a - shapeRotation) * 2.0) +
+        0.016 * sin(a * rimLobesA + seed * 0.011 + t * 0.07) +
+        0.009 * sin(a * rimLobesB - seed * 0.017 + lowMid * 2.6) +
+        0.005 * sin(a * rimLobesC + t * 0.16 + highMid * 3.1);
+    float aperture = 0.047 + hash(vec2(seed, 89.0)) * 0.018 + localBass * 0.052 + fftBinsA.w * 0.018;
+    float seededApertureRadius = aperture + rimWarp;
+    float apertureDelta = r - seededApertureRadius;
     float throat = cycleInvSmooth(-0.006, 0.007, apertureDelta);
     float rim = cycleInvSmooth(0.0025, 0.010 + localBass * 0.004, abs(apertureDelta));
     float logR = log(r + 0.026);
     float angularFlow = a + logR * (baseTwist + lowMid * 2.35 - localTreble * 0.64);
-    angularFlow += 0.26 * sin(a * 2.7 - logR * 5.1 + t * (0.16 + highMid * 0.72));
-    angularFlow += 0.15 * sin(a * 6.3 + r * 11.0 - t * (0.36 + localTreble * 0.64));
-    angularFlow += 0.055 * sin((a + logR) * 17.0 + seed * 0.003 + t * 0.23);
+    // Integer angular harmonics preserve identical values at atan's -PI/+PI branch cut.
+    angularFlow += 0.26 * sin(a * 3.0 - logR * 5.1 + t * (0.16 + highMid * 0.72));
+    angularFlow += 0.15 * sin(a * 6.0 + r * 11.0 - t * (0.36 + localTreble * 0.64));
+    angularFlow += 0.055 * sin(a * 17.0 + logR * 17.0 + seed * 0.003 + t * 0.23);
     float inward = 1.0 / (r + 0.12);
-    float radialAdvection = r * (8.4 + localBass * 2.0) - t * (0.28 + lowMid * 0.58) + 0.36 * sin(angularFlow * 2.3 + t * 0.17);
+    float radialAdvection = r * (8.4 + localBass * 2.0) - t * (0.28 + lowMid * 0.58) + 0.36 * sin(angularFlow * 2.0 + t * 0.17);
     float bandKey = fract(angularFlow / TAU + 0.5 + seed * 0.000019);
     float owned = fftBand(bandKey);
     float filamentWidth = mix(0.018, 0.052, clamp(owned + localTreble * 0.35, 0.0, 1.0));
-    float laneCountA = 88.0 + floor(material * 22.0) + localTreble * 16.0;
+    // Counts remain integral so a full angular turn lands on the same filament lane.
+    float laneCountA = 88.0 + floor(material * 22.0);
     float laneCountB = 131.0 + mod(floor(seed), 29.0);
     float laneCountC = 211.0 + mod(floor(seed), 17.0);
     float familyA = cycleAaLine(angularFlow / TAU * laneCountA + radialAdvection * 0.019 + sin(radialAdvection * 0.71) * 0.11, filamentWidth);
@@ -49,23 +58,47 @@ vec3 cycleFilamentVortex(vec2 uv, float t) {
     vec2 bundleCell = floor(vec2(angularFlow / TAU * 42.0 + sin(logR * 4.0), log(r + 0.045) * 24.0 - t * 0.10));
     float shred = 0.54 + 0.58 * smoothstep(0.10, 0.92, hash(bundleCell + seed * 0.113) + owned * 0.32);
     float brokenBundle = 0.70 + 0.36 * smoothstep(0.04, 0.88, hash(bundleCell + vec2(17.0, 71.0) + floor(t * 0.65)) + owned * 0.24 + highMid * 0.16);
-    float radialGate = smoothstep(apertureRadius - 0.004, apertureRadius + 0.030, r) * cycleInvSmooth(1.04, 1.50, r);
-    float midFieldMist = smoothstep(apertureRadius + 0.035, 0.72, r) * cycleInvSmooth(0.36, 1.42, r);
+    float radialGate = smoothstep(seededApertureRadius - 0.004, seededApertureRadius + 0.030, r) * cycleInvSmooth(1.04, 1.50, r);
+    float midFieldMist = smoothstep(seededApertureRadius + 0.035, 0.72, r) * cycleInvSmooth(0.36, 1.42, r);
     float vortexGain = pow(clamp(inward * 0.56, 0.0, 1.0), 0.44);
     float fibers = (familyA * 0.62 + familyB * 0.44 + familyC * 0.34) * radialGate * shred * brokenBundle * (0.58 + 0.52 * vortexGain);
     float capillaryFog = (familyA + familyB * 0.8 + familyC * 0.7) * midFieldMist * (0.06 + highMid * 0.10);
     float dust = hash(gl_FragCoord.xy + floor(t * 20.0) + seed) - 0.5;
     float farHaze = cycleInvSmooth(0.20, 1.36, r) * (0.08 + highMid * 0.15);
-    vec3 cold = mix(vec3(0.43,0.53,0.66), vec3(0.72,0.79,1.0), owned + localTreble * 0.32);
-    vec3 pearl = vec3(0.93, 0.97, 1.0);
-    vec3 col = vec3(0.004, 0.006, 0.015);
-    col += vec3(0.20, 0.18, 0.35) * (0.42 + lowMid) * (farHaze + capillaryFog);
+
+    vec3 paletteBackground = vec3(0.004, 0.006, 0.015);
+    vec3 paletteHaze = vec3(0.20, 0.18, 0.35);
+    vec3 paletteFiberA = vec3(0.43, 0.53, 0.66);
+    vec3 paletteFiberB = vec3(0.72, 0.79, 1.00);
+    vec3 paletteRim = vec3(0.93, 0.97, 1.00);
+    if (paletteIndex < 1.0) {
+        paletteBackground = vec3(0.004, 0.006, 0.015); paletteHaze = vec3(0.20, 0.18, 0.35);
+    } else if (paletteIndex < 2.0) {
+        paletteBackground = vec3(0.014, 0.003, 0.001); paletteHaze = vec3(0.34, 0.055, 0.018);
+        paletteFiberA = vec3(0.78, 0.12, 0.035); paletteFiberB = vec3(1.00, 0.62, 0.10); paletteRim = vec3(1.00, 0.92, 0.58);
+    } else if (paletteIndex < 3.0) {
+        paletteBackground = vec3(0.001, 0.012, 0.010); paletteHaze = vec3(0.025, 0.25, 0.18);
+        paletteFiberA = vec3(0.015, 0.66, 0.46); paletteFiberB = vec3(0.24, 1.00, 0.84); paletteRim = vec3(0.78, 1.00, 0.94);
+    } else if (paletteIndex < 4.0) {
+        paletteBackground = vec3(0.010, 0.001, 0.018); paletteHaze = vec3(0.24, 0.018, 0.34);
+        paletteFiberA = vec3(0.46, 0.045, 0.95); paletteFiberB = vec3(1.00, 0.12, 0.66); paletteRim = vec3(0.96, 0.70, 1.00);
+    } else if (paletteIndex < 5.0) {
+        paletteBackground = vec3(0.006, 0.011, 0.001); paletteHaze = vec3(0.15, 0.25, 0.018);
+        paletteFiberA = vec3(0.34, 0.80, 0.025); paletteFiberB = vec3(1.00, 0.78, 0.055); paletteRim = vec3(0.96, 1.00, 0.58);
+    } else {
+        paletteBackground = vec3(0.001, 0.005, 0.022); paletteHaze = vec3(0.012, 0.10, 0.32);
+        paletteFiberA = vec3(0.018, 0.26, 1.00); paletteFiberB = vec3(0.018, 0.92, 0.84); paletteRim = vec3(0.62, 0.90, 1.00);
+    }
+    vec3 cold = mix(paletteFiberA, paletteFiberB, clamp(owned + localTreble * 0.32, 0.0, 1.0));
+    vec3 pearl = mix(paletteRim, vec3(1.0), 0.48);
+    vec3 col = paletteBackground;
+    col += paletteHaze * (0.42 + lowMid) * (farHaze + capillaryFog);
     col += cold * fibers * (0.72 + owned * 0.86) + pearl * fibers * fibers * (0.74 + localTreble * 0.72);
-    col += mix(vec3(0.50,0.58,0.92), pearl, 0.34) * rim * (0.92 + localBass * 0.80);
+    col += mix(paletteFiberB, pearl, 0.34) * rim * (0.92 + localBass * 0.80);
     col *= 1.0 - throat * (0.86 + localBass * 0.06);
     col += vec3(dust * 0.018);
-    float lens = cycleInvSmooth(apertureRadius - 0.003, apertureRadius + 0.016, r);
-    return mix(col, vec3(0.0, 0.0, 0.004), lens * (0.78 + localBass * 0.06));
+    float lens = cycleInvSmooth(seededApertureRadius - 0.003, seededApertureRadius + 0.016, r);
+    return mix(col, paletteBackground * 0.16, lens * (0.78 + localBass * 0.06));
 }
 
 float cycleFractureCell(vec2 p, float scale, float bandBase) {
