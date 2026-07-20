@@ -165,6 +165,19 @@ require("QUERY.get('seed')" in html, "deterministic seed-selection route missing
 require("!PATTERN_LOCKED && elapsed > patternDuration" in html, "deterministic pattern route does not lock transitions")
 require("for (float i = 0.0; i < 50.0; i++)" not in html, "legacy 1500-step Flow Field loop returned")
 require("float flowPhaseA" in html, "analytic Flow Field implementation missing")
+branches_match = re.search(r"vec3 branches\(vec2 uv, float t\) \{(.*?)\n\}", html, re.S)
+branches_shader = branches_match.group(1) if branches_match else ""
+require(branches_match is not None and "vec4 constrictingRootField(" in html,
+        "Branches has not been rebuilt around a constricting root field")
+require("float barkRidges" in branches_shader and "float barkCracks" in branches_shader and
+        "float knotMask" in branches_shader,
+        "Branches lacks bark ridges, fissures, and woody knots")
+require("float constriction" in branches_shader and "fftBinsA" in branches_shader and
+        "fftBinsB" in branches_shader and "fftBinsC" in branches_shader,
+        "Constricting roots are not structurally deformed by low/mid/high FFT bins")
+require("groveId" not in branches_shader and "branchLattice" not in branches_shader and
+        "leafMask" not in branches_shader,
+        "Legacy repeating electric-tree lattice remains in Branches")
 stipple_match = re.search(r"vec3 stippleWaves\(vec2 uv, float t\) \{(.*?)\n\}", html, re.S)
 stipple = stipple_match.group(1) if stipple_match else ""
 require(stipple_match is not None, "Stipple Waves shader function missing")
@@ -193,7 +206,6 @@ require("float neuralLattice" in html, "analytic Neurons lattice missing")
 require("float reactionWarpA" in html, "analytic Reaction membrane missing")
 require("reactionCurl" not in html, "Reaction returned to expensive 3D curl work")
 require("for (float b = 0.0; b < 64.0; b++)" not in html, "legacy 256-segment Branches loop returned")
-require("float branchLattice" in html, "analytic Branches lattice missing")
 require("for (float i = 0.0; i < 100.0; i++)" not in html, "legacy 100-star Galaxy loop returned")
 require("vec2 starCell = floor(starUv)" in html, "cell-local Galaxy stars missing")
 require("float rawDist2 = dot(diff, diff);" in html, "Voronoi squared-distance comparison missing")

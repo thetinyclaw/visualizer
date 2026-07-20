@@ -29,12 +29,12 @@ Each accepted effect gets a fingerprint. Recurring agents must compare candidate
 - **Cost:** bounded noise samples with no per-fragment particle-integration loops
 
 ### Branches
-- **Composition:** a repeating grove of upward binary trees beneath a fine twig canopy
-- **Primitive:** inverse-folded branch coordinates, analytic segment fields, and a cellular seed layer
-- **Motion:** slowly breathing fork angles, alternating skeletal sway, and drifting seeds
-- **Audio:** bass changes fork topology, mids articulate skeleton motion, and treble reveals canopy microstructure
-- **Material:** electric botanical filaments and luminous seeds
-- **Cost:** five inverse-fold iterations replace 256 explicit segment tests and 30 leaf-distance tests per pixel
+- **Composition:** thick roots from opposing edges fork and converge around a dark central choke point, creating an inward gripping tree-root cage
+- **Primitive:** two inverse-domain root families with seed-varied spacing, tapering trunk/fork SDFs, cylindrical cross-section shading, and loop-free convergence
+- **Motion:** slow bass-led constriction and mid-frequency woody writhing; Randomize changes root spacing, fork direction, grain, and family rotation
+- **Audio:** low FFT bins tighten the grip and swell root mass, mids deform centerlines and expose knots, and high bins open bark fissures
+- **Material:** dark heartwood, warm bark, longitudinal ridges, split cracks, and recessed knots over near-black soil
+- **Cost:** two analytic root-field evaluations with no explicit root/branch loops
 
 ### Reaction
 - **Composition:** full-screen cellular blobs and boundaries
