@@ -743,7 +743,8 @@ vec3 reaction(vec2 uv, float t) {
 vec3 voronoi(vec2 uv, float t) {
     // Keep generator density stable so audio changes individual cell area rather
     // than shrinking the entire tessellation uniformly.
-    const float VORONOI_TIME_SCALE = 0.3333333;
+    // Deliberately glacial: 4.17x slower than the previous effect-local clock.
+    const float VORONOI_TIME_SCALE = 0.08;
     float voronoiMotionTime = t * VORONOI_TIME_SCALE;
     vec2 p = uv * 8.0;
     
